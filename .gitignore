@@ -8,3 +8,10 @@ info
 .mcp.json
 .claude
 .npmrc
+
+# Test coverage
+coverage/
+*.lcov
+
+# Vitest
+.vitest/
