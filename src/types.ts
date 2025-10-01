@@ -1,7 +1,7 @@
 /**
  * Data returned by Telegram Login Widget
  */
-export interface TelegramAuthData {
+export type TelegramAuthData = {
   id: number;
   first_name: string;
   last_name?: string;
@@ -9,12 +9,12 @@ export interface TelegramAuthData {
   photo_url?: string;
   auth_date: number;
   hash: string;
-}
+};
 
 /**
  * User object from Telegram Mini Apps
  */
-export interface TelegramMiniAppUser {
+export type TelegramMiniAppUser = {
   id: number;
   first_name: string;
   last_name?: string;
@@ -24,23 +24,23 @@ export interface TelegramMiniAppUser {
   is_bot?: boolean;
   allows_write_to_pm?: boolean;
   photo_url?: string;
-}
+};
 
 /**
  * Chat object from Telegram Mini Apps
  */
-export interface TelegramMiniAppChat {
+export type TelegramMiniAppChat = {
   id: number;
   type: string;
   title?: string;
   username?: string;
   photo_url?: string;
-}
+};
 
 /**
  * Complete data from Telegram Mini Apps initData
  */
-export interface TelegramMiniAppData {
+export type TelegramMiniAppData = {
   user?: TelegramMiniAppUser;
   receiver?: TelegramMiniAppUser;
   chat?: TelegramMiniAppChat;
@@ -51,12 +51,12 @@ export interface TelegramMiniAppData {
   query_id?: string;
   auth_date: number;
   hash: string;
-}
+};
 
 /**
  * Configuration options for the Telegram plugin
  */
-export interface TelegramPluginOptions {
+export type TelegramPluginOptions = {
   /**
    * Bot token obtained from @BotFather
    * Used for verifying authentication data
@@ -130,20 +130,20 @@ export interface TelegramPluginOptions {
       [key: string]: any;
     };
   };
-}
+};
 
 /**
  * Additional fields to add to the user table
  */
-export interface TelegramUserFields {
+export type TelegramUserFields = {
   telegramId?: string;
   telegramUsername?: string;
-}
+};
 
 /**
  * Additional fields to add to the account table
  */
-export interface TelegramAccountFields {
+export type TelegramAccountFields = {
   telegramId: string;
   telegramUsername?: string;
-}
+};

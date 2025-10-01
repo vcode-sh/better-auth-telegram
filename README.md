@@ -87,7 +87,10 @@ import { createAuthClient } from "better-auth/client";
 import { telegramClient } from "better-auth-telegram/client";
 
 export const authClient = createAuthClient({
-  baseURL: typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL,
+  baseURL:
+    typeof window !== "undefined"
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_APP_URL,
   plugins: [telegramClient()],
 });
 ```
@@ -163,7 +166,7 @@ export function TelegramLoginButton() {
 }
 ```
 
-**Vanilla JavaScript** (for the purists):**
+**Vanilla JavaScript** (for the purists):\*\*
 
 ```javascript
 authClient.initTelegramWidget(
@@ -284,6 +287,7 @@ if (validation.data?.valid) {
 ```
 
 **Mini App features:**
+
 - ✅ Automatic authentication from `Telegram.WebApp.initData` (it just works™)
 - ✅ Access to additional user data (language, premium status, etc.) (stalk your users responsibly)
 - ✅ Chat context information (type, instance, start params) (context is king)
@@ -296,7 +300,7 @@ if (validation.data?.valid) {
 ### Server Plugin Options
 
 ```typescript
-interface TelegramPluginOptions {
+type TelegramPluginOptions = {
   /**
    * Bot token from @BotFather (required)
    */
@@ -367,13 +371,13 @@ interface TelegramPluginOptions {
       [key: string]: any;
     };
   };
-}
+};
 ```
 
 ### Widget Options
 
 ```typescript
-interface TelegramWidgetOptions {
+type TelegramWidgetOptions = {
   /**
    * Button size
    * @default "large"
@@ -402,7 +406,7 @@ interface TelegramWidgetOptions {
    * Language code (e.g., "en", "pl")
    */
   lang?: string;
-}
+};
 ```
 
 ## Advanced Usage
@@ -477,10 +481,12 @@ The plugin adds the following endpoints to your Better Auth instance:
 The plugin extends the Better Auth schema with the following fields:
 
 **User table:**
+
 - `telegramId` (string, optional) - Telegram user ID
 - `telegramUsername` (string, optional) - Telegram username
 
 **Account table:**
+
 - `telegramId` (string, optional) - Telegram user ID
 - `telegramUsername` (string, optional) - Telegram username
 
@@ -499,6 +505,7 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Absolu
 ### Widget not showing
 
 Before panicking, check:
+
 1. Did you set domain with @BotFather using `/setdomain`? (easy to forget, trust me)
 2. Is `botUsername` correct? (without the @, Telegram is picky)
 3. Does the container element exist in DOM before calling `initTelegramWidget`? (timing is everything)
@@ -507,6 +514,7 @@ Before panicking, check:
 ### Authentication fails
 
 The usual suspects:
+
 - Bot token wrong in env variables (copy-paste errors are a programmer's best friend)
 - Domain doesn't match what you told @BotFather (consistency matters)
 - `auth_date` too old (default max: 24 hours, no time travel allowed)
@@ -515,6 +523,7 @@ The usual suspects:
 ### Local Development Issues
 
 Telegram hates localhost. Here's the workaround:
+
 1. Install ngrok: `npm install -g ngrok`
 2. Start your dev server: `npm run dev`
 3. Start ngrok tunnel: `ngrok http 3000`
@@ -526,6 +535,7 @@ Yes, it's annoying. No, there's no better way. Welcome to OAuth.
 ## Examples
 
 Check out the [examples](./examples) directory for complete implementations:
+
 - Next.js App Router (the new hotness)
 - Next.js Pages Router (the old reliable)
 - React SPA (classic)

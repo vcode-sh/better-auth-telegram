@@ -1,4 +1,4 @@
-import { createHmac, createHash } from "crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { TelegramAuthData, TelegramMiniAppData } from "./types";
 
 /**
@@ -11,7 +11,7 @@ import type { TelegramAuthData, TelegramMiniAppData } from "./types";
 export function verifyTelegramAuth(
   data: TelegramAuthData,
   botToken: string,
-  maxAge: number = 86400
+  maxAge = 86400
 ): boolean {
   // Extract hash from data
   const { hash, ...dataWithoutHash } = data;
@@ -34,9 +34,7 @@ export function verifyTelegramAuth(
     .join("\n");
 
   // Create secret key: SHA256(bot_token)
-  const secretKey = createHash("sha256")
-    .update(botToken)
-    .digest();
+  const secretKey = createHash("sha256").update(botToken).digest();
 
   // Calculate HMAC-SHA256
   const hmac = createHmac("sha256", secretKey)
@@ -50,9 +48,7 @@ export function verifyTelegramAuth(
 /**
  * Validates that required fields are present in Telegram auth data
  */
-export function validateTelegramAuthData(
-  data: any
-): data is TelegramAuthData {
+export function validateTelegramAuthData(data: any): data is TelegramAuthData {
   return (
     typeof data === "object" &&
     data !== null &&
@@ -77,10 +73,7 @@ export function parseMiniAppInitData(initData: string): TelegramMiniAppData {
       // Parse JSON objects
       try {
         data[key] = JSON.parse(value);
-      } catch {
-        // If parsing fails, skip this field
-        continue;
-      }
+      } catch {}
     } else if (key === "auth_date" || key === "can_send_after") {
       // Parse numbers
       data[key] = Number(value);
@@ -103,7 +96,7 @@ export function parseMiniAppInitData(initData: string): TelegramMiniAppData {
 export function verifyMiniAppInitData(
   initData: string,
   botToken: string,
-  maxAge: number = 86400
+  maxAge = 86400
 ): boolean {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
@@ -151,9 +144,7 @@ export function verifyMiniAppInitData(
 /**
  * Validates that required fields are present in Mini App data
  */
-export function validateMiniAppData(
-  data: any
-): data is TelegramMiniAppData {
+export function validateMiniAppData(data: any): data is TelegramMiniAppData {
   return (
     typeof data === "object" &&
     data !== null &&

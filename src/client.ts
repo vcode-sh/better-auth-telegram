@@ -12,7 +12,7 @@ const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?22";
 /**
  * Options for initializing Telegram Login Widget
  */
-export interface TelegramWidgetOptions {
+export type TelegramWidgetOptions = {
   /**
    * Size of the login button
    * @default "large"
@@ -41,7 +41,7 @@ export interface TelegramWidgetOptions {
    * Language code (e.g., "en", "pl")
    */
   lang?: string;
-}
+};
 
 /**
  * Helper to load Telegram Widget script
@@ -58,7 +58,8 @@ function loadTelegramWidgetScript(): Promise<void> {
     script.src = TELEGRAM_WIDGET_SCRIPT;
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Telegram widget script"));
+    script.onerror = () =>
+      reject(new Error("Failed to load Telegram widget script"));
     document.head.appendChild(script);
   });
 }
@@ -113,9 +114,12 @@ export const telegramClient = () => {
        * Get Telegram bot configuration
        */
       getTelegramConfig: async () => {
-        const response = await $fetch<{ botUsername: string }>("/telegram/config", {
-          method: "GET",
-        });
+        const response = await $fetch<{ botUsername: string }>(
+          "/telegram/config",
+          {
+            method: "GET",
+          }
+        );
 
         return response;
       },
@@ -148,9 +152,12 @@ export const telegramClient = () => {
         await loadTelegramWidgetScript();
 
         // Get bot username from server
-        const configResponse = await $fetch<{ botUsername: string }>("/telegram/config", {
-          method: "GET",
-        });
+        const configResponse = await $fetch<{ botUsername: string }>(
+          "/telegram/config",
+          {
+            method: "GET",
+          }
+        );
 
         if (!configResponse.data) {
           throw new Error("Failed to get Telegram config");
@@ -189,7 +196,7 @@ export const telegramClient = () => {
         script.setAttribute("data-size", size);
         script.setAttribute("data-userpic", showUserPhoto.toString());
         script.setAttribute("data-radius", cornerRadius.toString());
-        script.setAttribute("data-onauth", callbackName + "(user)");
+        script.setAttribute("data-onauth", `${callbackName}(user)`);
 
         if (requestAccess) {
           script.setAttribute("data-request-access", "write");
@@ -225,9 +232,12 @@ export const telegramClient = () => {
         await loadTelegramWidgetScript();
 
         // Get bot username from server
-        const configResponse = await $fetch<{ botUsername: string }>("/telegram/config", {
-          method: "GET",
-        });
+        const configResponse = await $fetch<{ botUsername: string }>(
+          "/telegram/config",
+          {
+            method: "GET",
+          }
+        );
 
         if (!configResponse.data) {
           throw new Error("Failed to get Telegram config");
@@ -341,7 +351,9 @@ export const telegramClient = () => {
 
         const Telegram = (window as any).Telegram;
         if (!Telegram?.WebApp?.initData) {
-          throw new Error("Not running in Telegram Mini App or initData not available");
+          throw new Error(
+            "Not running in Telegram Mini App or initData not available"
+          );
         }
 
         const initData = Telegram.WebApp.initData;

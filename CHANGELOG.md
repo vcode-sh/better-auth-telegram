@@ -5,6 +5,50 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-10-01
+
+### Added
+
+- **Ultracite/Biome integration** for code quality and formatting
+  - Biome 2.2.4 (Rust-based linter and formatter)
+  - Ultracite 5.4.5 (AI-ready preset configuration)
+  - Lint-staged for pre-commit hooks
+  - VSCode integration for consistent formatting
+
+### Changed
+
+- **Code quality improvements**
+  - Converted all `interface` declarations to `type` for consistency
+  - Updated imports from `crypto` to `node:crypto` (Node.js modern imports)
+  - Improved code formatting and consistency across all files
+  - Better import ordering and organization
+- **Test improvements**
+  - Enhanced test reliability for widget loading scenarios
+  - Improved test coverage from 99.63% to **100%**
+  - Added 4 new tests (110 total)
+  - Fixed edge cases in hash generation tests using proper destructuring
+- **Documentation updates**
+  - Updated README.md with Vibe Code tone and personal touch
+  - Added "A word from the author" section
+  - Enhanced documentation with better humor and accessibility
+
+### Fixed
+
+- Improved test stability in happy-dom environment
+- Fixed script loading test race conditions
+- Better error handling coverage in client tests
+
+### Development
+
+- Added Biome configuration (`biome.jsonc`)
+- Added VSCode settings for consistent development experience
+- Configured lint-staged for automatic code formatting on commit
+- Disabled opinionated rules that conflict with Telegram API naming conventions
+
+### Breaking Changes
+
+None - v0.3.0 is fully backward compatible with v0.2.0
+
 ## [0.2.0] - 2025-10-01
 
 ### Added
