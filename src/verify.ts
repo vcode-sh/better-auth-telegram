@@ -55,6 +55,7 @@ export function validateTelegramAuthData(
 ): data is TelegramAuthData {
   return (
     typeof data === "object" &&
+    data !== null &&
     typeof data.id === "number" &&
     typeof data.first_name === "string" &&
     typeof data.auth_date === "number" &&

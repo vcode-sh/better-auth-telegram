@@ -419,19 +419,207 @@ if (!authData.id || !authData.first_name || !authData.hash) {
 
 ### 2. Rate Limiting
 
-Implement rate limiting on authentication endpoints:
+Rate limiting is **critical** for preventing brute force attacks and abuse. Implement rate limiting on authentication endpoints to protect against:
+- Credential stuffing attacks
+- Automated bot attacks
+- API abuse
+- DDoS attempts
+
+#### Next.js App Router Example
 
 ```typescript
-import rateLimit from "express-rate-limit";
+// app/api/auth/[...all]/route.ts
+import { auth } from "@/lib/auth";
+import { toNextJsHandler } from "better-auth/next-js";
+import { NextRequest, NextResponse } from "next/server";
 
+// Simple in-memory rate limiter (for serverless, use Redis)
+const rateLimit = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(ip: string, limit: number = 5, windowMs: number = 15 * 60 * 1000): boolean {
+  const now = Date.now();
+  const record = rateLimit.get(ip);
+
+  if (!record || now > record.resetTime) {
+    rateLimit.set(ip, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+
+  if (record.count >= limit) {
+    return false;
+  }
+
+  record.count++;
+  return true;
+}
+
+const handler = async (req: NextRequest) => {
+  // Apply rate limit only to Telegram endpoints
+  if (req.url.includes("/telegram/")) {
+    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+
+    if (!checkRateLimit(ip, 5, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
+      );
+    }
+  }
+
+  return toNextJsHandler(auth)(req);
+};
+
+export { handler as GET, handler as POST };
+```
+
+#### Express.js Example
+
+```typescript
+import express from "express";
+import rateLimit from "express-rate-limit";
+import { auth } from "./auth";
+
+const app = express();
+
+// Rate limiter for authentication endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per window
-  message: "Too many authentication attempts",
+  max: 5, // 5 requests per IP
+  message: "Too many authentication attempts. Please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Custom key generator (use IP + User-Agent for more security)
+  keyGenerator: (req) => {
+    return req.ip + req.get("User-Agent");
+  },
+  // Skip successful requests (only count failures)
+  skip: (req, res) => res.statusCode < 400,
 });
 
-app.use("/api/auth/telegram/*", authLimiter);
+// Apply only to Telegram auth endpoints
+app.use("/api/auth/telegram/signin", authLimiter);
+app.use("/api/auth/telegram/link", authLimiter);
+
+// Main auth handler
+app.all("/api/auth/*", (req, res) => {
+  return auth.handler(req, res);
+});
+
+app.listen(3000);
 ```
+
+#### Redis-based Rate Limiting (Production)
+
+For production serverless environments, use Redis:
+
+```typescript
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+// Create Redis rate limiter
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(5, "15 m"), // 5 requests per 15 minutes
+  analytics: true,
+});
+
+const handler = async (req: NextRequest) => {
+  if (req.url.includes("/telegram/")) {
+    const ip = req.headers.get("x-forwarded-for") || "anonymous";
+    const { success, limit, reset, remaining } = await ratelimit.limit(ip);
+
+    if (!success) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          limit,
+          remaining,
+          reset: new Date(reset),
+        },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": limit.toString(),
+            "X-RateLimit-Remaining": remaining.toString(),
+            "X-RateLimit-Reset": reset.toString(),
+          },
+        }
+      );
+    }
+  }
+
+  return toNextJsHandler(auth)(req);
+};
+```
+
+#### Cloudflare Workers Example
+
+```typescript
+// Cloudflare automatically rate limits, but you can add custom logic
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname.includes("/telegram/")) {
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      const rateLimitKey = `rate_limit:${ip}`;
+
+      // Use Cloudflare KV for rate limiting
+      const attempts = await env.KV.get(rateLimitKey);
+      const count = attempts ? parseInt(attempts) : 0;
+
+      if (count >= 5) {
+        return new Response("Too many requests", { status: 429 });
+      }
+
+      await env.KV.put(rateLimitKey, (count + 1).toString(), {
+        expirationTtl: 900, // 15 minutes
+      });
+    }
+
+    // Handle request
+    return auth.handler(request);
+  },
+};
+```
+
+#### Rate Limiting Best Practices
+
+1. **Different limits for different endpoints:**
+   - Sign in: 5 requests / 15 minutes
+   - Link account: 3 requests / 15 minutes (more sensitive)
+   - Config endpoint: 20 requests / minute (less sensitive)
+
+2. **Use distributed rate limiting in production:**
+   - Redis (Upstash, ElastiCache)
+   - Memcached
+   - Cloud services (Cloudflare, AWS WAF)
+
+3. **Include rate limit headers in responses:**
+   ```typescript
+   res.setHeader("X-RateLimit-Limit", "5");
+   res.setHeader("X-RateLimit-Remaining", remaining.toString());
+   res.setHeader("X-RateLimit-Reset", resetTime.toString());
+   ```
+
+4. **Consider IP + User-Agent for more accurate tracking:**
+   ```typescript
+   const key = `${ip}:${userAgent}`;
+   ```
+
+5. **Implement exponential backoff:**
+   ```typescript
+   const backoffMultiplier = Math.pow(2, failedAttempts);
+   const waitTime = baseWaitTime * backoffMultiplier;
+   ```
+
+6. **Monitor rate limit violations:**
+   ```typescript
+   if (!rateLimitCheck) {
+     logger.warn("Rate limit exceeded", { ip, endpoint });
+     metrics.increment("rate_limit.exceeded");
+   }
+   ```
 
 ### 3. Logging and Monitoring
 
