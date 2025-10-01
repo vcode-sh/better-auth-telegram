@@ -270,6 +270,86 @@ export const telegramClient = () => {
 
         container.appendChild(script);
       },
+
+      /**
+       * Sign in with Telegram Mini App
+       * @param initData - Raw initData string from Telegram.WebApp.initData
+       *
+       * @example
+       * ```ts
+       * // Inside a Telegram Mini App
+       * const initData = window.Telegram.WebApp.initData;
+       * const result = await signInWithMiniApp(initData);
+       * console.log("Signed in:", result);
+       * ```
+       */
+      signInWithMiniApp: async (initData: string) => {
+        const response = await $fetch("/telegram/miniapp/signin", {
+          method: "POST",
+          body: { initData },
+        });
+
+        return response;
+      },
+
+      /**
+       * Validate Telegram Mini App initData
+       * @param initData - Raw initData string from Telegram.WebApp.initData
+       * @returns Object with valid status and parsed data if valid
+       *
+       * @example
+       * ```ts
+       * const initData = window.Telegram.WebApp.initData;
+       * const result = await validateMiniApp(initData);
+       * if (result.data?.valid) {
+       *   console.log("User:", result.data.data?.user);
+       * }
+       * ```
+       */
+      validateMiniApp: async (initData: string) => {
+        const response = await $fetch<{
+          valid: boolean;
+          data: any;
+        }>("/telegram/miniapp/validate", {
+          method: "POST",
+          body: { initData },
+        });
+
+        return response;
+      },
+
+      /**
+       * Auto sign-in from Telegram Mini App
+       * Automatically retrieves initData from Telegram.WebApp and signs in
+       * Only works when running inside a Telegram Mini App
+       *
+       * @example
+       * ```ts
+       * // Auto-signin when Mini App launches
+       * try {
+       *   const result = await autoSignInFromMiniApp();
+       *   console.log("Auto signed in:", result);
+       * } catch (error) {
+       *   console.error("Not running in Mini App or auth failed");
+       * }
+       * ```
+       */
+      autoSignInFromMiniApp: async () => {
+        if (typeof window === "undefined") {
+          throw new Error("This method can only be called in browser");
+        }
+
+        const Telegram = (window as any).Telegram;
+        if (!Telegram?.WebApp?.initData) {
+          throw new Error("Not running in Telegram Mini App or initData not available");
+        }
+
+        const initData = Telegram.WebApp.initData;
+        return await $fetch("/telegram/miniapp/signin", {
+          method: "POST",
+          body: { initData },
+        });
+      },
     }),
   } satisfies BetterAuthClientPlugin;
 };

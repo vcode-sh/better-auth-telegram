@@ -1,9 +1,26 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
-import { verifyTelegramAuth, validateTelegramAuthData } from "./verify";
-import type { TelegramPluginOptions, TelegramAuthData } from "./types";
+import {
+  verifyTelegramAuth,
+  validateTelegramAuthData,
+  verifyMiniAppInitData,
+  parseMiniAppInitData,
+  validateMiniAppData,
+} from "./verify";
+import type {
+  TelegramPluginOptions,
+  TelegramAuthData,
+  TelegramMiniAppData,
+  TelegramMiniAppUser,
+} from "./types";
 
-export type { TelegramPluginOptions, TelegramAuthData } from "./types";
+export type {
+  TelegramPluginOptions,
+  TelegramAuthData,
+  TelegramMiniAppData,
+  TelegramMiniAppUser,
+  TelegramMiniAppChat,
+} from "./types";
 
 /**
  * Telegram authentication plugin for Better Auth
@@ -31,7 +48,14 @@ export const telegram = (options: TelegramPluginOptions) => {
     autoCreateUser = true,
     maxAuthAge = 86400,
     mapTelegramDataToUser,
+    miniApp,
   } = options;
+
+  // Mini Apps configuration
+  const miniAppEnabled = miniApp?.enabled ?? false;
+  const miniAppValidateInitData = miniApp?.validateInitData ?? true;
+  const miniAppAllowAutoSignin = miniApp?.allowAutoSignin ?? true;
+  const mapMiniAppDataToUser = miniApp?.mapMiniAppDataToUser;
 
   if (!botToken) {
     throw new Error("Telegram plugin: botToken is required");
@@ -360,9 +384,183 @@ export const telegram = (options: TelegramPluginOptions) => {
         async (ctx) => {
           return ctx.json({
             botUsername,
+            miniAppEnabled,
           });
         }
       ),
+
+      // Mini Apps endpoints (only available when enabled)
+      ...(miniAppEnabled
+        ? {
+            signInWithMiniApp: createAuthEndpoint(
+              "/telegram/miniapp/signin",
+              {
+                method: "POST",
+              },
+              async (ctx) => {
+                const body = await ctx.body;
+                const { initData } = body;
+
+                if (!initData || typeof initData !== "string") {
+                  return ctx.json(
+                    { error: "initData is required and must be a string" },
+                    { status: 400 }
+                  );
+                }
+
+                // Verify initData
+                if (
+                  miniAppValidateInitData &&
+                  !verifyMiniAppInitData(initData, botToken, maxAuthAge)
+                ) {
+                  return ctx.json(
+                    { error: "Invalid Mini App initData" },
+                    { status: 401 }
+                  );
+                }
+
+                // Parse initData
+                const data = parseMiniAppInitData(initData);
+
+                // Validate structure
+                if (!validateMiniAppData(data)) {
+                  return ctx.json(
+                    { error: "Invalid Mini App data structure" },
+                    { status: 400 }
+                  );
+                }
+
+                if (!data.user) {
+                  return ctx.json(
+                    { error: "No user data in initData" },
+                    { status: 400 }
+                  );
+                }
+
+                const miniAppUser = data.user;
+
+                // Map Mini App user data to user object
+                const defaultUserData = {
+                  name: miniAppUser.last_name
+                    ? `${miniAppUser.first_name} ${miniAppUser.last_name}`
+                    : miniAppUser.first_name,
+                  image: miniAppUser.photo_url,
+                  email: undefined, // Telegram doesn't provide email
+                };
+
+                const userData = mapMiniAppDataToUser
+                  ? mapMiniAppDataToUser(miniAppUser)
+                  : defaultUserData;
+
+                // Find existing account by telegramId
+                const existingAccount = await ctx.context.adapter.findOne({
+                  model: "account",
+                  where: [
+                    {
+                      field: "providerId",
+                      value: "telegram",
+                    },
+                    {
+                      field: "accountId",
+                      value: miniAppUser.id.toString(),
+                    },
+                  ],
+                });
+
+                let userId: string;
+
+                if (existingAccount) {
+                  // User already has Telegram linked
+                  userId = (existingAccount as any).userId;
+                } else if (autoCreateUser && miniAppAllowAutoSignin) {
+                  // Create new user
+                  const newUser = await ctx.context.adapter.create({
+                    model: "user",
+                    data: {
+                      ...userData,
+                      telegramId: miniAppUser.id.toString(),
+                      telegramUsername: miniAppUser.username,
+                    },
+                  });
+
+                  userId = newUser.id;
+
+                  // Create account
+                  await ctx.context.adapter.create({
+                    model: "account",
+                    data: {
+                      userId: newUser.id,
+                      providerId: "telegram",
+                      accountId: miniAppUser.id.toString(),
+                      telegramId: miniAppUser.id.toString(),
+                      telegramUsername: miniAppUser.username,
+                    },
+                  });
+                } else {
+                  return ctx.json(
+                    {
+                      error:
+                        "User not found and auto-signin is disabled for Mini Apps",
+                    },
+                    { status: 404 }
+                  );
+                }
+
+                // Create session
+                const session = await ctx.context.internalAdapter.createSession(
+                  userId,
+                  ctx
+                );
+
+                return ctx.json({
+                  user: await ctx.context.adapter.findOne({
+                    model: "user",
+                    where: [{ field: "id", value: userId }],
+                  }),
+                  session,
+                });
+              }
+            ),
+
+            validateMiniApp: createAuthEndpoint(
+              "/telegram/miniapp/validate",
+              {
+                method: "POST",
+              },
+              async (ctx) => {
+                const body = await ctx.body;
+                const { initData } = body;
+
+                if (!initData || typeof initData !== "string") {
+                  return ctx.json(
+                    { error: "initData is required and must be a string" },
+                    { status: 400 }
+                  );
+                }
+
+                const isValid = verifyMiniAppInitData(
+                  initData,
+                  botToken,
+                  maxAuthAge
+                );
+
+                if (!isValid) {
+                  return ctx.json({
+                    valid: false,
+                    data: null,
+                  });
+                }
+
+                const data = parseMiniAppInitData(initData);
+
+                return ctx.json({
+                  valid: true,
+                  data,
+                });
+              }
+            ),
+          }
+        : {}),
     },
   } satisfies BetterAuthPlugin;
 };

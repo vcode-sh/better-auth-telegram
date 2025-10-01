@@ -5,11 +5,14 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com).
 ## Features
 
 - 🔐 Sign in with Telegram Login Widget
+- 📱 **NEW:** Telegram Mini Apps support
 - 🔗 Link/unlink Telegram accounts to existing users
 - ✅ HMAC-SHA-256 verification for security
 - 🎨 Customizable login widget
 - 📦 Full TypeScript support
 - 🚀 Framework-agnostic
+- 🔄 Supports both callback and redirect flows
+- ⚡ Auto-signin for Mini Apps
 
 ## Installation
 
@@ -169,6 +172,95 @@ authClient.initTelegramWidget(
 await authClient.unlinkTelegram();
 ```
 
+### Telegram Mini Apps (NEW in v0.2.0)
+
+Authenticate users directly from Telegram Mini Apps with automatic sign-in:
+
+**Server configuration:**
+
+```typescript
+import { betterAuth } from "better-auth";
+import { telegram } from "better-auth-telegram";
+
+export const auth = betterAuth({
+  database: /* your database config */,
+  plugins: [
+    telegram({
+      botToken: process.env.TELEGRAM_BOT_TOKEN!,
+      botUsername: "your_bot_username",
+      miniApp: {
+        enabled: true,
+        validateInitData: true,
+        allowAutoSignin: true,
+      },
+    }),
+  ],
+});
+```
+
+**Client usage - Auto sign-in:**
+
+```typescript
+"use client";
+
+import { authClient } from "./auth-client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export function MiniAppAuth() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Automatically sign in when Mini App opens
+    async function autoSignIn() {
+      try {
+        const result = await authClient.autoSignInFromMiniApp();
+        console.log("Signed in:", result.user);
+        router.push("/dashboard");
+      } catch (error) {
+        console.error("Auto sign-in failed:", error);
+      }
+    }
+
+    autoSignIn();
+  }, [router]);
+
+  return <div>Signing in...</div>;
+}
+```
+
+**Manual sign-in with initData:**
+
+```typescript
+// Get initData from Telegram WebApp
+const initData = window.Telegram.WebApp.initData;
+
+// Sign in
+const result = await authClient.signInWithMiniApp(initData);
+console.log("User:", result.user);
+```
+
+**Validate initData without signing in:**
+
+```typescript
+const initData = window.Telegram.WebApp.initData;
+const validation = await authClient.validateMiniApp(initData);
+
+if (validation.data?.valid) {
+  console.log("User data:", validation.data.data.user);
+  console.log("Is premium:", validation.data.data.user?.is_premium);
+  console.log("Language:", validation.data.data.user?.language_code);
+}
+```
+
+**Mini App features:**
+- ✅ Automatic authentication from `Telegram.WebApp.initData`
+- ✅ Access to additional user data (language, premium status, etc.)
+- ✅ Chat context information (type, instance, start params)
+- ✅ Secure HMAC-SHA-256 verification
+- ✅ Auto-create users on first sign-in
+- ✅ Custom user data mapping
+
 ## Configuration Options
 
 ### Server Plugin Options
@@ -211,6 +303,39 @@ interface TelegramPluginOptions {
     email?: string;
     image?: string;
     [key: string]: any;
+  };
+
+  /**
+   * Telegram Mini Apps configuration (NEW in v0.2.0)
+   */
+  miniApp?: {
+    /**
+     * Enable Telegram Mini Apps support
+     * @default false
+     */
+    enabled?: boolean;
+
+    /**
+     * Validate initData from Mini Apps
+     * @default true
+     */
+    validateInitData?: boolean;
+
+    /**
+     * Allow automatic sign-in from Mini Apps
+     * @default true
+     */
+    allowAutoSignin?: boolean;
+
+    /**
+     * Custom function to map Mini App user data to user object
+     */
+    mapMiniAppDataToUser?: (data: TelegramMiniAppUser) => {
+      name?: string;
+      email?: string;
+      image?: string;
+      [key: string]: any;
+    };
   };
 }
 ```
