@@ -10,6 +10,18 @@
 
 Telegram authentication plugin for [Better Auth](https://better-auth.com).
 
+## A word from the author
+
+This is probably the most niche plugin you'll find for Better Auth. Not everyone needs Telegram auth. But if you do — well, someone had to build it.
+
+This is my first proper npm release. I figured it's time to stop lurking and actually ship something. Is it perfect? No. Does it work? Yes. Will I regret this? Probably.
+
+If you use it and something breaks, or if you just want to roast my code — hit me up on [X (@vcode_sh)](https://x.com/vcode_sh). I'm there, vibing through the chaos.
+
+Enjoy. Or don't. Either way, the package is out there now.
+
+— [Vibe Code](https://x.com/vcode_sh)
+
 ## Features
 
 - 🔐 Sign in with Telegram Login Widget
@@ -520,4 +532,4 @@ MIT
 
 ## Author
 
-Created by [Vibe Code](https://vcode.sh) - [hello@vcode.sh](mailto:hello@vcode.sh)
+Created by [Vibe Code](https://x.com/vcode_sh)
