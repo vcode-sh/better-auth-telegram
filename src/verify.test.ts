@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { verifyTelegramAuth, validateTelegramAuthData } from "./verify";
+import {
+  verifyTelegramAuth,
+  validateTelegramAuthData,
+  parseMiniAppInitData,
+  verifyMiniAppInitData,
+  validateMiniAppData,
+} from "./verify";
 import { createHash, createHmac } from "crypto";
-import type { TelegramAuthData } from "./types";
+import type { TelegramAuthData, TelegramMiniAppData } from "./types";
 
 describe("verifyTelegramAuth", () => {
   const BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
@@ -488,6 +494,352 @@ describe("validateTelegramAuthData", () => {
         expect(data.auth_date).toBe(1234567890);
         expect(data.hash).toBe("abc123");
       }
+    });
+  });
+});
+
+describe("parseMiniAppInitData", () => {
+  it("should parse minimal initData", () => {
+    const initData = "auth_date=1234567890&hash=abc123";
+    const result = parseMiniAppInitData(initData);
+
+    expect(result.auth_date).toBe(1234567890);
+    expect(result.hash).toBe("abc123");
+  });
+
+  it("should parse initData with user object", () => {
+    const user = {
+      id: 123456789,
+      first_name: "John",
+      last_name: "Doe",
+      username: "johndoe",
+    };
+    const initData = `user=${encodeURIComponent(JSON.stringify(user))}&auth_date=1234567890&hash=abc123`;
+    const result = parseMiniAppInitData(initData);
+
+    expect(result.user).toEqual(user);
+    expect(result.auth_date).toBe(1234567890);
+    expect(result.hash).toBe("abc123");
+  });
+
+  it("should parse initData with all fields", () => {
+    const user = {
+      id: 123456789,
+      first_name: "John",
+      language_code: "en",
+      is_premium: true,
+    };
+    const chat = {
+      id: 987654321,
+      type: "private",
+      title: "Test Chat",
+    };
+
+    const initData = [
+      `user=${encodeURIComponent(JSON.stringify(user))}`,
+      `chat=${encodeURIComponent(JSON.stringify(chat))}`,
+      "query_id=AAE123",
+      "chat_type=private",
+      "chat_instance=456",
+      "start_param=ref123",
+      "auth_date=1234567890",
+      "hash=abc123",
+    ].join("&");
+
+    const result = parseMiniAppInitData(initData);
+
+    expect(result.user).toEqual(user);
+    expect(result.chat).toEqual(chat);
+    expect(result.query_id).toBe("AAE123");
+    expect(result.chat_type).toBe("private");
+    expect(result.chat_instance).toBe("456");
+    expect(result.start_param).toBe("ref123");
+    expect(result.auth_date).toBe(1234567890);
+    expect(result.hash).toBe("abc123");
+  });
+
+  it("should handle invalid JSON gracefully", () => {
+    const initData = "user={invalid json}&auth_date=1234567890&hash=abc123";
+    const result = parseMiniAppInitData(initData);
+
+    expect(result.user).toBeUndefined();
+    expect(result.auth_date).toBe(1234567890);
+    expect(result.hash).toBe("abc123");
+  });
+
+  it("should parse can_send_after as number", () => {
+    const initData = "can_send_after=3600&auth_date=1234567890&hash=abc123";
+    const result = parseMiniAppInitData(initData);
+
+    expect(result.can_send_after).toBe(3600);
+    expect(typeof result.can_send_after).toBe("number");
+  });
+});
+
+describe("verifyMiniAppInitData", () => {
+  const BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
+
+  function createValidInitData(authDate: number = Math.floor(Date.now() / 1000)): string {
+    const user = {
+      id: 123456789,
+      first_name: "John",
+      username: "johndoe",
+    };
+
+    const params = new URLSearchParams({
+      user: JSON.stringify(user),
+      auth_date: authDate.toString(),
+      query_id: "AAE123",
+    });
+
+    // Calculate hash
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n");
+
+    const secretKey = createHmac("sha256", "WebAppData")
+      .update(BOT_TOKEN)
+      .digest();
+
+    const hash = createHmac("sha256", secretKey)
+      .update(dataCheckString)
+      .digest("hex");
+
+    params.append("hash", hash);
+    return params.toString();
+  }
+
+  describe("Valid initData", () => {
+    it("should return true for valid initData", () => {
+      const initData = createValidInitData();
+      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+
+      expect(result).toBe(true);
+    });
+
+    it("should verify initData within maxAge", () => {
+      const authDate = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+      const initData = createValidInitData(authDate);
+      const result = verifyMiniAppInitData(initData, BOT_TOKEN, 86400);
+
+      expect(result).toBe(true);
+    });
+
+    it("should verify minimal initData", () => {
+      const authDate = Math.floor(Date.now() / 1000);
+      const params = new URLSearchParams({
+        auth_date: authDate.toString(),
+      });
+
+      const dataCheckString = `auth_date=${authDate}`;
+      const secretKey = createHmac("sha256", "WebAppData")
+        .update(BOT_TOKEN)
+        .digest();
+
+      const hash = createHmac("sha256", secretKey)
+        .update(dataCheckString)
+        .digest("hex");
+
+      params.append("hash", hash);
+      const result = verifyMiniAppInitData(params.toString(), BOT_TOKEN);
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe("Invalid initData", () => {
+    it("should return false for missing hash", () => {
+      const initData = "auth_date=1234567890&user=%7B%22id%22%3A123%7D";
+      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false for missing auth_date", () => {
+      const initData = "user=%7B%22id%22%3A123%7D&hash=abc123";
+      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false for invalid hash", () => {
+      const authDate = Math.floor(Date.now() / 1000);
+      const initData = `auth_date=${authDate}&hash=invalid_hash`;
+      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false for tampered data", () => {
+      const validInitData = createValidInitData();
+      // Tamper with the data
+      const tamperedData = validInitData.replace("johndoe", "hacker");
+      const result = verifyMiniAppInitData(tamperedData, BOT_TOKEN);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false for expired initData", () => {
+      const authDate = Math.floor(Date.now() / 1000) - 90000; // >24 hours ago
+      const initData = createValidInitData(authDate);
+      const result = verifyMiniAppInitData(initData, BOT_TOKEN, 86400);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false with wrong bot token", () => {
+      const initData = createValidInitData();
+      const wrongToken = "987654321:WrongTokenHere";
+      const result = verifyMiniAppInitData(initData, wrongToken);
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("Security", () => {
+    it("should use WebAppData constant for secret key", () => {
+      // This tests that we use the correct secret key derivation
+      const authDate = Math.floor(Date.now() / 1000);
+      const params = new URLSearchParams({ auth_date: authDate.toString() });
+
+      // Wrong: using SHA256(token) like Login Widget
+      const wrongSecretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const wrongHash = createHmac("sha256", wrongSecretKey)
+        .update(`auth_date=${authDate}`)
+        .digest("hex");
+
+      params.append("hash", wrongHash);
+      const result = verifyMiniAppInitData(params.toString(), BOT_TOKEN);
+
+      // Should fail because wrong secret key derivation
+      expect(result).toBe(false);
+    });
+
+    it("should verify data-check-string alphabetical sorting", () => {
+      // Test that fields are sorted correctly
+      const authDate = Math.floor(Date.now() / 1000);
+      const params = new URLSearchParams();
+      params.append("query_id", "AAE123");
+      params.append("auth_date", authDate.toString());
+      params.append("chat_type", "private");
+
+      // Calculate with correct sorting
+      const dataCheckString = [
+        `auth_date=${authDate}`,
+        `chat_type=private`,
+        `query_id=AAE123`,
+      ].join("\n");
+
+      const secretKey = createHmac("sha256", "WebAppData")
+        .update(BOT_TOKEN)
+        .digest();
+
+      const hash = createHmac("sha256", secretKey)
+        .update(dataCheckString)
+        .digest("hex");
+
+      params.append("hash", hash);
+      const result = verifyMiniAppInitData(params.toString(), BOT_TOKEN);
+
+      expect(result).toBe(true);
+    });
+  });
+});
+
+describe("validateMiniAppData", () => {
+  describe("Valid data", () => {
+    it("should return true for minimal valid data", () => {
+      const data = {
+        auth_date: 1234567890,
+        hash: "abc123",
+      };
+
+      expect(validateMiniAppData(data)).toBe(true);
+    });
+
+    it("should return true for data with user", () => {
+      const data = {
+        user: {
+          id: 123456789,
+          first_name: "John",
+        },
+        auth_date: 1234567890,
+        hash: "abc123",
+      };
+
+      expect(validateMiniAppData(data)).toBe(true);
+    });
+
+    it("should return true for complete data", () => {
+      const data: TelegramMiniAppData = {
+        user: {
+          id: 123456789,
+          first_name: "John",
+          last_name: "Doe",
+          username: "johndoe",
+          language_code: "en",
+          is_premium: true,
+        },
+        query_id: "AAE123",
+        chat_type: "private",
+        auth_date: 1234567890,
+        hash: "abc123",
+      };
+
+      expect(validateMiniAppData(data)).toBe(true);
+    });
+  });
+
+  describe("Invalid data", () => {
+    it("should return false for null", () => {
+      expect(validateMiniAppData(null)).toBe(false);
+    });
+
+    it("should return false for undefined", () => {
+      expect(validateMiniAppData(undefined)).toBe(false);
+    });
+
+    it("should return false for missing auth_date", () => {
+      const data = {
+        hash: "abc123",
+      };
+
+      expect(validateMiniAppData(data)).toBe(false);
+    });
+
+    it("should return false for missing hash", () => {
+      const data = {
+        auth_date: 1234567890,
+      };
+
+      expect(validateMiniAppData(data)).toBe(false);
+    });
+
+    it("should return false for invalid user object", () => {
+      const data = {
+        user: {
+          // Missing id and first_name
+          username: "johndoe",
+        },
+        auth_date: 1234567890,
+        hash: "abc123",
+      };
+
+      expect(validateMiniAppData(data)).toBe(false);
+    });
+
+    it("should return false when user.id is string", () => {
+      const data = {
+        user: {
+          id: "123456789",
+          first_name: "John",
+        },
+        auth_date: 1234567890,
+        hash: "abc123",
+      };
+
+      expect(validateMiniAppData(data)).toBe(false);
     });
   });
 });

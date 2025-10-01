@@ -21,6 +21,14 @@ Complete documentation for the Telegram authentication plugin for Better Auth.
   - Session management
   - Framework-specific examples
 
+- **[Mini Apps Guide](./miniapps.md)** - **🆕 NEW in v0.2.0**
+  - Complete Telegram Mini Apps implementation
+  - Auto-authentication setup
+  - Step-by-step bot creation
+  - Testing with ngrok
+  - Full working examples
+  - Troubleshooting guide
+
 ### Reference
 
 - **[API Reference](./api-reference.md)** - Complete API documentation
@@ -132,10 +140,13 @@ export function LoginButton() {
 ## Features
 
 - ✅ Sign in with Telegram Login Widget
+- ✅ **NEW: Telegram Mini Apps support** (v0.2.0+)
 - ✅ Link/unlink Telegram accounts
 - ✅ HMAC-SHA-256 verification
 - ✅ Replay attack prevention
 - ✅ Customizable widget
+- ✅ Auto-authentication in Mini Apps
+- ✅ Access to premium status, language, and more
 - ✅ Full TypeScript support
 - ✅ Framework-agnostic
 - ✅ Works with all Better Auth adapters
@@ -171,6 +182,7 @@ docs/
 ├── README.md              # This file - documentation index
 ├── installation.md        # Complete installation guide
 ├── usage.md              # Usage examples and patterns
+├── miniapps.md           # 🆕 Mini Apps complete guide (v0.2.0+)
 ├── api-reference.md      # Complete API documentation
 ├── configuration.md      # Configuration options
 ├── security.md           # Security best practices

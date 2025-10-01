@@ -566,4 +566,178 @@ describe("telegramClient", () => {
       await expect(actions.getTelegramConfig()).rejects.toThrow("Not found");
     });
   });
+
+  describe("Mini Apps methods", () => {
+    describe("signInWithMiniApp", () => {
+      it("should call correct endpoint with initData", async () => {
+        const mockResponse = {
+          data: {
+            user: { id: "123", name: "Test User" },
+            session: { token: "session-token" },
+          },
+        };
+        mockFetch.mockResolvedValueOnce(mockResponse);
+
+        const actions = client.getActions(mockFetch);
+        const initData = "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
+
+        const result = await actions.signInWithMiniApp(initData);
+
+        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
+          method: "POST",
+          body: { initData },
+        });
+        expect(result).toEqual(mockResponse);
+      });
+
+      it("should handle errors", async () => {
+        const error = new Error("Invalid initData");
+        mockFetch.mockRejectedValueOnce(error);
+
+        const actions = client.getActions(mockFetch);
+        const initData = "invalid-data";
+
+        await expect(actions.signInWithMiniApp(initData)).rejects.toThrow("Invalid initData");
+      });
+    });
+
+    describe("validateMiniApp", () => {
+      it("should call validate endpoint with initData", async () => {
+        const mockResponse = {
+          data: {
+            valid: true,
+            data: {
+              user: { id: 123, first_name: "Test" },
+              auth_date: 1234567890,
+              hash: "abc123",
+            },
+          },
+        };
+        mockFetch.mockResolvedValueOnce(mockResponse);
+
+        const actions = client.getActions(mockFetch);
+        const initData = "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
+
+        const result = await actions.validateMiniApp(initData);
+
+        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/validate", {
+          method: "POST",
+          body: { initData },
+        });
+        expect(result).toEqual(mockResponse);
+      });
+
+      it("should return invalid for bad initData", async () => {
+        const mockResponse = {
+          data: {
+            valid: false,
+            data: null,
+          },
+        };
+        mockFetch.mockResolvedValueOnce(mockResponse);
+
+        const actions = client.getActions(mockFetch);
+        const initData = "invalid-data";
+
+        const result = await actions.validateMiniApp(initData);
+
+        expect(result.data?.valid).toBe(false);
+        expect(result.data?.data).toBeNull();
+      });
+
+      it("should handle errors", async () => {
+        const error = new Error("Server error");
+        mockFetch.mockRejectedValueOnce(error);
+
+        const actions = client.getActions(mockFetch);
+
+        await expect(actions.validateMiniApp("some-data")).rejects.toThrow("Server error");
+      });
+    });
+
+    describe("autoSignInFromMiniApp", () => {
+      it("should throw if not in browser", async () => {
+        // Mock window as undefined
+        const originalWindow = global.window;
+        delete (global as any).window;
+
+        const actions = client.getActions(mockFetch);
+
+        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
+          "This method can only be called in browser"
+        );
+
+        // Restore window
+        (global as any).window = originalWindow;
+      });
+
+      it("should throw if Telegram.WebApp not available", async () => {
+        // Mock window without Telegram
+        (window as any).Telegram = undefined;
+
+        const actions = client.getActions(mockFetch);
+
+        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
+          "Not running in Telegram Mini App or initData not available"
+        );
+      });
+
+      it("should throw if initData not available", async () => {
+        // Mock Telegram without initData
+        (window as any).Telegram = {
+          WebApp: {
+            initData: "",
+          },
+        };
+
+        const actions = client.getActions(mockFetch);
+
+        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
+          "Not running in Telegram Mini App or initData not available"
+        );
+      });
+
+      it("should sign in with Telegram.WebApp.initData", async () => {
+        const mockInitData = "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
+        (window as any).Telegram = {
+          WebApp: {
+            initData: mockInitData,
+          },
+        };
+
+        const mockResponse = {
+          data: {
+            user: { id: "123", name: "Test User" },
+            session: { token: "session-token" },
+          },
+        };
+        mockFetch.mockResolvedValueOnce(mockResponse);
+
+        const actions = client.getActions(mockFetch);
+        const result = await actions.autoSignInFromMiniApp();
+
+        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
+          method: "POST",
+          body: { initData: mockInitData },
+        });
+        expect(result).toEqual(mockResponse);
+      });
+
+      it("should handle errors from API", async () => {
+        const mockInitData = "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
+        (window as any).Telegram = {
+          WebApp: {
+            initData: mockInitData,
+          },
+        };
+
+        const error = new Error("Authentication failed");
+        mockFetch.mockRejectedValueOnce(error);
+
+        const actions = client.getActions(mockFetch);
+
+        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow("Authentication failed");
+      });
+    });
+  });
 });

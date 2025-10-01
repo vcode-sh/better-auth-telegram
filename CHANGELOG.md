@@ -5,7 +5,80 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2025-10-01
+## [0.2.0] - 2025-10-01
+
+### Added
+
+- **Telegram Mini Apps support**
+  - New `miniApp` configuration option in plugin settings
+  - `signInWithMiniApp()` client method for Mini App authentication
+  - `validateMiniApp()` client method for initData validation
+  - `autoSignInFromMiniApp()` client method for automatic sign-in
+  - `POST /telegram/miniapp/signin` server endpoint
+  - `POST /telegram/miniapp/validate` server endpoint
+  - Support for Telegram.WebApp.initData parsing and validation
+- **New types for Mini Apps**
+  - `TelegramMiniAppUser` - User data from Mini Apps
+  - `TelegramMiniAppChat` - Chat information from Mini Apps
+  - `TelegramMiniAppData` - Complete initData structure
+  - Mini App configuration options in `TelegramPluginOptions`
+- **Enhanced verification**
+  - `verifyMiniAppInitData()` - HMAC-SHA-256 verification for Mini Apps
+  - `parseMiniAppInitData()` - Parse URL-encoded initData string
+  - `validateMiniAppData()` - Validate Mini App data structure
+  - Support for WebAppData secret key derivation (different from Login Widget)
+- **Additional user fields from Mini Apps**
+  - `language_code` - User's language preference
+  - `is_premium` - Telegram Premium status
+  - `is_bot` - Bot account indicator
+  - `allows_write_to_pm` - PM permission status
+- **Mini App context data**
+  - `query_id` - Unique Mini App session ID
+  - `start_param` - Start parameter from deep links
+  - `chat_type` - Type of chat (sender/private/group/etc.)
+  - `chat_instance` - Unique chat identifier
+  - `chat` - Full chat object with details
+  - `receiver` - Chat partner information
+  - `can_send_after` - Message sending delay
+
+### Changed
+
+- `GET /telegram/config` now returns `miniAppEnabled` flag
+- Improved test coverage from 95.42% to 97%
+- Added 35 new tests (71 → 106 tests total)
+
+### Security
+
+- Different HMAC secret key derivation for Mini Apps vs Login Widget
+- Mini Apps use `HMAC-SHA256("WebAppData", bot_token)` for secret key
+- Login Widget uses `SHA256(bot_token)` for secret key
+- Both methods maintain same security level with replay attack prevention
+
+### Configuration
+
+Mini Apps can be enabled by adding the `miniApp` option:
+
+```typescript
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,
+  botUsername: "your_bot",
+  miniApp: {
+    enabled: true,
+    validateInitData: true, // default
+    allowAutoSignin: true,  // default
+    mapMiniAppDataToUser: (user) => ({
+      name: user.username || user.first_name,
+      // custom mapping...
+    }),
+  },
+})
+```
+
+### Breaking Changes
+
+None - v0.2.0 is fully backward compatible with v0.1.0
+
+## [0.1.0] - 2025-09-30
 
 ### Added
 
