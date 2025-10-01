@@ -7,3 +7,4 @@ dist
 info
 .mcp.json
 .claude
+.npmrc

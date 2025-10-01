@@ -30,6 +30,8 @@ yarn add better-auth-telegram
 3. Save the bot token
 4. Send `/setdomain` to @BotFather and provide your website domain
 
+**Note:** For local development, you'll need to use a tunneling service like [ngrok](https://ngrok.com) since Telegram requires HTTPS and a public domain.
+
 ### 2. Configure Better Auth
 
 **Server-side (`auth.ts`):**
@@ -39,7 +41,7 @@ import { betterAuth } from "better-auth";
 import { telegram } from "better-auth-telegram";
 
 export const auth = betterAuth({
-  // ... other options
+  database: /* your database config */,
   plugins: [
     telegram({
       botToken: process.env.TELEGRAM_BOT_TOKEN!,
@@ -49,28 +51,59 @@ export const auth = betterAuth({
 });
 ```
 
-**Client-side:**
+**Client-side (`auth-client.ts`):**
 
 ```typescript
 import { createAuthClient } from "better-auth/client";
 import { telegramClient } from "better-auth-telegram/client";
 
 export const authClient = createAuthClient({
+  baseURL: typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL,
   plugins: [telegramClient()],
 });
+```
+
+### 3. Database Setup
+
+The plugin extends Better Auth's schema with Telegram-specific fields. If using Prisma, add these fields to your schema:
+
+```prisma
+model User {
+  // ... other Better Auth fields
+  telegramId       String?
+  telegramUsername String?
+}
+
+model Account {
+  // ... other Better Auth fields
+  telegramId       String?
+  telegramUsername String?
+}
+```
+
+Then run migrations:
+
+```bash
+npx prisma migrate dev
 ```
 
 ## Usage
 
 ### Sign In with Telegram
 
-**React example:**
+**React/Next.js example:**
 
 ```tsx
-import { authClient } from "./auth-client";
-import { useEffect } from "react";
+"use client";
 
-function TelegramLogin() {
+import { authClient } from "./auth-client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+export function TelegramLoginButton() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     authClient.initTelegramWidget(
       "telegram-login-container",
@@ -81,13 +114,21 @@ function TelegramLogin() {
       },
       async (authData) => {
         const result = await authClient.signInWithTelegram(authData);
-        console.log("Signed in:", result);
-        // Redirect or update UI
+        if (result.error) {
+          setError(result.error.message);
+        } else {
+          router.push("/dashboard");
+        }
       }
     );
-  }, []);
+  }, [router]);
 
-  return <div id="telegram-login-container"></div>;
+  return (
+    <div>
+      <div id="telegram-login-container"></div>
+      {error && <p className="text-red-500">{error}</p>}
+    </div>
+  );
 }
 ```
 
@@ -260,10 +301,12 @@ await authClient.signInWithTelegram(authData);
 
 ### Server Endpoints
 
-- `POST /telegram/signin` - Sign in with Telegram
-- `POST /telegram/link` - Link Telegram to current user (requires auth)
-- `POST /telegram/unlink` - Unlink Telegram account (requires auth)
-- `GET /telegram/config` - Get bot configuration
+The plugin adds the following endpoints to your Better Auth instance:
+
+- `POST /telegram/signin` - Sign in with Telegram authentication data
+- `POST /telegram/link` - Link Telegram to current user (requires authentication)
+- `POST /telegram/unlink` - Unlink Telegram account (requires authentication)
+- `GET /telegram/config` - Get bot configuration (returns bot username)
 
 ### Client Methods
 
@@ -279,19 +322,20 @@ await authClient.signInWithTelegram(authData);
 The plugin extends the Better Auth schema with the following fields:
 
 **User table:**
-- `telegramId` (string, optional)
-- `telegramUsername` (string, optional)
+- `telegramId` (string, optional) - Telegram user ID
+- `telegramUsername` (string, optional) - Telegram username
 
 **Account table:**
-- `telegramId` (string, optional)
-- `telegramUsername` (string, optional)
+- `telegramId` (string, optional) - Telegram user ID
+- `telegramUsername` (string, optional) - Telegram username
 
 ## Security
 
-- Uses HMAC-SHA-256 to verify authentication data
-- Checks `auth_date` to prevent replay attacks (default: 24 hours)
+- Uses HMAC-SHA-256 to verify authentication data integrity
+- Checks `auth_date` to prevent replay attacks (default: 24 hours max age)
 - Validates all required fields before processing
 - Bot token is never exposed to the client
+- Secret key for HMAC is derived from SHA-256 hash of bot token
 
 ## Troubleshooting
 
@@ -300,32 +344,47 @@ The plugin extends the Better Auth schema with the following fields:
 Make sure you:
 1. Set domain with @BotFather using `/setdomain`
 2. Provided correct `botUsername` (without @)
-3. Container element exists in DOM
+3. Container element exists in DOM before calling `initTelegramWidget`
+4. Using HTTPS and a public domain (use ngrok for local development)
 
 ### Authentication fails
 
-- Verify bot token is correct
-- Check that domain is set in @BotFather
+- Verify bot token is correct in environment variables
+- Check that domain matches what you set in @BotFather
 - Ensure `auth_date` is not too old (default max: 24 hours)
+- Check browser console for error messages
+
+### Local Development Issues
+
+For local development with Telegram:
+1. Install ngrok: `npm install -g ngrok`
+2. Start your dev server: `npm run dev`
+3. Start ngrok tunnel: `ngrok http 3000`
+4. Use the ngrok URL in @BotFather's `/setdomain`
+5. Set `NEXT_PUBLIC_APP_URL` to your ngrok URL
 
 ## Examples
 
-Check out the [examples](./examples) directory for:
+Check out the [examples](./examples) directory for complete implementations:
 - Next.js App Router
 - Next.js Pages Router
 - React SPA
 - Vanilla JavaScript
 
-## License
-
-MIT
-
-## Contributing
-
-Contributions are welcome! Please open an issue or PR.
-
 ## Links
 
 - [Better Auth Documentation](https://better-auth.com)
 - [Telegram Login Widget Documentation](https://core.telegram.org/widgets/login)
-- [GitHub Repository](https://github.com/your-username/better-auth-telegram)
+- [GitHub Repository](https://github.com/vcode-sh/better-auth-telegram)
+
+## Contributing
+
+Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/vcode-sh/better-auth-telegram).
+
+## License
+
+MIT
+
+## Author
+
+Created by [Vibe Code](https://vcode.sh) - [hello@vcode.sh](mailto:hello@vcode.sh)

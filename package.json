@@ -31,8 +31,16 @@
     "plugin",
     "typescript"
   ],
-  "author": "",
+  "author": "Vibe Code <hello@vcode.sh> (https://vcode.sh)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vcode-sh/better-auth-telegram.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vcode-sh/better-auth-telegram/issues"
+  },
+  "homepage": "https://github.com/vcode-sh/better-auth-telegram#readme",
   "peerDependencies": {
     "better-auth": "^1.0.0"
   },
