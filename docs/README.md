@@ -159,7 +159,7 @@ export function LoginButton() {
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22+ (recommended: 22.x or 24.x)
 - Better Auth v1.0.0+
 - HTTPS (required by Telegram)
 - Public domain (use ngrok for local dev)

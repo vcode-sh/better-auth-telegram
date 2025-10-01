@@ -6,7 +6,7 @@ This guide will walk you through installing and setting up the better-auth-teleg
 
 Before you begin, make sure you have:
 
-- Node.js 18+ installed
+- Node.js 22+ installed (recommended: 22.x or 24.x)
 - A Better Auth project set up
 - A Telegram account
 
