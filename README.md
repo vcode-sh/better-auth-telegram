@@ -12,27 +12,31 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com).
 
 ## A word from the author
 
-This is probably the most niche plugin you'll find for Better Auth. Not everyone needs Telegram auth. But if you do — well, someone had to build it.
+Better Auth saved my ass. Repeatedly. Like an embarrassing number of times.
 
-This is my first proper npm release. I figured it's time to stop lurking and actually ship something. Is it perfect? No. Does it work? Yes. Will I regret this? Probably.
+When your auth library becomes your life support, you either say thank you or you build something back. I built a Telegram plugin. Nobody asked for it. Some people need it. That's close enough.
 
-If you use it and something breaks, or if you just want to roast my code — hit me up on [X (@vcode_sh)](https://x.com/vcode_sh). I'm there, vibing through the chaos.
+First npm package. Shipped it scared. 110 tests. 100% coverage. Obsessive? Maybe. But if I'm going down, I'm going down with green checkmarks.
 
-Enjoy. Or don't. Either way, the package is out there now.
+Knowledge optional. Vibes mandatory. TypeScript reluctantly involved.
+
+If it breaks, roast me on [X (@vcode_sh)](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+
+Now go authenticate some Telegram users. Or don't. I'm a README, not a cop.
 
 — [Vibe Code](https://x.com/vcode_sh)
 
 ## Features
 
-- 🔐 Sign in with Telegram Login Widget
-- 📱 **NEW:** Telegram Mini Apps support
-- 🔗 Link/unlink Telegram accounts to existing users
-- ✅ HMAC-SHA-256 verification for security
-- 🎨 Customizable login widget
-- 📦 Full TypeScript support
-- 🚀 Framework-agnostic
-- 🔄 Supports both callback and redirect flows
-- ⚡ Auto-signin for Mini Apps
+- 🔐 Sign in with Telegram Login Widget (the button that actually works)
+- 📱 **NEW:** Telegram Mini Apps support (because why not make it more complicated)
+- 🔗 Link/unlink Telegram accounts to existing users (flexibility is key, or so they say)
+- ✅ HMAC-SHA-256 verification (security theatre, but the good kind)
+- 🎨 Customizable login widget (make it pretty, or don't)
+- 📦 Full TypeScript support (types everywhere. sleep nowhere.)
+- 🚀 Framework-agnostic (works with React, Vue, Svelte, vanilla JS, or whatever's trendy this week)
+- 🔄 Supports both callback and redirect flows (because OAuth has trust issues)
+- ⚡ Auto-signin for Mini Apps (one less click. revolutionary.)
 
 ## Installation
 
@@ -44,16 +48,18 @@ pnpm add better-auth-telegram
 yarn add better-auth-telegram
 ```
 
+Pick your poison. They all install the same package.
+
 ## Setup
 
 ### 1. Create a Telegram Bot
 
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow the instructions
-3. Save the bot token
+1. Message [@BotFather](https://t.me/botfather) on Telegram (yes, you talk to a bot to create a bot)
+2. Send `/newbot` and follow the instructions (it's like naming a child, but less permanent)
+3. Save the bot token (lose it and you start over. no pressure.)
 4. Send `/setdomain` to @BotFather and provide your website domain
 
-**Note:** For local development, you'll need to use a tunneling service like [ngrok](https://ngrok.com) since Telegram requires HTTPS and a public domain.
+**Note:** For local development, you'll need a tunneling service like [ngrok](https://ngrok.com) because Telegram demands HTTPS and a public domain. Localhost? Never heard of it.
 
 ### 2. Configure Better Auth
 
@@ -88,7 +94,9 @@ export const authClient = createAuthClient({
 
 ### 3. Database Setup
 
-The plugin extends Better Auth's schema with Telegram-specific fields. If using Prisma, add these fields to your schema:
+The plugin extends Better Auth's schema with Telegram-specific fields. Because of course it does.
+
+If using Prisma, add these fields to your schema:
 
 ```prisma
 model User {
@@ -104,7 +112,7 @@ model Account {
 }
 ```
 
-Then run migrations:
+Then run migrations and pray nothing breaks:
 
 ```bash
 npx prisma migrate dev
@@ -114,7 +122,7 @@ npx prisma migrate dev
 
 ### Sign In with Telegram
 
-**React/Next.js example:**
+**React/Next.js example** (because everyone uses Next.js now, apparently):
 
 ```tsx
 "use client";
@@ -155,7 +163,7 @@ export function TelegramLoginButton() {
 }
 ```
 
-**Vanilla JavaScript:**
+**Vanilla JavaScript** (for the purists):**
 
 ```javascript
 authClient.initTelegramWidget(
@@ -167,6 +175,8 @@ authClient.initTelegramWidget(
   }
 );
 ```
+
+No framework. No build step. Just vibes.
 
 ### Link Telegram to Existing Account
 
@@ -194,7 +204,7 @@ await authClient.unlinkTelegram();
 
 ### Telegram Mini Apps (NEW in v0.2.0)
 
-Authenticate users directly from Telegram Mini Apps with automatic sign-in:
+Authenticate users directly from Telegram Mini Apps. Because regular OAuth wasn't confusing enough.
 
 **Server configuration:**
 
@@ -274,12 +284,12 @@ if (validation.data?.valid) {
 ```
 
 **Mini App features:**
-- ✅ Automatic authentication from `Telegram.WebApp.initData`
-- ✅ Access to additional user data (language, premium status, etc.)
-- ✅ Chat context information (type, instance, start params)
+- ✅ Automatic authentication from `Telegram.WebApp.initData` (it just works™)
+- ✅ Access to additional user data (language, premium status, etc.) (stalk your users responsibly)
+- ✅ Chat context information (type, instance, start params) (context is king)
 - ✅ Secure HMAC-SHA-256 verification
-- ✅ Auto-create users on first sign-in
-- ✅ Custom user data mapping
+- ✅ Auto-create users on first sign-in (onboarding speedrun)
+- ✅ Custom user data mapping (map it your way)
 
 ## Configuration Options
 
@@ -478,57 +488,66 @@ The plugin extends the Better Auth schema with the following fields:
 
 - Uses HMAC-SHA-256 to verify authentication data integrity
 - Checks `auth_date` to prevent replay attacks (default: 24 hours max age)
-- Validates all required fields before processing
-- Bot token is never exposed to the client
-- Secret key for HMAC is derived from SHA-256 hash of bot token
+- Validates all required fields before processing (no vibes, just validation)
+- Bot token is never exposed to the client (obviously)
+- Secret key for HMAC is derived from SHA-256 hash of bot token (inception, but for hashing)
+
+Is it bulletproof? No. Is it better than storing passwords in plain text? Absolutely.
 
 ## Troubleshooting
 
 ### Widget not showing
 
-Make sure you:
-1. Set domain with @BotFather using `/setdomain`
-2. Provided correct `botUsername` (without @)
-3. Container element exists in DOM before calling `initTelegramWidget`
-4. Using HTTPS and a public domain (use ngrok for local development)
+Before panicking, check:
+1. Did you set domain with @BotFather using `/setdomain`? (easy to forget, trust me)
+2. Is `botUsername` correct? (without the @, Telegram is picky)
+3. Does the container element exist in DOM before calling `initTelegramWidget`? (timing is everything)
+4. Are you using HTTPS and a public domain? (localhost doesn't count, use ngrok)
 
 ### Authentication fails
 
-- Verify bot token is correct in environment variables
-- Check that domain matches what you set in @BotFather
-- Ensure `auth_date` is not too old (default max: 24 hours)
-- Check browser console for error messages
+The usual suspects:
+- Bot token wrong in env variables (copy-paste errors are a programmer's best friend)
+- Domain doesn't match what you told @BotFather (consistency matters)
+- `auth_date` too old (default max: 24 hours, no time travel allowed)
+- Check browser console (errors hide there like shy children)
 
 ### Local Development Issues
 
-For local development with Telegram:
+Telegram hates localhost. Here's the workaround:
 1. Install ngrok: `npm install -g ngrok`
 2. Start your dev server: `npm run dev`
 3. Start ngrok tunnel: `ngrok http 3000`
 4. Use the ngrok URL in @BotFather's `/setdomain`
 5. Set `NEXT_PUBLIC_APP_URL` to your ngrok URL
 
+Yes, it's annoying. No, there's no better way. Welcome to OAuth.
+
 ## Examples
 
 Check out the [examples](./examples) directory for complete implementations:
-- Next.js App Router
-- Next.js Pages Router
-- React SPA
-- Vanilla JavaScript
+- Next.js App Router (the new hotness)
+- Next.js Pages Router (the old reliable)
+- React SPA (classic)
+- Vanilla JavaScript (respect)
+
+Or don't. You probably know what you're doing.
 
 ## Links
 
-- [Better Auth Documentation](https://better-auth.com)
-- [Telegram Login Widget Documentation](https://core.telegram.org/widgets/login)
-- [GitHub Repository](https://github.com/vcode-sh/better-auth-telegram)
+- [Better Auth Documentation](https://better-auth.com) — the thing this plugin plugs into
+- [Telegram Login Widget Docs](https://core.telegram.org/widgets/login) — official Telegram docs (surprisingly readable)
+- [GitHub Repository](https://github.com/vcode-sh/better-auth-telegram) — where the code lives
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/vcode-sh/better-auth-telegram).
+Found a bug? Have an idea? Want to roast my TypeScript?
+
+Open an issue or PR on [GitHub](https://github.com/vcode-sh/better-auth-telegram). All contributions welcome. Even the snarky ones.
 
 ## License
 
-MIT
+MIT — do whatever you want with it. I'm not your lawyer.
 
 ## Author
 
