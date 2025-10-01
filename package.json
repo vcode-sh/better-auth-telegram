@@ -39,8 +39,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "better-auth": "^1.0.0",
+    "node-loader": "^2.1.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
-  },
-  "dependencies": {}
+  }
 }
