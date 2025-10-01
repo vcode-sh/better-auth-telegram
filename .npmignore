@@ -1,0 +1,12 @@
+src
+examples
+tsconfig.json
+tsup.config.ts
+.gitignore
+*.log
+.DS_Store
+node_modules
+.env
+.env.local
+mcp.json
+.claude
