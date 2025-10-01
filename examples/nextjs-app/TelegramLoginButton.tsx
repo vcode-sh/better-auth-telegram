@@ -3,9 +3,9 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "../lib/auth-client";
-import { useRouter } from "next/navigation";
 
 export function TelegramLoginButton() {
   const router = useRouter();
@@ -28,40 +28,31 @@ export function TelegramLoginButton() {
           setError(null);
 
           try {
-            const result = await authClient.signInWithTelegram(authData);
-            console.log("Signed in successfully:", result);
+            const _result = await authClient.signInWithTelegram(authData);
 
             // Redirect to dashboard or home
             router.push("/dashboard");
-          } catch (err) {
-            console.error("Sign in failed:", err);
+          } catch (_err) {
             setError("Failed to sign in with Telegram");
           } finally {
             setLoading(false);
           }
         }
       )
-      .catch((err) => {
-        console.error("Failed to initialize widget:", err);
+      .catch((_err) => {
         setError("Failed to load Telegram login widget");
       });
   }, [router]);
 
   return (
     <div className="flex flex-col items-center space-y-4">
-      <div id="telegram-login-container"></div>
+      <div id="telegram-login-container" />
 
       {loading && (
-        <div className="text-sm text-gray-600">
-          Signing in with Telegram...
-        </div>
+        <div className="text-gray-600 text-sm">Signing in with Telegram...</div>
       )}
 
-      {error && (
-        <div className="text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {error && <div className="text-red-600 text-sm">{error}</div>}
     </div>
   );
 }

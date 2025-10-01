@@ -1,25 +1,20 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
+import type { TelegramAuthData, TelegramPluginOptions } from "./types";
 import {
-  verifyTelegramAuth,
-  validateTelegramAuthData,
-  verifyMiniAppInitData,
   parseMiniAppInitData,
   validateMiniAppData,
+  validateTelegramAuthData,
+  verifyMiniAppInitData,
+  verifyTelegramAuth,
 } from "./verify";
-import type {
-  TelegramPluginOptions,
-  TelegramAuthData,
-  TelegramMiniAppData,
-  TelegramMiniAppUser,
-} from "./types";
 
 export type {
-  TelegramPluginOptions,
   TelegramAuthData,
+  TelegramMiniAppChat,
   TelegramMiniAppData,
   TelegramMiniAppUser,
-  TelegramMiniAppChat,
+  TelegramPluginOptions,
 } from "./types";
 
 /**
@@ -229,10 +224,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           const session = ctx.context.session;
 
           if (!session?.user?.id) {
-            return ctx.json(
-              { error: "Not authenticated" },
-              { status: 401 }
-            );
+            return ctx.json({ error: "Not authenticated" }, { status: 401 });
           }
 
           // Validate auth data
@@ -274,16 +266,25 @@ export const telegram = (options: TelegramPluginOptions) => {
             ],
           });
 
-          if (existingAccount && (existingAccount as any).userId !== session.user.id) {
+          if (
+            existingAccount &&
+            (existingAccount as any).userId !== session.user.id
+          ) {
             return ctx.json(
-              { error: "This Telegram account is already linked to another user" },
+              {
+                error:
+                  "This Telegram account is already linked to another user",
+              },
               { status: 409 }
             );
           }
 
           if (existingAccount) {
             return ctx.json(
-              { error: "This Telegram account is already linked to your account" },
+              {
+                error:
+                  "This Telegram account is already linked to your account",
+              },
               { status: 409 }
             );
           }
@@ -326,10 +327,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           const session = ctx.context.session;
 
           if (!session?.user?.id) {
-            return ctx.json(
-              { error: "Not authenticated" },
-              { status: 401 }
-            );
+            return ctx.json({ error: "Not authenticated" }, { status: 401 });
           }
 
           // Find and delete Telegram account
@@ -381,12 +379,11 @@ export const telegram = (options: TelegramPluginOptions) => {
         {
           method: "GET",
         },
-        async (ctx) => {
-          return ctx.json({
+        async (ctx) =>
+          ctx.json({
             botUsername,
             miniAppEnabled,
-          });
-        }
+          })
       ),
 
       // Mini Apps endpoints (only available when enabled)

@@ -30,15 +30,13 @@ export function TelegramLinkButton() {
             await authClient.linkTelegram(authData);
             setSuccess(true);
           } catch (err: any) {
-            console.error("Link failed:", err);
             setError(err?.message || "Failed to link Telegram account");
           } finally {
             setLoading(false);
           }
         }
       )
-      .catch((err) => {
-        console.error("Failed to initialize widget:", err);
+      .catch((_err) => {
         setError("Failed to load Telegram widget");
       });
   }, []);
@@ -52,7 +50,6 @@ export function TelegramLinkButton() {
       setSuccess(false);
       window.location.reload(); // Refresh to show link button again
     } catch (err: any) {
-      console.error("Unlink failed:", err);
       setError(err?.message || "Failed to unlink Telegram account");
     } finally {
       setLoading(false);
@@ -61,21 +58,19 @@ export function TelegramLinkButton() {
 
   return (
     <div className="flex flex-col space-y-4">
-      <h3 className="text-lg font-semibold">Link Telegram Account</h3>
+      <h3 className="font-semibold text-lg">Link Telegram Account</h3>
 
-      {!success && (
-        <div id="telegram-link-container"></div>
-      )}
+      {!success && <div id="telegram-link-container" />}
 
       {success && (
         <div className="space-y-2">
-          <div className="text-sm text-green-600">
+          <div className="text-green-600 text-sm">
             ✓ Telegram account linked successfully!
           </div>
           <button
-            onClick={handleUnlink}
+            className="rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600 disabled:opacity-50"
             disabled={loading}
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+            onClick={handleUnlink}
           >
             {loading ? "Unlinking..." : "Unlink Telegram"}
           </button>
@@ -83,16 +78,10 @@ export function TelegramLinkButton() {
       )}
 
       {loading && !success && (
-        <div className="text-sm text-gray-600">
-          Processing...
-        </div>
+        <div className="text-gray-600 text-sm">Processing...</div>
       )}
 
-      {error && (
-        <div className="text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {error && <div className="text-red-600 text-sm">{error}</div>}
     </div>
   );
 }

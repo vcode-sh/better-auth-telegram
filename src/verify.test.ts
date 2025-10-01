@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import {
-  verifyTelegramAuth,
-  validateTelegramAuthData,
-  parseMiniAppInitData,
-  verifyMiniAppInitData,
-  validateMiniAppData,
-} from "./verify";
-import { createHash, createHmac } from "crypto";
+import { createHash, createHmac } from "node:crypto";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { TelegramAuthData, TelegramMiniAppData } from "./types";
+import {
+  parseMiniAppInitData,
+  validateMiniAppData,
+  validateTelegramAuthData,
+  verifyMiniAppInitData,
+  verifyTelegramAuth,
+} from "./verify";
 
 describe("verifyTelegramAuth", () => {
-  const BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
+  const BotToken = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
   let validAuthData: TelegramAuthData;
 
   beforeEach(() => {
@@ -28,10 +28,13 @@ describe("verifyTelegramAuth", () => {
     // Generate valid hash
     const dataCheckString = Object.keys(dataWithoutHash)
       .sort()
-      .map((key) => `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`)
+      .map(
+        (key) =>
+          `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`
+      )
       .join("\n");
 
-    const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+    const secretKey = createHash("sha256").update(BotToken).digest();
     const hash = createHmac("sha256", secretKey)
       .update(dataCheckString)
       .digest("hex");
@@ -44,7 +47,7 @@ describe("verifyTelegramAuth", () => {
 
   describe("Valid authentication", () => {
     it("should return true for valid auth data", () => {
-      const result = verifyTelegramAuth(validAuthData, BOT_TOKEN);
+      const result = verifyTelegramAuth(validAuthData, BotToken);
       expect(result).toBe(true);
     });
 
@@ -61,26 +64,23 @@ describe("verifyTelegramAuth", () => {
         .map((key) => `${key}=${minimalData[key as keyof typeof minimalData]}`)
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth(
-        { ...minimalData, hash },
-        BOT_TOKEN
-      );
+      const result = verifyTelegramAuth({ ...minimalData, hash }, BotToken);
       expect(result).toBe(true);
     });
 
     it("should verify data with all optional fields", () => {
       // validAuthData already has all fields
-      const result = verifyTelegramAuth(validAuthData, BOT_TOKEN);
+      const result = verifyTelegramAuth(validAuthData, BotToken);
       expect(result).toBe(true);
     });
 
     it("should accept auth data within maxAge", () => {
-      const result = verifyTelegramAuth(validAuthData, BOT_TOKEN, 86400);
+      const result = verifyTelegramAuth(validAuthData, BotToken, 86400);
       expect(result).toBe(true);
     });
 
@@ -89,20 +89,22 @@ describe("verifyTelegramAuth", () => {
       const data = { ...validAuthData, auth_date: oneSecondAgo };
 
       // Regenerate hash with new auth_date
-      const dataWithoutHash = { ...data };
-      delete (dataWithoutHash as any).hash;
+      const { hash: _, ...dataWithoutHash } = data;
 
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()
-        .map((key) => `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`)
+        .map(
+          (key) =>
+            `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`
+        )
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...data, hash }, BOT_TOKEN, 86400);
+      const result = verifyTelegramAuth({ ...data, hash }, BotToken, 86400);
       expect(result).toBe(true);
     });
   });
@@ -110,19 +112,19 @@ describe("verifyTelegramAuth", () => {
   describe("Invalid HMAC", () => {
     it("should return false for tampered id", () => {
       const tamperedData = { ...validAuthData, id: 999999999 };
-      const result = verifyTelegramAuth(tamperedData, BOT_TOKEN);
+      const result = verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
     it("should return false for tampered first_name", () => {
       const tamperedData = { ...validAuthData, first_name: "Hacker" };
-      const result = verifyTelegramAuth(tamperedData, BOT_TOKEN);
+      const result = verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
     it("should return false for tampered username", () => {
       const tamperedData = { ...validAuthData, username: "hacker" };
-      const result = verifyTelegramAuth(tamperedData, BOT_TOKEN);
+      const result = verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
@@ -131,13 +133,13 @@ describe("verifyTelegramAuth", () => {
         ...validAuthData,
         hash: "0000000000000000000000000000000000000000000000000000000000000000",
       };
-      const result = verifyTelegramAuth(tamperedData, BOT_TOKEN);
+      const result = verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
     it("should return false for empty hash", () => {
       const tamperedData = { ...validAuthData, hash: "" };
-      const result = verifyTelegramAuth(tamperedData, BOT_TOKEN);
+      const result = verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
@@ -147,8 +149,11 @@ describe("verifyTelegramAuth", () => {
     });
 
     it("should be case-sensitive for hash", () => {
-      const uppercaseHash = { ...validAuthData, hash: validAuthData.hash.toUpperCase() };
-      const result = verifyTelegramAuth(uppercaseHash, BOT_TOKEN);
+      const uppercaseHash = {
+        ...validAuthData,
+        hash: validAuthData.hash.toUpperCase(),
+      };
+      const result = verifyTelegramAuth(uppercaseHash, BotToken);
       expect(result).toBe(false);
     });
   });
@@ -159,20 +164,22 @@ describe("verifyTelegramAuth", () => {
       const oldData = { ...validAuthData, auth_date: oldTime };
 
       // Regenerate valid hash for old data
-      const dataWithoutHash = { ...oldData };
-      delete (dataWithoutHash as any).hash;
+      const { hash: _, ...dataWithoutHash } = oldData;
 
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()
-        .map((key) => `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`)
+        .map(
+          (key) =>
+            `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`
+        )
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...oldData, hash }, BOT_TOKEN, 86400);
+      const result = verifyTelegramAuth({ ...oldData, hash }, BotToken, 86400);
       expect(result).toBe(false);
     });
 
@@ -181,21 +188,23 @@ describe("verifyTelegramAuth", () => {
       const data = { ...validAuthData, auth_date: sixtySecondsAgo };
 
       // Regenerate hash
-      const dataWithoutHash = { ...data };
-      delete (dataWithoutHash as any).hash;
+      const { hash: _, ...dataWithoutHash } = data;
 
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()
-        .map((key) => `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`)
+        .map(
+          (key) =>
+            `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`
+        )
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
       // Should fail with maxAge of 30 seconds
-      const result = verifyTelegramAuth({ ...data, hash }, BOT_TOKEN, 30);
+      const result = verifyTelegramAuth({ ...data, hash }, BotToken, 30);
       expect(result).toBe(false);
     });
 
@@ -204,20 +213,22 @@ describe("verifyTelegramAuth", () => {
       const data = { ...validAuthData, auth_date: exactlyMaxAge };
 
       // Regenerate hash
-      const dataWithoutHash = { ...data };
-      delete (dataWithoutHash as any).hash;
+      const { hash: _, ...dataWithoutHash } = data;
 
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()
-        .map((key) => `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`)
+        .map(
+          (key) =>
+            `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`
+        )
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...data, hash }, BOT_TOKEN, 3600);
+      const result = verifyTelegramAuth({ ...data, hash }, BotToken, 3600);
       expect(result).toBe(true);
     });
   });
@@ -235,7 +246,7 @@ describe("verifyTelegramAuth", () => {
         last_name: validAuthData.last_name,
       } as TelegramAuthData;
 
-      const result = verifyTelegramAuth(unorderedData, BOT_TOKEN);
+      const result = verifyTelegramAuth(unorderedData, BotToken);
       expect(result).toBe(true);
     });
   });
@@ -245,21 +256,27 @@ describe("verifyTelegramAuth", () => {
       const epochData = { ...validAuthData, auth_date: 0 };
 
       // Regenerate hash
-      const dataWithoutHash = { ...epochData };
-      delete (dataWithoutHash as any).hash;
+      const { hash: _, ...dataWithoutHash } = epochData;
 
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()
-        .map((key) => `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`)
+        .map(
+          (key) =>
+            `${key}=${dataWithoutHash[key as keyof typeof dataWithoutHash]}`
+        )
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
       // Should fail because it's way too old
-      const result = verifyTelegramAuth({ ...epochData, hash }, BOT_TOKEN, 86400);
+      const result = verifyTelegramAuth(
+        { ...epochData, hash },
+        BotToken,
+        86400
+      );
       expect(result).toBe(false);
     });
 
@@ -275,17 +292,20 @@ describe("verifyTelegramAuth", () => {
       // Generate valid hash
       const dataCheckString = Object.keys(specialCharsData)
         .sort()
-        .map((key) => `${key}=${specialCharsData[key as keyof typeof specialCharsData]}`)
+        .map(
+          (key) =>
+            `${key}=${specialCharsData[key as keyof typeof specialCharsData]}`
+        )
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
       const result = verifyTelegramAuth(
         { ...specialCharsData, hash },
-        BOT_TOKEN
+        BotToken
       );
       expect(result).toBe(true);
     });
@@ -305,12 +325,12 @@ describe("verifyTelegramAuth", () => {
         .map((key) => `${key}=${unicodeData[key as keyof typeof unicodeData]}`)
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...unicodeData, hash }, BOT_TOKEN);
+      const result = verifyTelegramAuth({ ...unicodeData, hash }, BotToken);
       expect(result).toBe(true);
     });
 
@@ -319,7 +339,7 @@ describe("verifyTelegramAuth", () => {
       const longUrlData = {
         id: 123456789,
         first_name: "User",
-        photo_url: "https://example.com/" + "a".repeat(1000) + ".jpg",
+        photo_url: `https://example.com/${"a".repeat(1000)}.jpg`,
         auth_date: currentTime,
       };
 
@@ -329,12 +349,12 @@ describe("verifyTelegramAuth", () => {
         .map((key) => `${key}=${longUrlData[key as keyof typeof longUrlData]}`)
         .join("\n");
 
-      const secretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const secretKey = createHash("sha256").update(BotToken).digest();
       const hash = createHmac("sha256", secretKey)
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...longUrlData, hash }, BOT_TOKEN);
+      const result = verifyTelegramAuth({ ...longUrlData, hash }, BotToken);
       expect(result).toBe(true);
     });
   });
@@ -577,9 +597,11 @@ describe("parseMiniAppInitData", () => {
 });
 
 describe("verifyMiniAppInitData", () => {
-  const BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
+  const BotToken = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
 
-  function createValidInitData(authDate: number = Math.floor(Date.now() / 1000)): string {
+  function createValidInitData(
+    authDate: number = Math.floor(Date.now() / 1000)
+  ): string {
     const user = {
       id: 123456789,
       first_name: "John",
@@ -599,7 +621,7 @@ describe("verifyMiniAppInitData", () => {
       .join("\n");
 
     const secretKey = createHmac("sha256", "WebAppData")
-      .update(BOT_TOKEN)
+      .update(BotToken)
       .digest();
 
     const hash = createHmac("sha256", secretKey)
@@ -613,7 +635,7 @@ describe("verifyMiniAppInitData", () => {
   describe("Valid initData", () => {
     it("should return true for valid initData", () => {
       const initData = createValidInitData();
-      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+      const result = verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(true);
     });
@@ -621,7 +643,7 @@ describe("verifyMiniAppInitData", () => {
     it("should verify initData within maxAge", () => {
       const authDate = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
       const initData = createValidInitData(authDate);
-      const result = verifyMiniAppInitData(initData, BOT_TOKEN, 86400);
+      const result = verifyMiniAppInitData(initData, BotToken, 86400);
 
       expect(result).toBe(true);
     });
@@ -634,7 +656,7 @@ describe("verifyMiniAppInitData", () => {
 
       const dataCheckString = `auth_date=${authDate}`;
       const secretKey = createHmac("sha256", "WebAppData")
-        .update(BOT_TOKEN)
+        .update(BotToken)
         .digest();
 
       const hash = createHmac("sha256", secretKey)
@@ -642,7 +664,7 @@ describe("verifyMiniAppInitData", () => {
         .digest("hex");
 
       params.append("hash", hash);
-      const result = verifyMiniAppInitData(params.toString(), BOT_TOKEN);
+      const result = verifyMiniAppInitData(params.toString(), BotToken);
 
       expect(result).toBe(true);
     });
@@ -651,14 +673,14 @@ describe("verifyMiniAppInitData", () => {
   describe("Invalid initData", () => {
     it("should return false for missing hash", () => {
       const initData = "auth_date=1234567890&user=%7B%22id%22%3A123%7D";
-      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+      const result = verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(false);
     });
 
     it("should return false for missing auth_date", () => {
       const initData = "user=%7B%22id%22%3A123%7D&hash=abc123";
-      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+      const result = verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(false);
     });
@@ -666,7 +688,7 @@ describe("verifyMiniAppInitData", () => {
     it("should return false for invalid hash", () => {
       const authDate = Math.floor(Date.now() / 1000);
       const initData = `auth_date=${authDate}&hash=invalid_hash`;
-      const result = verifyMiniAppInitData(initData, BOT_TOKEN);
+      const result = verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(false);
     });
@@ -675,7 +697,7 @@ describe("verifyMiniAppInitData", () => {
       const validInitData = createValidInitData();
       // Tamper with the data
       const tamperedData = validInitData.replace("johndoe", "hacker");
-      const result = verifyMiniAppInitData(tamperedData, BOT_TOKEN);
+      const result = verifyMiniAppInitData(tamperedData, BotToken);
 
       expect(result).toBe(false);
     });
@@ -683,7 +705,7 @@ describe("verifyMiniAppInitData", () => {
     it("should return false for expired initData", () => {
       const authDate = Math.floor(Date.now() / 1000) - 90000; // >24 hours ago
       const initData = createValidInitData(authDate);
-      const result = verifyMiniAppInitData(initData, BOT_TOKEN, 86400);
+      const result = verifyMiniAppInitData(initData, BotToken, 86400);
 
       expect(result).toBe(false);
     });
@@ -704,13 +726,13 @@ describe("verifyMiniAppInitData", () => {
       const params = new URLSearchParams({ auth_date: authDate.toString() });
 
       // Wrong: using SHA256(token) like Login Widget
-      const wrongSecretKey = createHash("sha256").update(BOT_TOKEN).digest();
+      const wrongSecretKey = createHash("sha256").update(BotToken).digest();
       const wrongHash = createHmac("sha256", wrongSecretKey)
         .update(`auth_date=${authDate}`)
         .digest("hex");
 
       params.append("hash", wrongHash);
-      const result = verifyMiniAppInitData(params.toString(), BOT_TOKEN);
+      const result = verifyMiniAppInitData(params.toString(), BotToken);
 
       // Should fail because wrong secret key derivation
       expect(result).toBe(false);
@@ -727,12 +749,12 @@ describe("verifyMiniAppInitData", () => {
       // Calculate with correct sorting
       const dataCheckString = [
         `auth_date=${authDate}`,
-        `chat_type=private`,
-        `query_id=AAE123`,
+        "chat_type=private",
+        "query_id=AAE123",
       ].join("\n");
 
       const secretKey = createHmac("sha256", "WebAppData")
-        .update(BOT_TOKEN)
+        .update(BotToken)
         .digest();
 
       const hash = createHmac("sha256", secretKey)
@@ -740,7 +762,7 @@ describe("verifyMiniAppInitData", () => {
         .digest("hex");
 
       params.append("hash", hash);
-      const result = verifyMiniAppInitData(params.toString(), BOT_TOKEN);
+      const result = verifyMiniAppInitData(params.toString(), BotToken);
 
       expect(result).toBe(true);
     });
