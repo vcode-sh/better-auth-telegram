@@ -740,4 +740,106 @@ describe("telegramClient", () => {
       });
     });
   });
+
+  describe("Widget loading and error cases", () => {
+    beforeEach(() => {
+      // Clear any existing Telegram object
+      delete (window as any).Telegram;
+      // Create container
+      const container = document.createElement("div");
+      container.id = "telegram-widget-test";
+      document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+      const container = document.getElementById("telegram-widget-test");
+      if (container) {
+        document.body.removeChild(container);
+      }
+    });
+
+    it("should load script when Telegram.Login is not available", async () => {
+      mockFetch.mockResolvedValueOnce({
+        data: { botUsername: "test_bot" },
+      });
+
+      const actions = client.getActions(mockFetch);
+
+      // Start widget initialization (will trigger script load)
+      const initPromise = actions.initTelegramWidget(
+        "telegram-widget-test",
+        {},
+        () => {}
+      );
+
+      // Wait a bit for script to be created
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Find the script element
+      const scripts = document.querySelectorAll('script[src*="telegram-widget.js"]');
+      expect(scripts.length).toBeGreaterThan(0);
+
+      // Simulate script load
+      const script = scripts[scripts.length - 1] as HTMLScriptElement;
+      (window as any).Telegram = { Login: {} };
+      script.onload?.(new Event('load'));
+
+      // Wait for init to complete
+      await initPromise;
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
+        method: "GET",
+      });
+    });
+
+    it("should handle script load error", async () => {
+      const actions = client.getActions(mockFetch);
+
+      // Start widget initialization
+      const initPromise = actions.initTelegramWidget(
+        "telegram-widget-test",
+        {},
+        () => {}
+      );
+
+      // Wait for script to be created
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Find and trigger error on script
+      const scripts = document.querySelectorAll('script[src*="telegram-widget.js"]');
+      const script = scripts[scripts.length - 1] as HTMLScriptElement;
+      script.onerror?.(new Event('error'));
+
+      // Should reject with error
+      await expect(initPromise).rejects.toThrow("Failed to load Telegram widget script");
+    });
+
+    it("should handle missing config data in initTelegramWidget", async () => {
+      (window as any).Telegram = { Login: {} };
+
+      mockFetch.mockResolvedValueOnce({
+        data: null, // No data returned
+      });
+
+      const actions = client.getActions(mockFetch);
+
+      await expect(
+        actions.initTelegramWidget("telegram-widget-test", {}, () => {})
+      ).rejects.toThrow("Failed to get Telegram config");
+    });
+
+    it("should handle missing config data in initTelegramWidgetRedirect", async () => {
+      (window as any).Telegram = { Login: {} };
+
+      mockFetch.mockResolvedValueOnce({
+        data: null, // No data returned
+      });
+
+      const actions = client.getActions(mockFetch);
+
+      await expect(
+        actions.initTelegramWidgetRedirect("telegram-widget-test", "/callback", {})
+      ).rejects.toThrow("Failed to get Telegram config");
+    });
+  });
 });
