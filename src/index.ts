@@ -1,5 +1,6 @@
-import type { BetterAuthPlugin } from "better-auth";
+import type { BetterAuthPlugin, Session, User } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
+import { setSessionCookie } from "better-auth/cookies";
 import type { TelegramAuthData, TelegramPluginOptions } from "./types";
 import {
   parseMiniAppInitData,
@@ -197,13 +198,23 @@ export const telegram = (options: TelegramPluginOptions) => {
             ctx
           );
 
-          return ctx.json({
+          const sessionData = await ctx.json({
             user: await ctx.context.adapter.findOne({
               model: "user",
               where: [{ field: "id", value: userId }],
             }),
             session,
           });
+
+          await setSessionCookie(
+            ctx,
+            sessionData as {
+              session: Session;
+              user: User;
+            }
+          );
+
+          return sessionData;
         }
       ),
 
@@ -509,13 +520,22 @@ export const telegram = (options: TelegramPluginOptions) => {
                   ctx
                 );
 
-                return ctx.json({
+                const sessionData = await ctx.json({
                   user: await ctx.context.adapter.findOne({
                     model: "user",
                     where: [{ field: "id", value: userId }],
                   }),
                   session,
                 });
+
+                await setSessionCookie(
+                  ctx,
+                  sessionData as {
+                    session: Session;
+                    user: User;
+                  }
+                );
+                return sessionData;
               }
             ),
 
