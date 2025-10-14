@@ -5,6 +5,22 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-10-14
+
+### Fixed
+
+- **Critical:** Session cookies not being set after successful authentication ([#1](https://github.com/vcode-sh/better-auth-telegram/pull/1))
+  - Added `setSessionCookie()` calls to both `signInWithTelegram` and `signInWithMiniApp` endpoints
+  - Users can now actually stay logged in after authentication (turns out that's important)
+  - Implementation follows official better-auth plugin pattern
+  - Thanks to [@tooonuch](https://github.com/tooonuch) for catching this and submitting the fix
+
+### Changed
+
+- Improved CI/CD pipeline with PR validation workflow
+- Added branch protection rules and automated checks
+- Enhanced code quality gates
+
 ## [0.3.0] - 2025-10-01
 
 ### Added
@@ -202,4 +218,7 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[0.3.1]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.1
+[0.3.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.0
+[0.2.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.1.0

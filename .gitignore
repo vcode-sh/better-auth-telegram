@@ -8,6 +8,7 @@ info
 .mcp.json
 .claude
 .npmrc
+.messages/
 
 # Test coverage
 coverage/
