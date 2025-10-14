@@ -92,3 +92,6 @@ jobs:
 
       - name: Run type check
         run: npm run type-check
+
+      - name: Run Ultracite check
+        run: npx ultracite check
