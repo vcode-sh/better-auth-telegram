@@ -1,0 +1,135 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for merge conflicts
+        run: |
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "❌ Merge conflicts detected. Please resolve them before merging."
+            exit 1
+          else
+            echo "✅ No merge conflicts detected."
+          fi
+
+      - name: Check package.json version
+        if: github.base_ref == 'main'
+        run: |
+          BASE_VERSION=$(git show origin/main:package.json | jq -r .version)
+          PR_VERSION=$(jq -r .version package.json)
+          echo "Base version: $BASE_VERSION"
+          echo "PR version: $PR_VERSION"
+
+          if [ "$BASE_VERSION" == "$PR_VERSION" ]; then
+            echo "⚠️ Warning: package.json version hasn't been updated. Consider bumping the version."
+            echo "::warning::package.json version hasn't been updated"
+          else
+            echo "✅ Version has been updated from $BASE_VERSION to $PR_VERSION"
+          fi
+
+      - name: Run type check
+        run: npm run type-check
+
+      - name: Run Ultracite check
+        run: npx ultracite check
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Check build artifacts
+        run: |
+          if [ ! -f "dist/index.js" ] || [ ! -f "dist/index.d.ts" ]; then
+            echo "❌ Build artifacts missing!"
+            exit 1
+          fi
+          echo "✅ All build artifacts present"
+
+      - name: Check for TODO comments in changed files
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx')
+          if [ -n "$CHANGED_FILES" ]; then
+            TODO_COUNT=$(echo "$CHANGED_FILES" | xargs grep -c "TODO\|FIXME\|XXX" || true)
+            if [ "$TODO_COUNT" -gt 0 ]; then
+              echo "⚠️ Warning: Found TODO/FIXME comments in changed files"
+              echo "$CHANGED_FILES" | xargs grep -n "TODO\|FIXME\|XXX" || true
+              echo "::warning::Found TODO/FIXME comments in PR"
+            else
+              echo "✅ No TODO/FIXME comments in changed files"
+            fi
+          fi
+
+  security:
+    name: Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+
+      - name: Check for vulnerabilities
+        run: npm audit --audit-level=moderate || true
+
+      - name: Check for package-lock changes
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "package-lock.json"; then
+            echo "⚠️ package-lock.json has been modified"
+            echo "::notice::Please ensure dependencies are up to date and secure"
+          fi
+
+  size-check:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Check bundle size
+        run: |
+          echo "📦 Build artifacts size:"
+          ls -lh dist/
+          TOTAL_SIZE=$(du -sh dist/ | cut -f1)
+          echo "Total dist size: $TOTAL_SIZE"
+          echo "::notice::Bundle size: $TOTAL_SIZE"
