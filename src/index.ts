@@ -1,4 +1,4 @@
-import type { BetterAuthPlugin, Session, User } from "better-auth";
+import type { BetterAuthPlugin, User } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import type { TelegramAuthData, TelegramPluginOptions } from "./types";
@@ -198,23 +198,20 @@ export const telegram = (options: TelegramPluginOptions) => {
             ctx
           );
 
-          const sessionData = await ctx.json({
-            user: await ctx.context.adapter.findOne({
-              model: "user",
-              where: [{ field: "id", value: userId }],
-            }),
-            session,
+          const user = await ctx.context.adapter.findOne({
+            model: "user",
+            where: [{ field: "id", value: userId }],
           });
 
-          await setSessionCookie(
-            ctx,
-            sessionData as {
-              session: Session;
-              user: User;
-            }
-          );
+          await setSessionCookie(ctx, {
+            session,
+            user: user as User,
+          });
 
-          return sessionData;
+          return ctx.json({
+            user,
+            session,
+          });
         }
       ),
 
@@ -520,22 +517,20 @@ export const telegram = (options: TelegramPluginOptions) => {
                   ctx
                 );
 
-                const sessionData = await ctx.json({
-                  user: await ctx.context.adapter.findOne({
-                    model: "user",
-                    where: [{ field: "id", value: userId }],
-                  }),
-                  session,
+                const user = await ctx.context.adapter.findOne({
+                  model: "user",
+                  where: [{ field: "id", value: userId }],
                 });
 
-                await setSessionCookie(
-                  ctx,
-                  sessionData as {
-                    session: Session;
-                    user: User;
-                  }
-                );
-                return sessionData;
+                await setSessionCookie(ctx, {
+                  session,
+                  user: user as User,
+                });
+
+                return ctx.json({
+                  session,
+                  user,
+                });
               }
             ),
 
