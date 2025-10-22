@@ -195,6 +195,9 @@ export const authClient = createAuthClient({
   baseURL: typeof window !== 'undefined'
     ? window.location.origin
     : process.env.NEXT_PUBLIC_APP_URL,
+  fetchOptions: {
+    credentials: "include", // Required for session cookies
+  },
   plugins: [telegramClient()],
 });
 ```
@@ -636,6 +639,9 @@ function MiniApp() {
 
     const authClient = createAuthClient({
       baseURL: window.location.origin,
+      fetchOptions: {
+        credentials: "include",
+      },
       plugins: [telegramClient()],
     });
 

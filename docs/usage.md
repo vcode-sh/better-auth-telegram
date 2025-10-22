@@ -460,6 +460,9 @@ export function TelegramLoginButton() {
 
     const authClient = createAuthClient({
       baseURL: window.location.origin,
+      fetchOptions: {
+        credentials: "include",
+      },
       plugins: [telegramClient()],
     });
 

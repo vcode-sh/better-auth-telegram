@@ -98,6 +98,9 @@ import { telegramClient } from "better-auth-telegram/client";
 
 export const authClient = createAuthClient({
   baseURL: window.location.origin,
+  fetchOptions: {
+    credentials: "include", // Required for session cookies
+  },
   plugins: [telegramClient()],
 });
 ```
@@ -588,6 +591,9 @@ export const authClient = createAuthClient({
   baseURL: typeof window !== 'undefined'
     ? window.location.origin
     : process.env.NEXT_PUBLIC_APP_URL,
+  fetchOptions: {
+    credentials: "include", // Required for session cookies
+  },
   plugins: [telegramClient()],
 });
 

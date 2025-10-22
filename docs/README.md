@@ -112,6 +112,9 @@ import { telegramClient } from "better-auth-telegram/client";
 
 export const authClient = createAuthClient({
   baseURL: window.location.origin,
+  fetchOptions: {
+    credentials: "include",
+  },
   plugins: [telegramClient()],
 });
 ```

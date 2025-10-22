@@ -1,12 +1,53 @@
-src
-examples
+# Source files
+src/
+*.test.ts
+*.test.tsx
+
+# Build configs
 tsconfig.json
 tsup.config.ts
-.gitignore
-*.log
+vitest.config.ts
+biome.jsonc
+
+# Examples and docs
+examples/
+docs/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# CI/CD
+.github/
+.npmrc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
 .DS_Store
-node_modules
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
 .env
 .env.local
+.env.*.local
+
+# Internal
+.claude/
+.messages/
 mcp.json
-.claude
+voice-tone.md
+
+# Git
+.gitignore
+.gitattributes
+
+# Misc
+*.tgz
+pull-*.md

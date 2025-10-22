@@ -4,6 +4,7 @@ Common issues and solutions for better-auth-telegram plugin.
 
 ## Table of Contents
 
+- [Common Issues (Start Here)](#common-issues-start-here)
 - [Widget Issues](#widget-issues)
 - [Authentication Errors](#authentication-errors)
 - [Session Problems](#session-problems)
@@ -11,6 +12,58 @@ Common issues and solutions for better-auth-telegram plugin.
 - [Environment and Configuration](#environment-and-configuration)
 - [Development Issues](#development-issues)
 - [Production Issues](#production-issues)
+
+## Common Issues (Start Here)
+
+### "Not authenticated" When Linking Telegram
+
+**Symptom:** You get `{ error: "Not authenticated" }` when calling `linkTelegram()`, even though Telegram shows the bot as connected.
+
+**Cause:** Session cookies aren't being sent with the request.
+
+**Solution:**
+
+Add `credentials: "include"` to your auth client config:
+
+```typescript
+// ❌ Wrong: Missing credentials
+export const authClient = createAuthClient({
+  baseURL: window.location.origin,
+  plugins: [telegramClient()],
+});
+
+// ✅ Correct: Include credentials for cookies
+export const authClient = createAuthClient({
+  baseURL: window.location.origin,
+  fetchOptions: {
+    credentials: "include",
+  },
+  plugins: [telegramClient()],
+});
+```
+
+Without `credentials: "include"`, your browser won't send cookies with the request. No cookies = no session = "Not authenticated" error.
+
+**Why this happens:**
+
+1. You sign in to your app (session cookie is set)
+2. You authenticate with Telegram (this works fine)
+3. Your app calls `linkTelegram()` to connect the accounts
+4. Without `credentials: "include"`, the session cookie doesn't get sent
+5. Server can't find your session
+6. Returns "Not authenticated"
+
+**Also check:**
+
+Make sure your `baseURL` matches your actual domain:
+
+```typescript
+// ✅ Good: Auto-detect current origin
+baseURL: typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL
+
+// ❌ Bad: Different port/domain
+baseURL: "http://localhost:4000"  // when your app runs on :3000
+```
 
 ## Widget Issues
 
@@ -261,6 +314,10 @@ export const authClient = createAuthClient({
   baseURL: typeof window !== 'undefined'
     ? window.location.origin
     : process.env.NEXT_PUBLIC_APP_URL,
+  fetchOptions: {
+    credentials: "include",
+  },
+  plugins: [telegramClient()],
 });
 ```
 

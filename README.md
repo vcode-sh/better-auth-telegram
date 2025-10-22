@@ -91,9 +91,14 @@ export const authClient = createAuthClient({
     typeof window !== "undefined"
       ? window.location.origin
       : process.env.NEXT_PUBLIC_APP_URL,
+  fetchOptions: {
+    credentials: "include", // Required for session cookies (linking, unlinking)
+  },
   plugins: [telegramClient()],
 });
 ```
+
+**Important:** The `credentials: "include"` is required for session-based operations like linking and unlinking Telegram accounts. Without it, you'll get "Not authenticated" errors.
 
 ### 3. Database Setup
 
@@ -198,6 +203,8 @@ authClient.initTelegramWidget(
   }
 );
 ```
+
+**Getting "Not authenticated" errors?** Make sure your auth client has `credentials: "include"` in `fetchOptions`. See [Setup](#setup) section above.
 
 ### Unlink Telegram Account
 
