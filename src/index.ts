@@ -1,5 +1,5 @@
 import type { BetterAuthPlugin, User } from "better-auth";
-import { createAuthEndpoint } from "better-auth/api";
+import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import type { TelegramAuthData, TelegramPluginOptions } from "./types";
 import {
@@ -219,6 +219,7 @@ export const telegram = (options: TelegramPluginOptions) => {
         "/telegram/link",
         {
           method: "POST",
+          use: [sessionMiddleware],
         },
         async (ctx) => {
           if (!allowUserToLink) {
@@ -330,6 +331,7 @@ export const telegram = (options: TelegramPluginOptions) => {
         "/telegram/unlink",
         {
           method: "POST",
+          use: [sessionMiddleware],
         },
         async (ctx) => {
           const session = ctx.context.session;
