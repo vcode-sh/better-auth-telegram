@@ -1,4 +1,5 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "@better-auth/utils/hash";
+import { createHMAC } from "@better-auth/utils/hmac";
 import type { TelegramAuthData, TelegramMiniAppData } from "./types";
 
 /**
@@ -6,13 +7,13 @@ import type { TelegramAuthData, TelegramMiniAppData } from "./types";
  * @param data - Authentication data from Telegram Login Widget
  * @param botToken - Bot token from @BotFather
  * @param maxAge - Maximum age of auth in seconds (default: 24 hours)
- * @returns true if data is valid, false otherwise
+ * @returns Promise<true> if data is valid, Promise<false> otherwise
  */
-export function verifyTelegramAuth(
+export async function verifyTelegramAuth(
   data: TelegramAuthData,
   botToken: string,
   maxAge = 86400
-): boolean {
+): Promise<boolean> {
   // Extract hash from data
   const { hash, ...dataWithoutHash } = data;
 
@@ -34,15 +35,15 @@ export function verifyTelegramAuth(
     .join("\n");
 
   // Create secret key: SHA256(bot_token)
-  const secretKey = createHash("sha256").update(botToken).digest();
+  const secretKey = await createHash("SHA-256").digest(botToken);
 
   // Calculate HMAC-SHA256
-  const hmac = createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
+  const hmac = createHMAC("SHA-256", "hex");
+  const ck = await hmac.importKey(secretKey, "sign");
+  const calculatedHash = await hmac.sign(ck, dataCheckString);
 
   // Compare with received hash
-  return hmac === hash;
+  return calculatedHash === hash;
 }
 
 /**
@@ -91,13 +92,13 @@ export function parseMiniAppInitData(initData: string): TelegramMiniAppData {
  * @param initData - Raw initData string from Telegram.WebApp.initData
  * @param botToken - Bot token from @BotFather
  * @param maxAge - Maximum age of auth in seconds (default: 24 hours)
- * @returns true if data is valid, false otherwise
+ * @returns Promise<true> if data is valid, false otherwise
  */
-export function verifyMiniAppInitData(
+export async function verifyMiniAppInitData(
   initData: string,
   botToken: string,
   maxAge = 86400
-): boolean {
+): Promise<boolean> {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
 
@@ -128,14 +129,12 @@ export function verifyMiniAppInitData(
     .join("\n");
 
   // Create secret key: HMAC-SHA256("WebAppData", bot_token)
-  const secretKey = createHmac("sha256", "WebAppData")
-    .update(botToken)
-    .digest();
+  const secretKey = await createHMAC("SHA-256").sign("WebAppData", botToken);
 
   // Calculate HMAC-SHA256
-  const calculatedHash = createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
+  const hmac = createHMAC("SHA-256", "hex");
+  const ck = await hmac.importKey(secretKey, "sign");
+  const calculatedHash = await hmac.sign(ck, dataCheckString);
 
   // Compare with received hash
   return calculatedHash === hash;

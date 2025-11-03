@@ -46,12 +46,12 @@ describe("verifyTelegramAuth", () => {
   });
 
   describe("Valid authentication", () => {
-    it("should return true for valid auth data", () => {
-      const result = verifyTelegramAuth(validAuthData, BotToken);
+    it("should return true for valid auth data", async () => {
+      const result = await verifyTelegramAuth(validAuthData, BotToken);
       expect(result).toBe(true);
     });
 
-    it("should verify data with only required fields", () => {
+    it("should verify data with only required fields", async () => {
       const currentTime = Math.floor(Date.now() / 1000);
       const minimalData = {
         id: 123456789,
@@ -69,22 +69,25 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...minimalData, hash }, BotToken);
+      const result = await verifyTelegramAuth(
+        { ...minimalData, hash },
+        BotToken
+      );
       expect(result).toBe(true);
     });
 
-    it("should verify data with all optional fields", () => {
+    it("should verify data with all optional fields", async () => {
       // validAuthData already has all fields
-      const result = verifyTelegramAuth(validAuthData, BotToken);
+      const result = await verifyTelegramAuth(validAuthData, BotToken);
       expect(result).toBe(true);
     });
 
-    it("should accept auth data within maxAge", () => {
-      const result = verifyTelegramAuth(validAuthData, BotToken, 86400);
+    it("should accept auth data within maxAge", async () => {
+      const result = await verifyTelegramAuth(validAuthData, BotToken, 86400);
       expect(result).toBe(true);
     });
 
-    it("should accept auth data from 1 second ago", () => {
+    it("should accept auth data from 1 second ago", async () => {
       const oneSecondAgo = Math.floor(Date.now() / 1000) - 1;
       const data = { ...validAuthData, auth_date: oneSecondAgo };
 
@@ -104,62 +107,66 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...data, hash }, BotToken, 86400);
+      const result = await verifyTelegramAuth(
+        { ...data, hash },
+        BotToken,
+        86400
+      );
       expect(result).toBe(true);
     });
   });
 
   describe("Invalid HMAC", () => {
-    it("should return false for tampered id", () => {
+    it("should return false for tampered id", async () => {
       const tamperedData = { ...validAuthData, id: 999999999 };
-      const result = verifyTelegramAuth(tamperedData, BotToken);
+      const result = await verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
-    it("should return false for tampered first_name", () => {
+    it("should return false for tampered first_name", async () => {
       const tamperedData = { ...validAuthData, first_name: "Hacker" };
-      const result = verifyTelegramAuth(tamperedData, BotToken);
+      const result = await verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
-    it("should return false for tampered username", () => {
+    it("should return false for tampered username", async () => {
       const tamperedData = { ...validAuthData, username: "hacker" };
-      const result = verifyTelegramAuth(tamperedData, BotToken);
+      const result = await verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
-    it("should return false for completely wrong hash", () => {
+    it("should return false for completely wrong hash", async () => {
       const tamperedData = {
         ...validAuthData,
         hash: "0000000000000000000000000000000000000000000000000000000000000000",
       };
-      const result = verifyTelegramAuth(tamperedData, BotToken);
+      const result = await verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
-    it("should return false for empty hash", () => {
+    it("should return false for empty hash", async () => {
       const tamperedData = { ...validAuthData, hash: "" };
-      const result = verifyTelegramAuth(tamperedData, BotToken);
+      const result = await verifyTelegramAuth(tamperedData, BotToken);
       expect(result).toBe(false);
     });
 
-    it("should return false with wrong bot token", () => {
-      const result = verifyTelegramAuth(validAuthData, "wrong_token");
+    it("should return false with wrong bot token", async () => {
+      const result = await verifyTelegramAuth(validAuthData, "wrong_token");
       expect(result).toBe(false);
     });
 
-    it("should be case-sensitive for hash", () => {
+    it("should be case-sensitive for hash", async () => {
       const uppercaseHash = {
         ...validAuthData,
         hash: validAuthData.hash.toUpperCase(),
       };
-      const result = verifyTelegramAuth(uppercaseHash, BotToken);
+      const result = await verifyTelegramAuth(uppercaseHash, BotToken);
       expect(result).toBe(false);
     });
   });
 
   describe("Expired auth_date", () => {
-    it("should return false for auth data older than maxAge", () => {
+    it("should return false for auth data older than maxAge", async () => {
       const oldTime = Math.floor(Date.now() / 1000) - 86401; // 1 day + 1 second
       const oldData = { ...validAuthData, auth_date: oldTime };
 
@@ -179,11 +186,15 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...oldData, hash }, BotToken, 86400);
+      const result = await verifyTelegramAuth(
+        { ...oldData, hash },
+        BotToken,
+        86400
+      );
       expect(result).toBe(false);
     });
 
-    it("should respect custom maxAge parameter", () => {
+    it("should respect custom maxAge parameter", async () => {
       const sixtySecondsAgo = Math.floor(Date.now() / 1000) - 60;
       const data = { ...validAuthData, auth_date: sixtySecondsAgo };
 
@@ -204,11 +215,11 @@ describe("verifyTelegramAuth", () => {
         .digest("hex");
 
       // Should fail with maxAge of 30 seconds
-      const result = verifyTelegramAuth({ ...data, hash }, BotToken, 30);
+      const result = await verifyTelegramAuth({ ...data, hash }, BotToken, 30);
       expect(result).toBe(false);
     });
 
-    it("should accept auth data exactly at maxAge boundary", () => {
+    it("should accept auth data exactly at maxAge boundary", async () => {
       const exactlyMaxAge = Math.floor(Date.now() / 1000) - 3600; // exactly 1 hour
       const data = { ...validAuthData, auth_date: exactlyMaxAge };
 
@@ -228,13 +239,17 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...data, hash }, BotToken, 3600);
+      const result = await verifyTelegramAuth(
+        { ...data, hash },
+        BotToken,
+        3600
+      );
       expect(result).toBe(true);
     });
   });
 
   describe("Data ordering", () => {
-    it("should verify regardless of field order in original data", () => {
+    it("should verify regardless of field order in original data", async () => {
       // Create data with fields in different order
       const unorderedData = {
         hash: validAuthData.hash,
@@ -246,13 +261,13 @@ describe("verifyTelegramAuth", () => {
         last_name: validAuthData.last_name,
       } as TelegramAuthData;
 
-      const result = verifyTelegramAuth(unorderedData, BotToken);
+      const result = await verifyTelegramAuth(unorderedData, BotToken);
       expect(result).toBe(true);
     });
   });
 
   describe("Edge cases", () => {
-    it("should handle auth_date as 0 (Unix epoch)", () => {
+    it("should handle auth_date as 0 (Unix epoch)", async () => {
       const epochData = { ...validAuthData, auth_date: 0 };
 
       // Regenerate hash
@@ -272,7 +287,7 @@ describe("verifyTelegramAuth", () => {
         .digest("hex");
 
       // Should fail because it's way too old
-      const result = verifyTelegramAuth(
+      const result = await verifyTelegramAuth(
         { ...epochData, hash },
         BotToken,
         86400
@@ -280,7 +295,7 @@ describe("verifyTelegramAuth", () => {
       expect(result).toBe(false);
     });
 
-    it("should handle special characters in names", () => {
+    it("should handle special characters in names", async () => {
       const currentTime = Math.floor(Date.now() / 1000);
       const specialCharsData = {
         id: 123456789,
@@ -303,14 +318,14 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth(
+      const result = await verifyTelegramAuth(
         { ...specialCharsData, hash },
         BotToken
       );
       expect(result).toBe(true);
     });
 
-    it("should handle Unicode in usernames", () => {
+    it("should handle Unicode in usernames", async () => {
       const currentTime = Math.floor(Date.now() / 1000);
       const unicodeData = {
         id: 123456789,
@@ -330,11 +345,14 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...unicodeData, hash }, BotToken);
+      const result = await verifyTelegramAuth(
+        { ...unicodeData, hash },
+        BotToken
+      );
       expect(result).toBe(true);
     });
 
-    it("should handle very long photo URLs", () => {
+    it("should handle very long photo URLs", async () => {
       const currentTime = Math.floor(Date.now() / 1000);
       const longUrlData = {
         id: 123456789,
@@ -354,7 +372,10 @@ describe("verifyTelegramAuth", () => {
         .update(dataCheckString)
         .digest("hex");
 
-      const result = verifyTelegramAuth({ ...longUrlData, hash }, BotToken);
+      const result = await verifyTelegramAuth(
+        { ...longUrlData, hash },
+        BotToken
+      );
       expect(result).toBe(true);
     });
   });
@@ -633,22 +654,22 @@ describe("verifyMiniAppInitData", () => {
   }
 
   describe("Valid initData", () => {
-    it("should return true for valid initData", () => {
+    it("should return true for valid initData", async () => {
       const initData = createValidInitData();
-      const result = verifyMiniAppInitData(initData, BotToken);
+      const result = await verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(true);
     });
 
-    it("should verify initData within maxAge", () => {
+    it("should verify initData within maxAge", async () => {
       const authDate = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
       const initData = createValidInitData(authDate);
-      const result = verifyMiniAppInitData(initData, BotToken, 86400);
+      const result = await verifyMiniAppInitData(initData, BotToken, 86400);
 
       expect(result).toBe(true);
     });
 
-    it("should verify minimal initData", () => {
+    it("should verify minimal initData", async () => {
       const authDate = Math.floor(Date.now() / 1000);
       const params = new URLSearchParams({
         auth_date: authDate.toString(),
@@ -664,63 +685,63 @@ describe("verifyMiniAppInitData", () => {
         .digest("hex");
 
       params.append("hash", hash);
-      const result = verifyMiniAppInitData(params.toString(), BotToken);
+      const result = await verifyMiniAppInitData(params.toString(), BotToken);
 
       expect(result).toBe(true);
     });
   });
 
   describe("Invalid initData", () => {
-    it("should return false for missing hash", () => {
+    it("should return false for missing hash", async () => {
       const initData = "auth_date=1234567890&user=%7B%22id%22%3A123%7D";
-      const result = verifyMiniAppInitData(initData, BotToken);
+      const result = await verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(false);
     });
 
-    it("should return false for missing auth_date", () => {
+    it("should return false for missing auth_date", async () => {
       const initData = "user=%7B%22id%22%3A123%7D&hash=abc123";
-      const result = verifyMiniAppInitData(initData, BotToken);
+      const result = await verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(false);
     });
 
-    it("should return false for invalid hash", () => {
+    it("should return false for invalid hash", async () => {
       const authDate = Math.floor(Date.now() / 1000);
       const initData = `auth_date=${authDate}&hash=invalid_hash`;
-      const result = verifyMiniAppInitData(initData, BotToken);
+      const result = await verifyMiniAppInitData(initData, BotToken);
 
       expect(result).toBe(false);
     });
 
-    it("should return false for tampered data", () => {
+    it("should return false for tampered data", async () => {
       const validInitData = createValidInitData();
       // Tamper with the data
       const tamperedData = validInitData.replace("johndoe", "hacker");
-      const result = verifyMiniAppInitData(tamperedData, BotToken);
+      const result = await verifyMiniAppInitData(tamperedData, BotToken);
 
       expect(result).toBe(false);
     });
 
-    it("should return false for expired initData", () => {
+    it("should return false for expired initData", async () => {
       const authDate = Math.floor(Date.now() / 1000) - 90000; // >24 hours ago
       const initData = createValidInitData(authDate);
-      const result = verifyMiniAppInitData(initData, BotToken, 86400);
+      const result = await verifyMiniAppInitData(initData, BotToken, 86400);
 
       expect(result).toBe(false);
     });
 
-    it("should return false with wrong bot token", () => {
+    it("should return false with wrong bot token", async () => {
       const initData = createValidInitData();
       const wrongToken = "987654321:WrongTokenHere";
-      const result = verifyMiniAppInitData(initData, wrongToken);
+      const result = await verifyMiniAppInitData(initData, wrongToken);
 
       expect(result).toBe(false);
     });
   });
 
   describe("Security", () => {
-    it("should use WebAppData constant for secret key", () => {
+    it("should use WebAppData constant for secret key", async () => {
       // This tests that we use the correct secret key derivation
       const authDate = Math.floor(Date.now() / 1000);
       const params = new URLSearchParams({ auth_date: authDate.toString() });
@@ -732,13 +753,13 @@ describe("verifyMiniAppInitData", () => {
         .digest("hex");
 
       params.append("hash", wrongHash);
-      const result = verifyMiniAppInitData(params.toString(), BotToken);
+      const result = await verifyMiniAppInitData(params.toString(), BotToken);
 
       // Should fail because wrong secret key derivation
       expect(result).toBe(false);
     });
 
-    it("should verify data-check-string alphabetical sorting", () => {
+    it("should verify data-check-string alphabetical sorting", async () => {
       // Test that fields are sorted correctly
       const authDate = Math.floor(Date.now() / 1000);
       const params = new URLSearchParams();
@@ -762,7 +783,7 @@ describe("verifyMiniAppInitData", () => {
         .digest("hex");
 
       params.append("hash", hash);
-      const result = verifyMiniAppInitData(params.toString(), BotToken);
+      const result = await verifyMiniAppInitData(params.toString(), BotToken);
 
       expect(result).toBe(true);
     });

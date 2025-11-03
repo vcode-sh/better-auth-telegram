@@ -70,5 +70,8 @@
     "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
       "npx ultracite fix"
     ]
+  },
+  "dependencies": {
+    "@better-auth/utils": "^0.3.0"
   }
 }
