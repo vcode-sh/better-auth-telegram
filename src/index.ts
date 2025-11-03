@@ -115,7 +115,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           const telegramData = body as TelegramAuthData;
 
           // Verify authentication
-          const isValid = verifyTelegramAuth(
+          const isValid = await verifyTelegramAuth(
             telegramData,
             botToken,
             maxAuthAge
@@ -247,7 +247,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           const telegramData = body as TelegramAuthData;
 
           // Verify authentication
-          const isValid = verifyTelegramAuth(
+          const isValid = await verifyTelegramAuth(
             telegramData,
             botToken,
             maxAuthAge
@@ -418,7 +418,7 @@ export const telegram = (options: TelegramPluginOptions) => {
                 // Verify initData
                 if (
                   miniAppValidateInitData &&
-                  !verifyMiniAppInitData(initData, botToken, maxAuthAge)
+                  !(await verifyMiniAppInitData(initData, botToken, maxAuthAge))
                 ) {
                   return ctx.json(
                     { error: "Invalid Mini App initData" },
@@ -552,7 +552,7 @@ export const telegram = (options: TelegramPluginOptions) => {
                   );
                 }
 
-                const isValid = verifyMiniAppInitData(
+                const isValid = await verifyMiniAppInitData(
                   initData,
                   botToken,
                   maxAuthAge
