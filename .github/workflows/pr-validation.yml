@@ -4,132 +4,89 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    name: Validate PR
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
         with:
-          node-version: "22.x"
-          cache: "npm"
+          node-version: 22.x
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Check for merge conflicts
-        run: |
-          if git diff --name-only --diff-filter=U | grep -q .; then
-            echo "❌ Merge conflicts detected. Please resolve them before merging."
-            exit 1
-          else
-            echo "✅ No merge conflicts detected."
-          fi
-
-      - name: Check package.json version
-        if: github.base_ref == 'main'
-        run: |
-          BASE_VERSION=$(git show origin/main:package.json | jq -r .version)
-          PR_VERSION=$(jq -r .version package.json)
-          echo "Base version: $BASE_VERSION"
-          echo "PR version: $PR_VERSION"
-
-          if [ "$BASE_VERSION" == "$PR_VERSION" ]; then
-            echo "⚠️ Warning: package.json version hasn't been updated. Consider bumping the version."
-            echo "::warning::package.json version hasn't been updated"
-          else
-            echo "✅ Version has been updated from $BASE_VERSION to $PR_VERSION"
-          fi
-
-      - name: Run type check
+      - name: Type check
         run: npm run type-check
 
-      - name: Run Ultracite check
-        run: npx ultracite check
+      - name: Lint
+        run: npm run lint
 
-      - name: Run tests
+      - name: Tests
         run: npm test
 
-      - name: Build package
+      - name: Build
         run: npm run build
 
-      - name: Check build artifacts
+      - name: Check for TODO comments
         run: |
-          if [ ! -f "dist/index.js" ] || [ ! -f "dist/index.d.ts" ]; then
-            echo "❌ Build artifacts missing!"
-            exit 1
-          fi
-          echo "✅ All build artifacts present"
-
-      - name: Check for TODO comments in changed files
-        run: |
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx')
-          if [ -n "$CHANGED_FILES" ]; then
-            TODO_COUNT=$(echo "$CHANGED_FILES" | xargs grep -c "TODO\|FIXME\|XXX" || true)
-            if [ "$TODO_COUNT" -gt 0 ]; then
-              echo "⚠️ Warning: Found TODO/FIXME comments in changed files"
-              echo "$CHANGED_FILES" | xargs grep -n "TODO\|FIXME\|XXX" || true
-              echo "::warning::Found TODO/FIXME comments in PR"
-            else
-              echo "✅ No TODO/FIXME comments in changed files"
-            fi
+          TODOS=$(grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" || true)
+          if [ -n "$TODOS" ]; then
+            echo "::warning::Found TODO comments:"
+            echo "$TODOS"
           fi
 
   security:
-    name: Security Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
         with:
-          node-version: "22.x"
-          cache: "npm"
-
-      - name: Check for vulnerabilities
-        run: npm audit --audit-level=moderate || true
-
-      - name: Check for package-lock changes
-        run: |
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "package-lock.json"; then
-            echo "⚠️ package-lock.json has been modified"
-            echo "::notice::Please ensure dependencies are up to date and secure"
-          fi
-
-  size-check:
-    name: Bundle Size Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22.x"
-          cache: "npm"
+          node-version: 22.x
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package
+      - name: Security audit
+        run: npm audit --audit-level=high || true
+
+  size-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
         run: npm run build
 
-      - name: Check bundle size
+      - name: Report bundle size
         run: |
-          echo "📦 Build artifacts size:"
-          ls -lh dist/
-          TOTAL_SIZE=$(du -sh dist/ | cut -f1)
-          echo "Total dist size: $TOTAL_SIZE"
-          echo "::notice::Bundle size: $TOTAL_SIZE"
+          echo "## Bundle Size" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          for f in dist/index.js dist/index.cjs dist/client.js dist/client.cjs; do
+            if [ -f "$f" ]; then
+              SIZE=$(wc -c < "$f" | tr -d ' ')
+              echo "| $(basename $f) | ${SIZE}B |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done

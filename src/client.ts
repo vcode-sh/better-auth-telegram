@@ -5,6 +5,12 @@ import type { TelegramAuthData } from "./types";
 type TelegramPlugin = typeof telegram;
 
 /**
+ * Options that can be passed to fetch calls for customization
+ * (e.g., custom headers, cache control, credentials)
+ */
+type FetchOptions = Record<string, any>;
+
+/**
  * Telegram Login Widget script URL
  */
 const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?22";
@@ -12,24 +18,17 @@ const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?22";
 /**
  * Options for initializing Telegram Login Widget
  */
-export type TelegramWidgetOptions = {
-  /**
-   * Size of the login button
-   * @default "large"
-   */
-  size?: "large" | "medium" | "small";
-
-  /**
-   * Whether to show user photo
-   * @default true
-   */
-  showUserPhoto?: boolean;
-
+export interface TelegramWidgetOptions {
   /**
    * Corner radius of the button
    * @default 20
    */
   cornerRadius?: number;
+
+  /**
+   * Language code (e.g., "en", "pl")
+   */
+  lang?: string;
 
   /**
    * Request write access permission
@@ -38,10 +37,16 @@ export type TelegramWidgetOptions = {
   requestAccess?: boolean;
 
   /**
-   * Language code (e.g., "en", "pl")
+   * Whether to show user photo
+   * @default true
    */
-  lang?: string;
-};
+  showUserPhoto?: boolean;
+  /**
+   * Size of the login button
+   * @default "large"
+   */
+  size?: "large" | "medium" | "small";
+}
 
 /**
  * Helper to load Telegram Widget script
@@ -76,11 +81,16 @@ export const telegramClient = () => {
       /**
        * Sign in with Telegram
        * @param authData - Authentication data from Telegram Login Widget
+       * @param fetchOptions - Optional fetch options (e.g., custom headers, cache control)
        */
-      signInWithTelegram: async (authData: TelegramAuthData) => {
+      signInWithTelegram: async (
+        authData: TelegramAuthData,
+        fetchOptions?: FetchOptions
+      ) => {
         const response = await $fetch("/telegram/signin", {
           method: "POST",
           body: authData,
+          ...fetchOptions,
         });
 
         return response;
@@ -89,11 +99,16 @@ export const telegramClient = () => {
       /**
        * Link current user account with Telegram
        * @param authData - Authentication data from Telegram Login Widget
+       * @param fetchOptions - Optional fetch options (e.g., custom headers, cache control)
        */
-      linkTelegram: async (authData: TelegramAuthData) => {
+      linkTelegram: async (
+        authData: TelegramAuthData,
+        fetchOptions?: FetchOptions
+      ) => {
         const response = await $fetch("/telegram/link", {
           method: "POST",
           body: authData,
+          ...fetchOptions,
         });
 
         return response;
@@ -101,10 +116,12 @@ export const telegramClient = () => {
 
       /**
        * Unlink Telegram account from current user
+       * @param fetchOptions - Optional fetch options (e.g., custom headers, cache control)
        */
-      unlinkTelegram: async () => {
+      unlinkTelegram: async (fetchOptions?: FetchOptions) => {
         const response = await $fetch("/telegram/unlink", {
           method: "POST",
+          ...fetchOptions,
         });
 
         return response;
@@ -112,12 +129,14 @@ export const telegramClient = () => {
 
       /**
        * Get Telegram bot configuration
+       * @param fetchOptions - Optional fetch options (e.g., custom headers, cache control)
        */
-      getTelegramConfig: async () => {
+      getTelegramConfig: async (fetchOptions?: FetchOptions) => {
         const response = await $fetch<{ botUsername: string }>(
           "/telegram/config",
           {
             method: "GET",
+            ...fetchOptions,
           }
         );
 
@@ -293,10 +312,14 @@ export const telegramClient = () => {
        * console.log("Signed in:", result);
        * ```
        */
-      signInWithMiniApp: async (initData: string) => {
+      signInWithMiniApp: async (
+        initData: string,
+        fetchOptions?: FetchOptions
+      ) => {
         const response = await $fetch("/telegram/miniapp/signin", {
           method: "POST",
           body: { initData },
+          ...fetchOptions,
         });
 
         return response;
@@ -316,13 +339,17 @@ export const telegramClient = () => {
        * }
        * ```
        */
-      validateMiniApp: async (initData: string) => {
+      validateMiniApp: async (
+        initData: string,
+        fetchOptions?: FetchOptions
+      ) => {
         const response = await $fetch<{
           valid: boolean;
           data: any;
         }>("/telegram/miniapp/validate", {
           method: "POST",
           body: { initData },
+          ...fetchOptions,
         });
 
         return response;
@@ -344,7 +371,7 @@ export const telegramClient = () => {
        * }
        * ```
        */
-      autoSignInFromMiniApp: async () => {
+      autoSignInFromMiniApp: async (fetchOptions?: FetchOptions) => {
         if (typeof window === "undefined") {
           throw new Error("This method can only be called in browser");
         }
@@ -360,6 +387,7 @@ export const telegramClient = () => {
         return await $fetch("/telegram/miniapp/signin", {
           method: "POST",
           body: { initData },
+          ...fetchOptions,
         });
       },
     }),

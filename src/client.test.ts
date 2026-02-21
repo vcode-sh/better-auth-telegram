@@ -6,7 +6,7 @@ import { telegramClient } from "./client";
 import type { TelegramAuthData } from "./types";
 
 describe("telegramClient", () => {
-  let mockFetch: ReturnType<typeof vi.fn>;
+  let mockFetch: any;
   let client: ReturnType<typeof telegramClient>;
 
   beforeEach(() => {
@@ -854,6 +854,120 @@ describe("telegramClient", () => {
           {}
         )
       ).rejects.toThrow("Failed to get Telegram config");
+    });
+  });
+
+  describe("fetchOptions support", () => {
+    it("should pass fetchOptions to signInWithTelegram", async () => {
+      const authData: TelegramAuthData = {
+        id: 123,
+        first_name: "Test",
+        auth_date: 123456,
+        hash: "hash",
+      };
+      const fetchOpts = { headers: { "X-Custom": "value" } };
+      mockFetch.mockResolvedValueOnce({ data: {} });
+
+      const actions = client.getActions(mockFetch);
+      await actions.signInWithTelegram(authData, fetchOpts);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/signin", {
+        method: "POST",
+        body: authData,
+        headers: { "X-Custom": "value" },
+      });
+    });
+
+    it("should pass fetchOptions to linkTelegram", async () => {
+      const authData: TelegramAuthData = {
+        id: 123,
+        first_name: "Test",
+        auth_date: 123456,
+        hash: "hash",
+      };
+      const fetchOpts = { headers: { "X-Custom": "value" } };
+      mockFetch.mockResolvedValueOnce({ data: {} });
+
+      const actions = client.getActions(mockFetch);
+      await actions.linkTelegram(authData, fetchOpts);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/link", {
+        method: "POST",
+        body: authData,
+        headers: { "X-Custom": "value" },
+      });
+    });
+
+    it("should pass fetchOptions to unlinkTelegram", async () => {
+      const fetchOpts = { headers: { Authorization: "Bearer token" } };
+      mockFetch.mockResolvedValueOnce({ data: {} });
+
+      const actions = client.getActions(mockFetch);
+      await actions.unlinkTelegram(fetchOpts);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/unlink", {
+        method: "POST",
+        headers: { Authorization: "Bearer token" },
+      });
+    });
+
+    it("should pass fetchOptions to getTelegramConfig", async () => {
+      const fetchOpts = { cache: "no-store" as const };
+      mockFetch.mockResolvedValueOnce({ data: { botUsername: "bot" } });
+
+      const actions = client.getActions(mockFetch);
+      await actions.getTelegramConfig(fetchOpts);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
+        method: "GET",
+        cache: "no-store",
+      });
+    });
+
+    it("should pass fetchOptions to signInWithMiniApp", async () => {
+      const fetchOpts = { headers: { "X-Custom": "value" } };
+      mockFetch.mockResolvedValueOnce({ data: {} });
+
+      const actions = client.getActions(mockFetch);
+      await actions.signInWithMiniApp("initData", fetchOpts);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
+        method: "POST",
+        body: { initData: "initData" },
+        headers: { "X-Custom": "value" },
+      });
+    });
+
+    it("should pass fetchOptions to validateMiniApp", async () => {
+      const fetchOpts = { headers: { "X-Custom": "value" } };
+      mockFetch.mockResolvedValueOnce({ data: { valid: true, data: null } });
+
+      const actions = client.getActions(mockFetch);
+      await actions.validateMiniApp("initData", fetchOpts);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/validate", {
+        method: "POST",
+        body: { initData: "initData" },
+        headers: { "X-Custom": "value" },
+      });
+    });
+
+    it("should work without fetchOptions (backward compatible)", async () => {
+      const authData: TelegramAuthData = {
+        id: 123,
+        first_name: "Test",
+        auth_date: 123456,
+        hash: "hash",
+      };
+      mockFetch.mockResolvedValueOnce({ data: {} });
+
+      const actions = client.getActions(mockFetch);
+      await actions.signInWithTelegram(authData);
+
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/signin", {
+        method: "POST",
+        body: authData,
+      });
     });
   });
 });

@@ -9,5 +9,5 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  external: ["better-auth"],
+  external: ["better-auth", "zod"],
 });

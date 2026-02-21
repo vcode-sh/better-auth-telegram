@@ -1,62 +1,73 @@
 /**
  * Data returned by Telegram Login Widget
  */
-export type TelegramAuthData = {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
+export interface TelegramAuthData {
   auth_date: number;
+  first_name: string;
   hash: string;
-};
+  id: number;
+  last_name?: string;
+  photo_url?: string;
+  username?: string;
+}
 
 /**
  * User object from Telegram Mini Apps
  */
-export type TelegramMiniAppUser = {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  language_code?: string;
-  is_premium?: boolean;
-  is_bot?: boolean;
+export interface TelegramMiniAppUser {
   allows_write_to_pm?: boolean;
+  first_name: string;
+  id: number;
+  is_bot?: boolean;
+  is_premium?: boolean;
+  language_code?: string;
+  last_name?: string;
   photo_url?: string;
-};
+  username?: string;
+}
 
 /**
  * Chat object from Telegram Mini Apps
  */
-export type TelegramMiniAppChat = {
+export interface TelegramMiniAppChat {
   id: number;
-  type: string;
-  title?: string;
-  username?: string;
   photo_url?: string;
-};
+  title?: string;
+  type: string;
+  username?: string;
+}
 
 /**
  * Complete data from Telegram Mini Apps initData
  */
-export type TelegramMiniAppData = {
-  user?: TelegramMiniAppUser;
-  receiver?: TelegramMiniAppUser;
-  chat?: TelegramMiniAppChat;
-  chat_type?: "sender" | "private" | "group" | "supergroup" | "channel";
-  chat_instance?: string;
-  start_param?: string;
-  can_send_after?: number;
-  query_id?: string;
+export interface TelegramMiniAppData {
   auth_date: number;
+  can_send_after?: number;
+  chat?: TelegramMiniAppChat;
+  chat_instance?: string;
+  chat_type?: "sender" | "private" | "group" | "supergroup" | "channel";
   hash: string;
-};
+  query_id?: string;
+  receiver?: TelegramMiniAppUser;
+  start_param?: string;
+  user?: TelegramMiniAppUser;
+}
 
 /**
  * Configuration options for the Telegram plugin
  */
-export type TelegramPluginOptions = {
+export interface TelegramPluginOptions {
+  /**
+   * Allow users to link their Telegram account to existing account
+   * @default true
+   */
+  allowUserToLink?: boolean;
+
+  /**
+   * Automatically create user if doesn't exist
+   * @default true
+   */
+  autoCreateUser?: boolean;
   /**
    * Bot token obtained from @BotFather
    * Used for verifying authentication data
@@ -70,25 +81,6 @@ export type TelegramPluginOptions = {
   botUsername: string;
 
   /**
-   * Allow users to link their Telegram account to existing account
-   * @default true
-   */
-  allowUserToLink?: boolean;
-
-  /**
-   * Automatically create user if doesn't exist
-   * @default true
-   */
-  autoCreateUser?: boolean;
-
-  /**
-   * Maximum age of auth_date in seconds
-   * Prevents replay attacks
-   * @default 86400 (24 hours)
-   */
-  maxAuthAge?: number;
-
-  /**
    * Custom function to map Telegram data to user object
    */
   mapTelegramDataToUser?: (data: TelegramAuthData) => {
@@ -97,6 +89,13 @@ export type TelegramPluginOptions = {
     image?: string;
     [key: string]: any;
   };
+
+  /**
+   * Maximum age of auth_date in seconds
+   * Prevents replay attacks
+   * @default 86400 (24 hours)
+   */
+  maxAuthAge?: number;
 
   /**
    * Telegram Mini Apps configuration
@@ -130,20 +129,32 @@ export type TelegramPluginOptions = {
       [key: string]: any;
     };
   };
-};
+}
 
 /**
  * Additional fields to add to the user table
  */
-export type TelegramUserFields = {
+export interface TelegramUserFields {
   telegramId?: string;
   telegramUsername?: string;
-};
+}
 
 /**
  * Additional fields to add to the account table
  */
-export type TelegramAccountFields = {
+export interface TelegramAccountFields {
   telegramId: string;
   telegramUsername?: string;
-};
+}
+
+/**
+ * Account record as returned by the Better Auth adapter
+ */
+export interface TelegramAccountRecord {
+  accountId: string;
+  id: string;
+  providerId: string;
+  telegramId?: string;
+  telegramUsername?: string;
+  userId: string;
+}

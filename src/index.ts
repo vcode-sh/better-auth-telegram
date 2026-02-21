@@ -1,7 +1,21 @@
 import type { BetterAuthPlugin, User } from "better-auth";
-import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
+import {
+  APIError,
+  createAuthEndpoint,
+  sessionMiddleware,
+} from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
-import type { TelegramAuthData, TelegramPluginOptions } from "./types";
+import {
+  DEFAULT_MAX_AUTH_AGE,
+  ERROR_CODES,
+  PLUGIN_ID,
+  SUCCESS_MESSAGES,
+} from "./constants";
+import type {
+  TelegramAccountRecord,
+  TelegramAuthData,
+  TelegramPluginOptions,
+} from "./types";
 import {
   parseMiniAppInitData,
   validateMiniAppData,
@@ -11,6 +25,7 @@ import {
 } from "./verify";
 
 export type {
+  TelegramAccountRecord,
   TelegramAuthData,
   TelegramMiniAppChat,
   TelegramMiniAppData,
@@ -42,7 +57,7 @@ export const telegram = (options: TelegramPluginOptions) => {
     botUsername,
     allowUserToLink = true,
     autoCreateUser = true,
-    maxAuthAge = 86400,
+    maxAuthAge = DEFAULT_MAX_AUTH_AGE,
     mapTelegramDataToUser,
     miniApp,
   } = options;
@@ -54,15 +69,15 @@ export const telegram = (options: TelegramPluginOptions) => {
   const mapMiniAppDataToUser = miniApp?.mapMiniAppDataToUser;
 
   if (!botToken) {
-    throw new Error("Telegram plugin: botToken is required");
+    throw new Error(ERROR_CODES.BOT_TOKEN_REQUIRED);
   }
 
   if (!botUsername) {
-    throw new Error("Telegram plugin: botUsername is required");
+    throw new Error(ERROR_CODES.BOT_USERNAME_REQUIRED);
   }
 
   return {
-    id: "telegram",
+    id: PLUGIN_ID,
 
     schema: {
       user: {
@@ -71,11 +86,13 @@ export const telegram = (options: TelegramPluginOptions) => {
             type: "string",
             required: false,
             unique: false,
+            input: false,
           },
           telegramUsername: {
             type: "string",
             required: false,
             unique: false,
+            input: false,
           },
         },
       },
@@ -106,26 +123,24 @@ export const telegram = (options: TelegramPluginOptions) => {
 
           // Validate auth data structure
           if (!validateTelegramAuthData(body)) {
-            return ctx.json(
-              { error: "Invalid Telegram auth data" },
-              { status: 400 }
-            );
+            throw new APIError("BAD_REQUEST", {
+              message: ERROR_CODES.INVALID_AUTH_DATA,
+            });
           }
 
           const telegramData = body as TelegramAuthData;
 
           // Verify authentication
-          const isValid = verifyTelegramAuth(
+          const isValid = await verifyTelegramAuth(
             telegramData,
             botToken,
             maxAuthAge
           );
 
           if (!isValid) {
-            return ctx.json(
-              { error: "Invalid Telegram authentication" },
-              { status: 401 }
-            );
+            throw new APIError("UNAUTHORIZED", {
+              message: ERROR_CODES.INVALID_AUTHENTICATION,
+            });
           }
 
           // Map Telegram data to user
@@ -147,7 +162,7 @@ export const telegram = (options: TelegramPluginOptions) => {
             where: [
               {
                 field: "providerId",
-                value: "telegram",
+                value: PLUGIN_ID,
               },
               {
                 field: "accountId",
@@ -160,7 +175,7 @@ export const telegram = (options: TelegramPluginOptions) => {
 
           if (existingAccount) {
             // User already has Telegram linked
-            userId = (existingAccount as any).userId;
+            userId = (existingAccount as TelegramAccountRecord).userId;
           } else if (autoCreateUser) {
             // Create new user
             const newUser = await ctx.context.adapter.create({
@@ -179,24 +194,21 @@ export const telegram = (options: TelegramPluginOptions) => {
               model: "account",
               data: {
                 userId: newUser.id,
-                providerId: "telegram",
+                providerId: PLUGIN_ID,
                 accountId: telegramData.id.toString(),
                 telegramId: telegramData.id.toString(),
                 telegramUsername: telegramData.username,
               },
             });
           } else {
-            return ctx.json(
-              { error: "User not found and auto-create is disabled" },
-              { status: 404 }
-            );
+            throw new APIError("NOT_FOUND", {
+              message: ERROR_CODES.USER_CREATION_DISABLED,
+            });
           }
 
           // Create session
-          const session = await ctx.context.internalAdapter.createSession(
-            userId,
-            ctx
-          );
+          const session =
+            await ctx.context.internalAdapter.createSession(userId);
 
           const user = await ctx.context.adapter.findOne({
             model: "user",
@@ -223,41 +235,40 @@ export const telegram = (options: TelegramPluginOptions) => {
         },
         async (ctx) => {
           if (!allowUserToLink) {
-            return ctx.json(
-              { error: "Linking Telegram accounts is disabled" },
-              { status: 403 }
-            );
+            throw new APIError("FORBIDDEN", {
+              message: ERROR_CODES.LINKING_DISABLED,
+            });
           }
 
           const body = await ctx.body;
           const session = ctx.context.session;
 
           if (!session?.user?.id) {
-            return ctx.json({ error: "Not authenticated" }, { status: 401 });
+            throw new APIError("UNAUTHORIZED", {
+              message: ERROR_CODES.NOT_AUTHENTICATED,
+            });
           }
 
           // Validate auth data
           if (!validateTelegramAuthData(body)) {
-            return ctx.json(
-              { error: "Invalid Telegram auth data" },
-              { status: 400 }
-            );
+            throw new APIError("BAD_REQUEST", {
+              message: ERROR_CODES.INVALID_AUTH_DATA,
+            });
           }
 
           const telegramData = body as TelegramAuthData;
 
           // Verify authentication
-          const isValid = verifyTelegramAuth(
+          const isValid = await verifyTelegramAuth(
             telegramData,
             botToken,
             maxAuthAge
           );
 
           if (!isValid) {
-            return ctx.json(
-              { error: "Invalid Telegram authentication" },
-              { status: 401 }
-            );
+            throw new APIError("UNAUTHORIZED", {
+              message: ERROR_CODES.INVALID_AUTHENTICATION,
+            });
           }
 
           // Check if Telegram account is already linked to another user
@@ -266,7 +277,7 @@ export const telegram = (options: TelegramPluginOptions) => {
             where: [
               {
                 field: "providerId",
-                value: "telegram",
+                value: PLUGIN_ID,
               },
               {
                 field: "accountId",
@@ -277,25 +288,18 @@ export const telegram = (options: TelegramPluginOptions) => {
 
           if (
             existingAccount &&
-            (existingAccount as any).userId !== session.user.id
+            (existingAccount as TelegramAccountRecord).userId !==
+              session.user.id
           ) {
-            return ctx.json(
-              {
-                error:
-                  "This Telegram account is already linked to another user",
-              },
-              { status: 409 }
-            );
+            throw new APIError("CONFLICT", {
+              message: ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER,
+            });
           }
 
           if (existingAccount) {
-            return ctx.json(
-              {
-                error:
-                  "This Telegram account is already linked to your account",
-              },
-              { status: 409 }
-            );
+            throw new APIError("CONFLICT", {
+              message: ERROR_CODES.TELEGRAM_ALREADY_LINKED_SELF,
+            });
           }
 
           // Create account link
@@ -303,7 +307,7 @@ export const telegram = (options: TelegramPluginOptions) => {
             model: "account",
             data: {
               userId: session.user.id,
-              providerId: "telegram",
+              providerId: PLUGIN_ID,
               accountId: telegramData.id.toString(),
               telegramId: telegramData.id.toString(),
               telegramUsername: telegramData.username,
@@ -322,7 +326,7 @@ export const telegram = (options: TelegramPluginOptions) => {
 
           return ctx.json({
             success: true,
-            message: "Telegram account linked successfully",
+            message: SUCCESS_MESSAGES.TELEGRAM_LINKED,
           });
         }
       ),
@@ -337,7 +341,9 @@ export const telegram = (options: TelegramPluginOptions) => {
           const session = ctx.context.session;
 
           if (!session?.user?.id) {
-            return ctx.json({ error: "Not authenticated" }, { status: 401 });
+            throw new APIError("UNAUTHORIZED", {
+              message: ERROR_CODES.NOT_AUTHENTICATED,
+            });
           }
 
           // Find and delete Telegram account
@@ -350,21 +356,25 @@ export const telegram = (options: TelegramPluginOptions) => {
               },
               {
                 field: "providerId",
-                value: "telegram",
+                value: PLUGIN_ID,
               },
             ],
           });
 
           if (!account) {
-            return ctx.json(
-              { error: "No Telegram account linked" },
-              { status: 404 }
-            );
+            throw new APIError("NOT_FOUND", {
+              message: ERROR_CODES.NOT_LINKED,
+            });
           }
 
           await ctx.context.adapter.delete({
             model: "account",
-            where: [{ field: "id", value: (account as any).id }],
+            where: [
+              {
+                field: "id",
+                value: (account as TelegramAccountRecord).id,
+              },
+            ],
           });
 
           // Clear Telegram data from user
@@ -379,7 +389,7 @@ export const telegram = (options: TelegramPluginOptions) => {
 
           return ctx.json({
             success: true,
-            message: "Telegram account unlinked successfully",
+            message: SUCCESS_MESSAGES.TELEGRAM_UNLINKED,
           });
         }
       ),
@@ -409,21 +419,19 @@ export const telegram = (options: TelegramPluginOptions) => {
                 const { initData } = body;
 
                 if (!initData || typeof initData !== "string") {
-                  return ctx.json(
-                    { error: "initData is required and must be a string" },
-                    { status: 400 }
-                  );
+                  throw new APIError("BAD_REQUEST", {
+                    message: ERROR_CODES.INIT_DATA_REQUIRED,
+                  });
                 }
 
                 // Verify initData
                 if (
                   miniAppValidateInitData &&
-                  !verifyMiniAppInitData(initData, botToken, maxAuthAge)
+                  !(await verifyMiniAppInitData(initData, botToken, maxAuthAge))
                 ) {
-                  return ctx.json(
-                    { error: "Invalid Mini App initData" },
-                    { status: 401 }
-                  );
+                  throw new APIError("UNAUTHORIZED", {
+                    message: ERROR_CODES.INVALID_MINI_APP_INIT_DATA,
+                  });
                 }
 
                 // Parse initData
@@ -431,17 +439,15 @@ export const telegram = (options: TelegramPluginOptions) => {
 
                 // Validate structure
                 if (!validateMiniAppData(data)) {
-                  return ctx.json(
-                    { error: "Invalid Mini App data structure" },
-                    { status: 400 }
-                  );
+                  throw new APIError("BAD_REQUEST", {
+                    message: ERROR_CODES.INVALID_MINI_APP_DATA_STRUCTURE,
+                  });
                 }
 
                 if (!data.user) {
-                  return ctx.json(
-                    { error: "No user data in initData" },
-                    { status: 400 }
-                  );
+                  throw new APIError("BAD_REQUEST", {
+                    message: ERROR_CODES.NO_USER_IN_INIT_DATA,
+                  });
                 }
 
                 const miniAppUser = data.user;
@@ -465,7 +471,7 @@ export const telegram = (options: TelegramPluginOptions) => {
                   where: [
                     {
                       field: "providerId",
-                      value: "telegram",
+                      value: PLUGIN_ID,
                     },
                     {
                       field: "accountId",
@@ -478,7 +484,7 @@ export const telegram = (options: TelegramPluginOptions) => {
 
                 if (existingAccount) {
                   // User already has Telegram linked
-                  userId = (existingAccount as any).userId;
+                  userId = (existingAccount as TelegramAccountRecord).userId;
                 } else if (autoCreateUser && miniAppAllowAutoSignin) {
                   // Create new user
                   const newUser = await ctx.context.adapter.create({
@@ -497,27 +503,21 @@ export const telegram = (options: TelegramPluginOptions) => {
                     model: "account",
                     data: {
                       userId: newUser.id,
-                      providerId: "telegram",
+                      providerId: PLUGIN_ID,
                       accountId: miniAppUser.id.toString(),
                       telegramId: miniAppUser.id.toString(),
                       telegramUsername: miniAppUser.username,
                     },
                   });
                 } else {
-                  return ctx.json(
-                    {
-                      error:
-                        "User not found and auto-signin is disabled for Mini Apps",
-                    },
-                    { status: 404 }
-                  );
+                  throw new APIError("NOT_FOUND", {
+                    message: ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED,
+                  });
                 }
 
                 // Create session
-                const session = await ctx.context.internalAdapter.createSession(
-                  userId,
-                  ctx
-                );
+                const session =
+                  await ctx.context.internalAdapter.createSession(userId);
 
                 const user = await ctx.context.adapter.findOne({
                   model: "user",
@@ -546,13 +546,12 @@ export const telegram = (options: TelegramPluginOptions) => {
                 const { initData } = body;
 
                 if (!initData || typeof initData !== "string") {
-                  return ctx.json(
-                    { error: "initData is required and must be a string" },
-                    { status: 400 }
-                  );
+                  throw new APIError("BAD_REQUEST", {
+                    message: ERROR_CODES.INIT_DATA_REQUIRED,
+                  });
                 }
 
-                const isValid = verifyMiniAppInitData(
+                const isValid = await verifyMiniAppInitData(
                   initData,
                   botToken,
                   maxAuthAge
@@ -576,5 +575,35 @@ export const telegram = (options: TelegramPluginOptions) => {
           }
         : {}),
     },
+
+    $ERROR_CODES: ERROR_CODES,
+
+    rateLimit: [
+      {
+        pathMatcher: (path: string) => path === "/telegram/signin",
+        window: 60,
+        max: 10,
+      },
+      {
+        pathMatcher: (path: string) => path === "/telegram/link",
+        window: 60,
+        max: 5,
+      },
+      {
+        pathMatcher: (path: string) => path === "/telegram/unlink",
+        window: 60,
+        max: 5,
+      },
+      {
+        pathMatcher: (path: string) => path === "/telegram/miniapp/signin",
+        window: 60,
+        max: 10,
+      },
+      {
+        pathMatcher: (path: string) => path === "/telegram/miniapp/validate",
+        window: 60,
+        max: 20,
+      },
+    ],
   } satisfies BetterAuthPlugin;
 };

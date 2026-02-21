@@ -1,18 +1,57 @@
-import { createHash, createHmac } from "node:crypto";
+import { DEFAULT_MAX_AUTH_AGE } from "./constants";
 import type { TelegramAuthData, TelegramMiniAppData } from "./types";
+
+const encoder = new TextEncoder();
+
+/**
+ * Computes HMAC-SHA256 of data using the given key
+ */
+async function hmacSha256(key: Uint8Array, data: string): Promise<ArrayBuffer> {
+  const cryptoKey = await globalThis.crypto.subtle.importKey(
+    "raw",
+    key as BufferSource,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return globalThis.crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    encoder.encode(data) as BufferSource
+  );
+}
+
+/**
+ * Computes SHA-256 hash of a string
+ */
+async function sha256(data: string): Promise<ArrayBuffer> {
+  return await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(data) as BufferSource
+  );
+}
+
+/**
+ * Converts an ArrayBuffer to a lowercase hex string
+ */
+function bufferToHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 /**
  * Verifies the authenticity of Telegram authentication data
  * @param data - Authentication data from Telegram Login Widget
  * @param botToken - Bot token from @BotFather
  * @param maxAge - Maximum age of auth in seconds (default: 24 hours)
- * @returns true if data is valid, false otherwise
+ * @returns Promise that resolves to true if data is valid, false otherwise
  */
-export function verifyTelegramAuth(
+export async function verifyTelegramAuth(
   data: TelegramAuthData,
   botToken: string,
-  maxAge = 86400
-): boolean {
+  maxAge = DEFAULT_MAX_AUTH_AGE
+): Promise<boolean> {
   // Extract hash from data
   const { hash, ...dataWithoutHash } = data;
 
@@ -34,12 +73,10 @@ export function verifyTelegramAuth(
     .join("\n");
 
   // Create secret key: SHA256(bot_token)
-  const secretKey = createHash("sha256").update(botToken).digest();
+  const secretKey = new Uint8Array(await sha256(botToken));
 
   // Calculate HMAC-SHA256
-  const hmac = createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
+  const hmac = bufferToHex(await hmacSha256(secretKey, dataCheckString));
 
   // Compare with received hash
   return hmac === hash;
@@ -66,7 +103,7 @@ export function validateTelegramAuthData(data: any): data is TelegramAuthData {
  */
 export function parseMiniAppInitData(initData: string): TelegramMiniAppData {
   const params = new URLSearchParams(initData);
-  const data: any = {};
+  const data: Partial<TelegramMiniAppData> & Record<string, unknown> = {};
 
   for (const [key, value] of params.entries()) {
     if (key === "user" || key === "receiver" || key === "chat") {
@@ -91,13 +128,13 @@ export function parseMiniAppInitData(initData: string): TelegramMiniAppData {
  * @param initData - Raw initData string from Telegram.WebApp.initData
  * @param botToken - Bot token from @BotFather
  * @param maxAge - Maximum age of auth in seconds (default: 24 hours)
- * @returns true if data is valid, false otherwise
+ * @returns Promise that resolves to true if data is valid, false otherwise
  */
-export function verifyMiniAppInitData(
+export async function verifyMiniAppInitData(
   initData: string,
   botToken: string,
-  maxAge = 86400
-): boolean {
+  maxAge = DEFAULT_MAX_AUTH_AGE
+): Promise<boolean> {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
 
@@ -127,15 +164,15 @@ export function verifyMiniAppInitData(
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-  // Create secret key: HMAC-SHA256("WebAppData", bot_token)
-  const secretKey = createHmac("sha256", "WebAppData")
-    .update(botToken)
-    .digest();
+  // Create secret key: HMAC-SHA256(key="WebAppData", data=botToken)
+  const secretKey = new Uint8Array(
+    await hmacSha256(encoder.encode("WebAppData"), botToken)
+  );
 
   // Calculate HMAC-SHA256
-  const calculatedHash = createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
+  const calculatedHash = bufferToHex(
+    await hmacSha256(secretKey, dataCheckString)
+  );
 
   // Compare with received hash
   return calculatedHash === hash;

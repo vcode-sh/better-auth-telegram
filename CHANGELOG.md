@@ -5,6 +5,59 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-21
+
+### Breaking Changes
+
+- **Verification functions are now async** — `verifyTelegramAuth()` and `verifyMiniAppInitData()` return `Promise<boolean>` instead of `boolean`. If you were calling these directly (you rebel), slap an `await` in front and carry on.
+- **Errors now throw `APIError` instead of returning JSON** — all endpoint error responses now throw `APIError` from `better-auth/api` instead of returning `ctx.json({ error }, { status })`. This is the canonical Better Auth pattern. If you were catching errors by checking `response.data.error`, switch to the standard `{ error }` shape from Better Auth's error pipeline. Your error handling just got an upgrade it didn't ask for.
+- **Peer dependency bumped** — requires `better-auth@^1.4.18`. The `^1.0.0` era was fun while it lasted.
+- **Package is now ESM-first** — added `"type": "module"` to package.json. CJS still works via `.cjs` exports because we're not monsters.
+
+### Changed
+
+- **Ditched `node:crypto` for Web Crypto API** — verification now uses `globalThis.crypto.subtle` instead of Node's `createHmac`/`createHash`. Works in Cloudflare Workers, Vite, Convex, and other runtimes that were previously throwing tantrums about `node:crypto`. Shoutout to [@ic4l4s9c](https://github.com/ic4l4s9c) and [@Mukhammadali](https://github.com/Mukhammadali) for making enough noise about this ([#3](https://github.com/vcode-sh/better-auth-telegram/pull/3)).
+- **Migrated all errors to `APIError` throws** — 14 error returns replaced with proper `throw new APIError("STATUS", { message })`. Status codes mapped to: `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`. Better Auth's error pipeline now handles the drama instead of raw JSON.
+- **Extracted error codes to `src/constants.ts`** — no more magic strings scattered across the codebase like confetti at a failed deployment. All error messages, success messages, and defaults now live in one place.
+- **Types converted from `type` to `interface`** — because `ultracite/core` said so, and who are we to argue with a linter.
+- **Killed all `as any` casts in server plugin** — introduced `TelegramAccountRecord` interface. Four `as any` casts replaced with proper types. TypeScript is no longer crying in the corner.
+- **Stricter TypeScript config** — added `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `isolatedModules`. Your IDE will thank you. Your deadline won't.
+- **Package exports restructured** — proper nested `import`/`require` paths with separate type definitions for each format. The way npm intended, allegedly.
+
+### Added
+
+- **`$ERROR_CODES` export on plugin** — the plugin object now exposes `$ERROR_CODES` so consumers can match error types client-side instead of comparing against magic strings like animals. `if (error.message === plugin.$ERROR_CODES.NOT_AUTHENTICATED)` — civilised.
+- **Per-endpoint rate limiting** — all plugin endpoints now have rate limit rules. Signin/miniapp: 10 req/60s. Link/unlink: 5 req/60s. Validate: 20 req/60s. Brute-forcing Telegram auth was never a good strategy, now it's also a throttled one.
+- **`input: false` on user schema fields** — `telegramId` and `telegramUsername` on the user table now reject direct input during signup. No more creative users setting their own Telegram ID to Elon's.
+- **`TelegramAccountRecord` type** — new exported interface for Better Auth adapter account records. Replaces guesswork with proper types.
+- **Client `fetchOptions` support** — all API-calling client methods (`signInWithTelegram`, `linkTelegram`, `unlinkTelegram`, `getTelegramConfig`, `signInWithMiniApp`, `validateMiniApp`, `autoSignInFromMiniApp`) now accept an optional `fetchOptions` parameter. Custom headers, cache control, credentials — pass through whatever your heart desires. Widget init methods excluded because they're browser utilities, not your fetch playground.
+- **7 new tests** — fetchOptions passthrough coverage for all client API methods plus backward compatibility check. 110 → 117 tests total. The test suite grows stronger.
+- **CI/CD pipeline** — GitHub Actions with Node 22.x/24.x matrix, Bun runtime tests, build artifact verification with size reporting to step summary, and lint checks. Because shipping untested code is a personality trait, not a strategy.
+- **PR validation workflow** — separate `pr-validation.yml` runs TODO/FIXME detection, `npm audit` security scan, and bundle size reporting. PRs now get judged before they even reach main.
+- **Release workflow** — `release.yml` triggers on `v*` tags, runs the full test/build pipeline, then publishes to npm with `--provenance` and auto-creates a GitHub Release. Push a tag, go make coffee.
+- **Actions upgraded to v6** — `actions/checkout` and `actions/setup-node` bumped from v4 to v6. `codecov/codecov-action` from v4 to v5 with proper token support. Living in the past was never the vibe.
+- **Vitest setup file** — `vitest.setup.ts` configures happy-dom's `handleDisabledFileLoadingAsSuccess` to suppress `DOMException` spam when tests append `<script>` elements. Clean test output was always the plan. Eventually.
+- **`.nvmrc`** — pinned to Node 22. Stop guessing.
+- **`lint-staged` config** — runs `ultracite fix` before every commit. Your messy code gets formatted whether it likes it or not.
+- **`sideEffects: false`** in package.json — tree-shaking support for the three people who care about bundle size.
+- **`prepublishOnly` script** — type-check, test, and build all run before publish. No more "oops, pushed broken types to npm" incidents.
+
+### Upgraded
+
+- `@biomejs/biome` 2.2.4 → 2.4.4
+- `ultracite` 5.4.5 → 7.2.3 (extends `ultracite/core` now)
+- `vitest` 3.2.4 → 4.0.18
+- `happy-dom` 19.0.2 → 20.6.3
+- `tsup` 8.5.0 → 8.5.1
+- Added `@vitest/coverage-v8` 4.0.18
+- Added `lint-staged` 16.2.7
+- `zod` added to tsup externals
+
+### Fixed
+
+- Fixed `createSession` API call — was passing full endpoint context instead of just userId. Better Auth's internal adapter was too polite to crash, but TypeScript wasn't.
+- Removed rogue `package-manager=pnpm` from `.npmrc` that was causing npm to passive-aggressively warn on every install.
+
 ## [0.3.2] - 2025-10-25
 
 ### Fixed
@@ -229,6 +282,8 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[0.4.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.4.0
+[0.3.2]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.2
 [0.3.1]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.1
 [0.3.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.0
 [0.2.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.2.0
