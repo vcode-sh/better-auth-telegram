@@ -1,0 +1,99 @@
+name: Bug Report
+description: Something broke. I'm not surprised, but I'm listening.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Right then. Something went sideways. Walk me through the wreckage so I can pretend I knew about it all along.
+
+  - type: input
+    id: version
+    attributes:
+      label: Plugin Version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: better-auth-version
+    attributes:
+      label: Better Auth Version
+      placeholder: "1.4.18"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? Be specific. "It doesn't work" is not a diagnosis.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal code or steps. If I can't reproduce it, it didn't happen.
+      render: typescript
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you thought would happen in your beautiful, naive worldview
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include error messages -- the compiler is trying to talk to you)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth-flow
+    attributes:
+      label: Authentication Flow
+      options:
+        - Login Widget (callback)
+        - Login Widget (redirect)
+        - Mini App (auto-signin)
+        - Mini App (manual)
+        - Link/Unlink
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Node.js
+        - Bun
+        - Cloudflare Workers
+        - Other edge runtime
+    validations:
+      required: true
+
+  - type: input
+    id: runtime-version
+    attributes:
+      label: Runtime Version
+      placeholder: "22.0.0"
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database Adapter
+      options:
+        - Prisma
+        - Drizzle
+        - Kysely
+        - Other

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Better Auth Documentation
+    url: https://better-auth.com
+    about: Read the docs before opening an issue. Revolutionary concept, I know.
+  - name: Telegram Bot API Docs
+    url: https://core.telegram.org/bots/api
+    about: For when the problem is Telegram's, not mine (it happens more than you'd think)
+  - name: Discussions
+    url: https://github.com/vcode-sh/better-auth-telegram/discussions
+    about: For questions, shower thoughts, and ideas that aren't quite bugs or features yet

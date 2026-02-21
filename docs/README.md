@@ -1,93 +1,30 @@
-# better-auth-telegram Documentation
+# better-auth-telegram
 
-Complete documentation for the Telegram authentication plugin for Better Auth.
+Telegram auth for [Better Auth](https://www.better-auth.com/). Login Widget, Mini Apps, the whole circus -- in one plugin that somehow works on every runtime.
+
+v0.4.0 | 117 tests | ESM + CJS | Web Crypto API | Works where `node:crypto` fears to tread
+
+---
 
 ## Table of Contents
 
-### Getting Started
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [Docs](#docs)
+- [Requirements](#requirements)
+- [Links](#links)
 
-- **[Installation Guide](./installation.md)** - Complete setup instructions from bot creation to deployment
-  - Create Telegram bot with @BotFather
-  - Configure Better Auth server and client
-  - Database schema setup
-  - Local development with ngrok
-
-### Usage
-
-- **[Usage Guide](./usage.md)** - Common usage patterns and examples
-  - Basic sign-in flow
-  - Sign-in with redirect
-  - Link/unlink Telegram accounts
-  - Session management
-  - Framework-specific examples
-
-- **[Mini Apps Guide](./miniapps.md)** - **🆕 NEW in v0.2.0**
-  - Complete Telegram Mini Apps implementation
-  - Auto-authentication setup
-  - Step-by-step bot creation
-  - Testing with ngrok
-  - Full working examples
-  - Troubleshooting guide
-
-### Reference
-
-- **[API Reference](./api-reference.md)** - Complete API documentation
-  - Server plugin configuration
-  - Client methods
-  - Endpoints
-  - Types and interfaces
-  - Schema extensions
-
-- **[Configuration Guide](./configuration.md)** - Detailed configuration options
-  - Server and client setup
-  - Environment variables
-  - Widget customization
-  - User data mapping
-  - Session configuration
-  - Database configuration
-  - Framework-specific configs
-
-### Security
-
-- **[Security Best Practices](./security.md)** - How to secure your implementation
-  - HMAC verification
-  - Replay attack prevention
-  - Token security
-  - Session security
-  - Environment security
-  - Network security (HTTPS, CORS)
-  - Security checklist
-
-### Support
-
-- **[Troubleshooting Guide](./troubleshooting.md)** - Solutions to common problems
-  - Widget issues
-  - Authentication errors
-  - Session problems
-  - Database issues
-  - Environment and configuration
-  - Development and production issues
-
-## Quick Links
-
-- [GitHub Repository](https://github.com/vcode-sh/better-auth-telegram)
-- [Better Auth Documentation](https://better-auth.com)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
-- [Telegram Login Widget](https://core.telegram.org/widgets/login)
+---
 
 ## Quick Start
-
-### 1. Install
 
 ```bash
 npm install better-auth-telegram
 ```
 
-### 2. Create Bot
+Message [@BotFather](https://t.me/botfather), run `/newbot`, pretend you had a plan all along.
 
-Message [@BotFather](https://t.me/botfather) on Telegram and run `/newbot`
-
-### 3. Configure Server
+**Server:**
 
 ```typescript
 import { betterAuth } from "better-auth";
@@ -104,131 +41,70 @@ export const auth = betterAuth({
 });
 ```
 
-### 4. Configure Client
+**Client:**
 
 ```typescript
 import { createAuthClient } from "better-auth/client";
 import { telegramClient } from "better-auth-telegram/client";
 
 export const authClient = createAuthClient({
-  baseURL: window.location.origin,
-  fetchOptions: {
-    credentials: "include",
-  },
   plugins: [telegramClient()],
 });
 ```
 
-### 5. Use in Your App
-
-```tsx
-import { authClient } from "./auth-client";
-import { useEffect } from "react";
-
-export function LoginButton() {
-  useEffect(() => {
-    authClient.initTelegramWidget(
-      "telegram-login",
-      { size: "large" },
-      async (authData) => {
-        await authClient.signInWithTelegram(authData);
-      }
-    );
-  }, []);
-
-  return <div id="telegram-login"></div>;
-}
-```
-
-## Features
-
-- ✅ Sign in with Telegram Login Widget
-- ✅ **NEW: Telegram Mini Apps support** (v0.2.0+)
-- ✅ Link/unlink Telegram accounts
-- ✅ HMAC-SHA-256 verification
-- ✅ Replay attack prevention
-- ✅ Customizable widget
-- ✅ Auto-authentication in Mini Apps
-- ✅ Access to premium status, language, and more
-- ✅ Full TypeScript support
-- ✅ Framework-agnostic
-- ✅ Works with all Better Auth adapters
-
-## Supported Frameworks
-
-- Next.js (App Router & Pages Router)
-- React
-- Vue
-- Svelte
-- Vanilla JavaScript
-- Any framework that supports Better Auth
-
-## Supported Databases
-
-- PostgreSQL
-- MySQL
-- SQLite
-- MongoDB (via Prisma)
-- Any database supported by Better Auth
-
-## Requirements
-
-- Node.js 22+ (recommended: 22.x or 24.x)
-- Better Auth v1.0.0+
-- HTTPS (required by Telegram)
-- Public domain (use ngrok for local dev)
-
-## Documentation Structure
-
-```
-docs/
-├── README.md              # This file - documentation index
-├── installation.md        # Complete installation guide
-├── usage.md              # Usage examples and patterns
-├── miniapps.md           # 🆕 Mini Apps complete guide (v0.2.0+)
-├── api-reference.md      # Complete API documentation
-├── configuration.md      # Configuration options
-├── security.md           # Security best practices
-└── troubleshooting.md    # Common issues and solutions
-```
-
-## Example Projects
-
-See the `examples/` directory for complete implementations:
-
-- `nextjs-app/` - Next.js App Router example
-- `nextjs-pages/` - Next.js Pages Router example
-- `react-spa/` - React SPA example
-- `vanilla-js/` - Vanilla JavaScript example
-
-## Community
-
-- [GitHub Discussions](https://github.com/vcode-sh/better-auth-telegram/discussions)
-- [GitHub Issues](https://github.com/vcode-sh/better-auth-telegram/issues)
-- [Better Auth Discord](https://better-auth.com/discord)
-
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](../CONTRIBUTING.md) before submitting PRs.
-
-## License
-
-MIT - See [LICENSE](../LICENSE)
-
-## Author
-
-Created by [Vibe Code](https://vcode.sh)
-
-- Website: [vcode.sh](https://vcode.sh)
-- Email: [hello@vcode.sh](mailto:hello@vcode.sh)
-- GitHub: [@vcode-sh](https://github.com/vcode-sh)
-
-## Support
-
-- Report bugs: [GitHub Issues](https://github.com/vcode-sh/better-auth-telegram/issues)
-- Get help: [Troubleshooting Guide](./troubleshooting.md)
-- Email: [hello@vcode.sh](mailto:hello@vcode.sh)
+That's it. The rest is in the [Installation Guide](./installation.md) for people who read manuals.
 
 ---
 
-**Need help?** Start with the [Installation Guide](./installation.md) or [Troubleshooting Guide](./troubleshooting.md).
+## Features
+
+- **Login Widget** -- callback and redirect modes, because one way to authenticate was never enough
+- **Mini Apps** -- auto-signin, manual signin, initData validation. Enable it, forget it works
+- **Link/unlink** -- attach Telegram to existing accounts, detach when you inevitably change your mind
+- **HMAC-SHA-256 via Web Crypto API** (`crypto.subtle`) -- runs on Node, Bun, Cloudflare Workers, edge runtimes, presumably a toaster
+- **Replay attack prevention** -- configurable `maxAuthAge` (default 24h) so yesterday's auth stays yesterday
+- **Per-endpoint rate limiting** -- built into the plugin, not bolted on as an afterthought
+- **`APIError` from `better-auth/api`** on all endpoints -- consistent, catchable, debuggable
+- **Exported `$ERROR_CODES`** -- match errors client-side like a civilised person
+- **`fetchOptions`** on all client methods -- custom headers, cache control, whatever you need
+- **Async verification** -- `verifyTelegramAuth()` and `verifyMiniAppInitData()` return `Promise<boolean>`
+- **Schema fields are `input: false`** -- `telegramId` and `telegramUsername` on user table can't be written to directly. Trust issues, but the good kind
+- **`TelegramAccountRecord` type exported** -- for when you need to type things properly
+- **ESM-first** (`"type": "module"`), CJS via `.cjs` because backwards compatibility is a lifestyle
+- Full TypeScript. Framework-agnostic. Works with every Better Auth adapter
+
+---
+
+## Docs
+
+- **[Installation Guide](./installation.md)** -- bot creation, server/client config, database schema, local dev with ngrok
+- **[Usage Guide](./usage.md)** -- sign-in flows, account linking, session management, framework examples
+- **[Mini Apps Guide](./miniapps.md)** -- Mini App auth, auto-signin, bot setup, testing, troubleshooting
+- **[API Reference](./api-reference.md)** -- endpoints, types, schema extensions, configuration options
+- **[Configuration Guide](./configuration.md)** -- server/client setup, env vars, widget customisation, user data mapping
+- **[Security Best Practices](./security.md)** -- HMAC verification, token security, replay prevention, the full paranoia stack
+- **[Troubleshooting](./troubleshooting.md)** -- widget issues, auth errors, session problems, the usual suspects
+
+---
+
+## Requirements
+
+- Node.js >= 22 (or Bun, or any runtime with Web Crypto API)
+- `better-auth@^1.4.18`
+- HTTPS (Telegram insists, and honestly, so should you)
+- Public domain (use ngrok for local dev)
+
+---
+
+## Links
+
+- [GitHub](https://github.com/vcode-sh/better-auth-telegram)
+- [npm](https://www.npmjs.com/package/better-auth-telegram)
+- [Changelog](../CHANGELOG.md)
+- [Better Auth](https://www.better-auth.com/)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Telegram Login Widget](https://core.telegram.org/widgets/login)
+
+---
+
+MIT | [Vibe Code](https://vcode.sh) | [@vcode_sh](https://x.com/vcode_sh)

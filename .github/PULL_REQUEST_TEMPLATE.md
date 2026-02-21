@@ -1,38 +1,29 @@
-## Description
+## What fresh chaos is this?
 
-<!-- Please include a summary of the changes and which issue is fixed. -->
+<!-- Describe what you did and why. Spare me the novel. -->
 
-Fixes # (issue)
+## Nature of the beast
 
-## Type of change
+- [ ] Bug fix (something was broken and you, heroically, fixed it)
+- [ ] New feature (you added something nobody asked for but everyone needed)
+- [ ] Breaking change (you chose violence)
+- [ ] Documentation update (the rarest contribution in open source)
+- [ ] Refactoring (you moved things around and called it progress)
 
-<!-- Please delete options that are not relevant. -->
+## The bare minimum
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
-- [ ] Code quality improvement
+- [ ] Tests pass (`npm test`) -- yes, all of them
+- [ ] Types check (`npm run type-check`) -- TypeScript is not optional here
+- [ ] Lint passes (`npm run lint`) -- Biome has no feelings to hurt
+- [ ] New code has tests (I will notice if it doesn't)
+- [ ] Coverage stays above 90% (I don't make the rules -- actually I do)
+- [ ] Docs updated (if applicable, which it probably is, which you probably skipped)
+- [ ] `CHANGELOG.md` updated (future you will thank present you)
 
-## Checklist
+## Proof of life
 
-- [ ] My code follows the style guidelines of this project (Ultracite/Biome)
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings or errors
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] I have run `npm run type-check` and it passes
-- [ ] I have run `npx ultracite check` and it passes
+<!-- How did you test this? "It works on my machine" is not a testing strategy. -->
 
-## Testing
+## Relevant wreckage
 
-<!-- Please describe the tests that you ran to verify your changes. -->
-
-- [ ] Test A
-- [ ] Test B
-
-## Additional context
-
-<!-- Add any other context about the pull request here. -->
+<!-- Link related issues: Fixes #123, Closes #456 -->

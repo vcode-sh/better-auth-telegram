@@ -1,488 +1,208 @@
-# Telegram Mini Apps Guide
+# Telegram Mini Apps
 
-Complete guide for implementing Telegram Mini Apps authentication with better-auth-telegram v0.2.0+.
+Your web app, living inside Telegram. No login popups, no OAuth dances, no "please verify your email." The user opened your Mini App — they're already Telegram. Act accordingly.
 
-## Table of Contents
+Works with `better-auth-telegram` v0.4.0+.
 
-- [Overview](#overview)
-- [Setup Guide](#setup-guide)
-- [Server Configuration](#server-configuration)
-- [Client Implementation](#client-implementation)
-- [Testing](#testing)
-- [API Reference](#api-reference)
-- [Troubleshooting](#troubleshooting)
-- [Examples](#examples)
+## Mini Apps vs Login Widget
 
-## Overview
+Before you commit to a path, know what you're choosing:
 
-Telegram Mini Apps are web applications that run inside the Telegram app, providing seamless authentication and access to Telegram user data without requiring a separate login widget.
+| | Login Widget | Mini Apps |
+|---|---|---|
+| **Where it runs** | Your website | Inside Telegram |
+| **User action** | Click & authorize in popup | Automatic (they're already there) |
+| **User data** | Name, photo, username | All that + language, premium status, chat context |
+| **Start params** | Nope | Yes |
+| **Setup effort** | Drop a widget | Register a Mini App with BotFather |
 
-### Key Features
+If your app lives on the open web, use the Login Widget. If your app lives inside Telegram, you're in the right doc.
 
-- ✅ **Auto-authentication** - Users are automatically signed in when they open your Mini App
-- ✅ **Rich user data** - Access to language, premium status, and more
-- ✅ **Context information** - Chat type, start parameters, query IDs
-- ✅ **Secure verification** - HMAC-SHA-256 validation using WebAppData secret
-- ✅ **No popup required** - Unlike Login Widget, no separate authorization flow
+## Setup
 
-### Mini Apps vs Login Widget
+### 1. Create a Mini App with BotFather
 
-| Feature | Login Widget | Mini Apps |
-|---------|-------------|-----------|
-| Use case | External websites | Apps inside Telegram |
-| User action | Click & authorize | Automatic |
-| Integration | Widget on page | Full web app |
-| Context data | Basic user info | Full context + chat info |
-| Premium status | ❌ | ✅ |
-| Language code | ❌ | ✅ |
-| Start params | ❌ | ✅ |
+You need a bot first. If you don't have one, `/newbot` in [@BotFather](https://t.me/botfather). Then:
 
-## Setup Guide
+1. Send `/newapp` to BotFather
+2. Pick your bot
+3. Provide a title, description, icon (512x512 PNG), your HTTPS web app URL, and a short name
+4. You get a link: `t.me/yourbot/yourapp`
 
-### Step 1: Create a Telegram Bot
+### 2. Local Dev (HTTPS Required)
 
-If you haven't already:
+Telegram demands HTTPS. For local dev, tunnel it:
 
-1. Open Telegram and find [@BotFather](https://t.me/botfather)
-2. Send `/newbot` and follow instructions
-3. Save your bot token
-4. Note your bot username (without @)
-
-### Step 2: Create a Mini App
-
-1. Send `/newapp` to @BotFather
-2. Choose your bot
-3. Provide:
-   - **Title**: Your app name (e.g., "My Auth App")
-   - **Description**: Short description
-   - **Photo**: App icon (512x512 PNG)
-   - **Demo GIF/Video**: Optional preview
-   - **Web App URL**: Your app URL (must be HTTPS)
-   - **Short name**: URL identifier (e.g., "myapp")
-
-Example:
-```
-/newapp
-→ Select bot: @mybot
-→ Title: My Authentication App
-→ Description: Secure login with Telegram
-→ Photo: [upload 512x512 icon]
-→ Web App URL: https://myapp.com/miniapp
-→ Short name: authapp
+```bash
+npx ngrok http 3000
 ```
 
-Result: `t.me/mybot/authapp`
-
-### Step 3: Development Setup with ngrok
-
-For local development, you need HTTPS:
-
-1. **Install ngrok**:
-   ```bash
-   npm install -g ngrok
-   # or
-   brew install ngrok
-   ```
-
-2. **Start your dev server**:
-   ```bash
-   npm run dev
-   # Server running on http://localhost:3000
-   ```
-
-3. **Create ngrok tunnel**:
-   ```bash
-   ngrok http 3000
-   ```
-
-4. **Update Mini App URL in @BotFather**:
-   ```
-   /myapps
-   → Select your Mini App
-   → Edit Web App URL
-   → Enter: https://your-ngrok-id.ngrok.io/miniapp
-   ```
+Update your Mini App URL in BotFather (`/myapps` -> Edit Web App URL) to the ngrok URL.
 
 ## Server Configuration
-
-### Basic Setup
 
 ```typescript
 import { betterAuth } from "better-auth";
 import { telegram } from "better-auth-telegram";
 
 export const auth = betterAuth({
-  database: /* your database config */,
+  database: /* your database */,
   plugins: [
     telegram({
       botToken: process.env.TELEGRAM_BOT_TOKEN!,
       botUsername: process.env.TELEGRAM_BOT_USERNAME!,
-
-      // Enable Mini Apps
       miniApp: {
         enabled: true,
-        validateInitData: true,
-        allowAutoSignin: true,
       },
     }),
   ],
 });
 ```
 
-### Advanced Configuration
+That's the minimum. Here's every knob you can turn:
 
 ```typescript
 telegram({
   botToken: process.env.TELEGRAM_BOT_TOKEN!,
   botUsername: "mybot",
 
+  // Auto-create users on first sign-in (default: true)
+  autoCreateUser: true,
+
+  // Max age of auth_date in seconds, prevents replay attacks (default: 86400 = 24h)
+  maxAuthAge: 86400,
+
   miniApp: {
     enabled: true,
 
-    // Validate initData from Telegram (recommended: true)
+    // Validate initData cryptographically (default: true)
+    // Turn this off and you deserve what happens next
     validateInitData: true,
 
-    // Allow auto-signin when user opens Mini App (recommended: true)
+    // Allow auto-signin to create new users (default: true)
+    // New users are created ONLY when BOTH autoCreateUser AND allowAutoSignin are true
     allowAutoSignin: true,
 
-    // Custom user data mapping
+    // Map Telegram user data to your user model
     mapMiniAppDataToUser: (user) => ({
       name: user.username || user.first_name,
-      email: undefined, // Telegram doesn't provide email
       image: user.photo_url,
-
-      // Store additional fields
-      locale: user.language_code,
-      isPremium: user.is_premium,
     }),
   },
 })
 ```
 
-### Environment Variables
-
-```bash
-# .env.local
-TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-TELEGRAM_BOT_USERNAME="mybot"
-BETTER_AUTH_SECRET="your-secret-key"
-BETTER_AUTH_URL="https://your-ngrok-id.ngrok.io"
-```
-
 ## Client Implementation
 
-### 1. Install Telegram WebApp SDK
+### 1. Load the Telegram WebApp SDK
 
-Add to your HTML layout:
+Add this to your HTML `<head>`:
 
 ```html
-<!-- In your layout.tsx or index.html -->
-<head>
-  <script src="https://telegram.org/js/telegram-web-app.js" async></script>
-</head>
+<script src="https://telegram.org/js/telegram-web-app.js" async></script>
 ```
 
-### 2. Create Auth Client
+### 2. Create the Auth Client
 
 ```typescript
-// lib/auth-client.ts
-"use client";
-
 import { createAuthClient } from "better-auth/client";
 import { telegramClient } from "better-auth-telegram/client";
 
 export const authClient = createAuthClient({
-  baseURL: typeof window !== 'undefined'
-    ? window.location.origin
-    : process.env.NEXT_PUBLIC_APP_URL,
+  baseURL: window.location.origin,
   fetchOptions: {
-    credentials: "include", // Required for session cookies
+    credentials: "include",
   },
   plugins: [telegramClient()],
 });
 ```
 
-### 3. Auto Sign-in Component
+### 3. Auto Sign-in (The Whole Point)
+
+The simplest path. User opens your Mini App, you sign them in. No clicks, no forms, no existential friction:
 
 ```typescript
-// app/miniapp/page.tsx
-"use client";
+const result = await authClient.autoSignInFromMiniApp();
+// result.data?.user — your user, authenticated, ready to go
+```
 
-import { authClient } from "@/lib/auth-client";
+`autoSignInFromMiniApp()` grabs `window.Telegram.WebApp.initData` automatically, sends it to `/telegram/miniapp/signin`, sets the session cookie, done. If it's not running inside Telegram, it throws.
+
+### 4. Manual Sign-in (More Control)
+
+If you want to validate first or handle the flow yourself:
+
+```typescript
+const initData = window.Telegram.WebApp.initData;
+
+// Optional: validate without signing in
+const validation = await authClient.validateMiniApp(initData);
+if (!validation.data?.valid) {
+  // something's off
+}
+
+// Sign in
+const result = await authClient.signInWithMiniApp(initData);
+```
+
+### React Example
+
+```tsx
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { authClient } from "./auth-client";
 
-export default function MiniAppPage() {
-  const router = useRouter();
-  const [status, setStatus] = useState("Initializing...");
-  const [error, setError] = useState<string | null>(null);
+function MiniApp() {
+  const [user, setUser] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    async function autoSignIn() {
-      try {
-        setStatus("Checking Telegram environment...");
+    authClient.autoSignInFromMiniApp()
+      .then((result) => setUser(result.data?.user))
+      .catch((err) => setError(err.message));
+  }, []);
 
-        // Wait for Telegram WebApp SDK to load
-        let attempts = 0;
-        while (attempts < 50 && !(window as any).Telegram?.WebApp) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-
-        const Telegram = (window as any).Telegram;
-
-        if (!Telegram?.WebApp) {
-          setError("Not running in Telegram Mini App");
-          return;
-        }
-
-        setStatus("Authenticating...");
-
-        // Auto sign-in using Telegram.WebApp.initData
-        const result = await authClient.autoSignInFromMiniApp();
-
-        if (result.data?.user) {
-          setStatus("✅ Signed in successfully!");
-
-          // Redirect to main app
-          setTimeout(() => {
-            router.push("/dashboard");
-          }, 1500);
-        } else {
-          setError("Failed to sign in");
-        }
-      } catch (err: any) {
-        setError(err.message);
-        console.error("Mini App auth error:", err);
-      }
-    }
-
-    autoSignIn();
-  }, [router]);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
-        <h1 className="text-2xl font-bold mb-4">Telegram Mini App</h1>
-
-        <div className="space-y-4">
-          <p className="text-gray-700">{status}</p>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded p-4">
-              <p className="text-red-700 text-sm">{error}</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  if (error) return <div>Auth failed: {error}</div>;
+  if (!user) return <div>Loading...</div>;
+  return <div>Welcome, {user.name}</div>;
 }
-```
-
-### 4. Manual Sign-in (Alternative)
-
-```typescript
-// If you want more control over the sign-in flow
-import { authClient } from "@/lib/auth-client";
-
-async function manualSignIn() {
-  const Telegram = (window as any).Telegram;
-
-  if (!Telegram?.WebApp?.initData) {
-    throw new Error("No initData available");
-  }
-
-  // Get initData from Telegram
-  const initData = Telegram.WebApp.initData;
-
-  // Validate initData (optional, but recommended)
-  const validation = await authClient.validateMiniApp(initData);
-
-  if (!validation.data?.valid) {
-    throw new Error("Invalid initData");
-  }
-
-  // Sign in
-  const result = await authClient.signInWithMiniApp(initData);
-
-  return result.data;
-}
-```
-
-### 5. Access User Data
-
-```typescript
-// After sign-in, access additional Mini App data
-const Telegram = (window as any).Telegram;
-const WebApp = Telegram?.WebApp;
-
-if (WebApp) {
-  // User info
-  console.log("User:", WebApp.initDataUnsafe?.user);
-  console.log("Is Premium:", WebApp.initDataUnsafe?.user?.is_premium);
-  console.log("Language:", WebApp.initDataUnsafe?.user?.language_code);
-
-  // Context info
-  console.log("Chat type:", WebApp.initDataUnsafe?.chat_type);
-  console.log("Start param:", WebApp.initDataUnsafe?.start_param);
-
-  // App info
-  console.log("Theme:", WebApp.colorScheme); // 'light' or 'dark'
-  console.log("Version:", WebApp.version);
-  console.log("Platform:", WebApp.platform); // 'ios', 'android', 'macos', etc.
-}
-```
-
-## Testing
-
-### Test Locally
-
-1. **Start dev server with ngrok**:
-   ```bash
-   # Terminal 1: Start your app
-   npm run dev
-
-   # Terminal 2: Start ngrok
-   ngrok http 3000
-   ```
-
-2. **Update Mini App URL**:
-   - Copy ngrok URL (e.g., `https://abc123.ngrok.io`)
-   - In @BotFather: `/myapps` → Edit Web App URL
-   - Set to: `https://abc123.ngrok.io/miniapp`
-
-3. **Open Mini App in Telegram**:
-   - Find your bot in Telegram
-   - Click on the Mini App button/menu
-   - Or open: `t.me/yourbot/yourapp`
-
-### Test Checklist
-
-- [ ] Mini App opens in Telegram
-- [ ] Telegram WebApp SDK loads (check `window.Telegram`)
-- [ ] initData is available (`Telegram.WebApp.initData`)
-- [ ] Auto sign-in works
-- [ ] User is redirected to main app
-- [ ] Session persists on refresh
-- [ ] User data is correct (name, username, etc.)
-- [ ] Premium status detected (if applicable)
-- [ ] Language code is correct
-- [ ] Works on mobile (iOS/Android)
-- [ ] Works on desktop (macOS/Windows)
-
-### Debug Mode
-
-Enable logging to see what's happening:
-
-```typescript
-useEffect(() => {
-  const Telegram = (window as any).Telegram;
-
-  console.log("=== Mini App Debug Info ===");
-  console.log("WebApp available:", !!Telegram?.WebApp);
-  console.log("initData:", Telegram?.WebApp?.initData);
-  console.log("initDataUnsafe:", Telegram?.WebApp?.initDataUnsafe);
-  console.log("Platform:", Telegram?.WebApp?.platform);
-  console.log("Version:", Telegram?.WebApp?.version);
-  console.log("=========================");
-}, []);
 ```
 
 ## API Reference
 
 ### Server Endpoints
 
+Both only exist when `miniApp.enabled` is `true`.
+
 #### `POST /api/auth/telegram/miniapp/signin`
 
-Sign in user with Mini App initData.
+Signs in (or creates) a user from Mini App initData. Sets session cookie.
 
-**Request:**
-```json
-{
-  "initData": "user=%7B%22id%22%3A123...&auth_date=1234567890&hash=abc..."
-}
-```
+**Body:** `{ "initData": "user=%7B%22id%22...&auth_date=...&hash=..." }`
 
-**Response:**
-```json
-{
-  "user": {
-    "id": "...",
-    "name": "John Doe",
-    "telegramId": "123456789",
-    "telegramUsername": "johndoe"
-  },
-  "session": {
-    "token": "...",
-    "expiresAt": "..."
-  }
-}
-```
+**Returns:** `{ user, session }`
+
+**Errors:**
+- `400` — Missing or malformed initData, no user in payload
+- `401` — Cryptographic verification failed
+- `404` — User not found and auto-creation disabled (`autoCreateUser` or `allowAutoSignin` is `false`)
 
 #### `POST /api/auth/telegram/miniapp/validate`
 
-Validate initData without signing in.
+Validates initData without creating a session. Useful for checking if the data is legit before doing something with it.
 
-**Request:**
-```json
-{
-  "initData": "user=%7B%22id%22%3A123...&auth_date=1234567890&hash=abc..."
-}
-```
+**Body:** `{ "initData": "..." }`
 
-**Response:**
-```json
-{
-  "valid": true,
-  "data": {
-    "user": {
-      "id": 123456789,
-      "first_name": "John",
-      "username": "johndoe",
-      "language_code": "en",
-      "is_premium": true
-    },
-    "auth_date": 1234567890,
-    "hash": "abc..."
-  }
-}
-```
+**Returns:** `{ valid: boolean, data: TelegramMiniAppData | null }`
 
 ### Client Methods
 
-#### `authClient.signInWithMiniApp(initData: string)`
-
-Sign in with raw initData string.
-
-```typescript
-const initData = window.Telegram.WebApp.initData;
-const result = await authClient.signInWithMiniApp(initData);
-```
-
-#### `authClient.validateMiniApp(initData: string)`
-
-Validate initData without signing in.
-
-```typescript
-const validation = await authClient.validateMiniApp(initData);
-if (validation.data?.valid) {
-  console.log("Valid user:", validation.data.data.user);
-}
-```
-
-#### `authClient.autoSignInFromMiniApp()`
-
-Automatically get initData from Telegram.WebApp and sign in.
-
-```typescript
-const result = await authClient.autoSignInFromMiniApp();
-console.log("User:", result.data?.user);
-```
+| Method | What it does |
+|---|---|
+| `authClient.signInWithMiniApp(initData)` | Sign in with raw initData string |
+| `authClient.validateMiniApp(initData)` | Validate initData, get parsed data back |
+| `authClient.autoSignInFromMiniApp()` | Grab initData from `window.Telegram.WebApp` and sign in automatically |
 
 ### Types
-
-#### `TelegramMiniAppUser`
 
 ```typescript
 interface TelegramMiniAppUser {
@@ -496,11 +216,7 @@ interface TelegramMiniAppUser {
   allows_write_to_pm?: boolean;
   photo_url?: string;
 }
-```
 
-#### `TelegramMiniAppData`
-
-```typescript
 interface TelegramMiniAppData {
   user?: TelegramMiniAppUser;
   receiver?: TelegramMiniAppUser;
@@ -513,211 +229,42 @@ interface TelegramMiniAppData {
   auth_date: number;
   hash: string;
 }
+
+interface TelegramMiniAppChat {
+  id: number;
+  type: string;
+  title?: string;
+  username?: string;
+  photo_url?: string;
+}
 ```
+
+## How Verification Works
+
+Unlike the Login Widget (which uses `SHA256(botToken)` as the HMAC key), Mini Apps use a two-step HMAC:
+
+1. `secret = HMAC-SHA256("WebAppData", botToken)`
+2. `signature = HMAC-SHA256(secret, dataCheckString)`
+
+Where `dataCheckString` is all initData params (minus `hash`), sorted alphabetically, joined with `\n`. Timestamp is checked against `maxAuthAge` (default 24h) to prevent replay attacks.
+
+All of this runs on Web Crypto API (`crypto.subtle`) — no Node-specific deps, works everywhere.
 
 ## Troubleshooting
 
-### "Not running in Telegram Mini App"
+**"Not running in Telegram Mini App"** — You opened the page in a browser, not in Telegram. Open via `t.me/yourbot/yourapp`.
 
-**Cause**: Page opened in regular browser, not in Telegram.
+**"Telegram.WebApp is undefined"** — The SDK script hasn't loaded yet. Make sure `telegram-web-app.js` is in your `<head>`. If you're doing manual init, wait for it.
 
-**Solution**:
-- Make sure you open the link through Telegram
-- Use format: `t.me/yourbot/yourapp`
-- Or click Mini App button in bot chat
+**"No initData available"** — The Mini App isn't properly configured in BotFather, or you're hitting the URL directly instead of through Telegram.
 
-### "Telegram.WebApp is undefined"
+**"Invalid Mini App initData" (401)** — Cryptographic verification failed. Check your `TELEGRAM_BOT_TOKEN` is correct and matches the bot that owns the Mini App. Also check if `auth_date` is within `maxAuthAge`.
 
-**Cause**: Telegram WebApp SDK not loaded.
+**"User not found and auto-signin is disabled" (404)** — Either `autoCreateUser` or `miniApp.allowAutoSignin` is `false`, and this Telegram user doesn't have an existing account. Both must be `true` to create new users via Mini App.
 
-**Solution**:
-```html
-<!-- Add to layout -->
-<script src="https://telegram.org/js/telegram-web-app.js" async></script>
+## Resources
 
-<!-- Wait for SDK in your code -->
-while (!(window as any).Telegram?.WebApp) {
-  await new Promise(resolve => setTimeout(resolve, 100));
-}
-```
-
-### "No initData available"
-
-**Cause**: Mini App not properly configured or opened outside Telegram.
-
-**Solution**:
-1. Check Web App URL in @BotFather is correct
-2. Make sure it's HTTPS (use ngrok for local dev)
-3. Open via `t.me/yourbot/yourapp`, not direct URL
-
-### "Invalid initData" / 401 Unauthorized
-
-**Cause**: initData validation failed (wrong bot token or expired).
-
-**Solution**:
-1. Check `TELEGRAM_BOT_TOKEN` in `.env` is correct
-2. Check `auth_date` is not too old (default max: 24 hours)
-3. Make sure you're using the bot that created the Mini App
-
-### Authentication works but no redirect
-
-**Cause**: Router/navigation not working.
-
-**Solution**:
-```typescript
-// Use Next.js router
-import { useRouter } from "next/navigation";
-const router = useRouter();
-router.push("/dashboard");
-
-// Or regular navigation
-window.location.href = "/dashboard";
-```
-
-### Works locally but not in production
-
-**Checklist**:
-- [ ] Environment variables set in production
-- [ ] HTTPS enabled (required by Telegram)
-- [ ] Correct Web App URL in @BotFather
-- [ ] CORS headers configured
-- [ ] Telegram WebApp SDK loading correctly
-
-## Examples
-
-### Complete Next.js Example
-
-See [better-auth-telegram-test](https://github.com/vcode-sh/better-auth-telegram/tree/main/examples/next-app) for a complete working example.
-
-### React SPA Example
-
-```typescript
-// src/App.tsx
-import { useEffect, useState } from 'react';
-import { authClient } from './auth-client';
-
-function MiniApp() {
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    async function init() {
-      // Wait for Telegram SDK
-      while (!(window as any).Telegram?.WebApp) {
-        await new Promise(r => setTimeout(r, 100));
-      }
-
-      // Auto sign-in
-      const result = await authClient.autoSignInFromMiniApp();
-      setUser(result.data?.user);
-    }
-
-    init();
-  }, []);
-
-  return user ? (
-    <div>Welcome, {user.name}!</div>
-  ) : (
-    <div>Loading...</div>
-  );
-}
-```
-
-### Vanilla JavaScript Example
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-</head>
-<body>
-  <div id="app">Loading...</div>
-
-  <script type="module">
-    import { createAuthClient } from 'better-auth/client';
-    import { telegramClient } from 'better-auth-telegram/client';
-
-    const authClient = createAuthClient({
-      baseURL: window.location.origin,
-      fetchOptions: {
-        credentials: "include",
-      },
-      plugins: [telegramClient()],
-    });
-
-    async function init() {
-      // Wait for SDK
-      while (!window.Telegram?.WebApp) {
-        await new Promise(r => setTimeout(r, 100));
-      }
-
-      // Sign in
-      const result = await authClient.autoSignInFromMiniApp();
-
-      if (result.data?.user) {
-        document.getElementById('app').innerHTML =
-          `Welcome, ${result.data.user.name}!`;
-      }
-    }
-
-    init();
-  </script>
-</body>
-</html>
-```
-
-## Best Practices
-
-### Security
-
-1. **Always validate initData** on the server
-   ```typescript
-   miniApp: {
-     validateInitData: true, // Always true in production
-   }
-   ```
-
-2. **Use HTTPS** everywhere (Telegram requirement)
-
-3. **Set proper maxAuthAge** to prevent replay attacks
-   ```typescript
-   maxAuthAge: 3600, // 1 hour
-   ```
-
-4. **Never expose bot token** to client
-
-### User Experience
-
-1. **Show loading state** while authenticating
-2. **Handle errors gracefully** with clear messages
-3. **Use Telegram theme colors** for consistency
-   ```typescript
-   const WebApp = window.Telegram.WebApp;
-   const theme = WebApp.themeParams;
-   // Use theme.bg_color, theme.text_color, etc.
-   ```
-
-4. **Support both light and dark modes**
-   ```typescript
-   const isDark = WebApp.colorScheme === 'dark';
-   ```
-
-### Performance
-
-1. **Lazy load Telegram SDK** (already async)
-2. **Cache user data** after first load
-3. **Use server-side rendering** where possible
-4. **Minimize bundle size** for faster loads
-
-## Additional Resources
-
-- [Telegram Mini Apps Official Docs](https://core.telegram.org/bots/webapps)
-- [Telegram WebApp API Reference](https://core.telegram.org/bots/webapps#initializing-mini-apps)
-- [better-auth Documentation](https://better-auth.com)
-- [Example Repository](https://github.com/vcode-sh/better-auth-telegram)
-
-## Support
-
-- **GitHub Issues**: [Report bugs](https://github.com/vcode-sh/better-auth-telegram/issues)
-- **Discussions**: [Ask questions](https://github.com/vcode-sh/better-auth-telegram/discussions)
-- **Email**: hello@vcode.sh
+- [Telegram Mini Apps Docs](https://core.telegram.org/bots/webapps)
+- [Telegram WebApp API](https://core.telegram.org/bots/webapps#initializing-mini-apps)
+- [Better Auth](https://better-auth.com)
+- [GitHub](https://github.com/vcode-sh/better-auth-telegram)

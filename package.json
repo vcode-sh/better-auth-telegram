@@ -46,8 +46,12 @@
   },
   "keywords": [
     "better-auth",
+    "better-auth-plugin",
     "telegram",
+    "telegram-login",
+    "telegram-mini-apps",
     "authentication",
+    "oauth",
     "plugin",
     "typescript"
   ],

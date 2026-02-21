@@ -8,7 +8,14 @@
 
 Telegram authentication plugin for [Better Auth](https://better-auth.com). Login Widget. Mini Apps. Link/unlink. HMAC-SHA-256 verification. The whole circus.
 
-First npm package. Shipped it scared. 110 tests. 100% coverage. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
+
+117 tests. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+
+## Requirements
+
+- Node.js >= 22 (or Bun, or any runtime with Web Crypto API)
+- `better-auth@^1.4.18`
 
 ## Install
 
@@ -101,6 +108,14 @@ await authClient.unlinkTelegram();
 
 Getting "Not authenticated"? You forgot `credentials: "include"`. Go back to [Client setup](#3-client).
 
+All API-calling client methods accept an optional `fetchOptions` parameter for custom headers, cache control, etc:
+
+```typescript
+await authClient.signInWithTelegram(authData, {
+  headers: { "x-custom-header": "value" },
+});
+```
+
 ### Redirect flow
 
 ```typescript
@@ -172,9 +187,30 @@ Full types in [`src/types.ts`](./src/types.ts).
 | POST | `/telegram/miniapp/signin` | No | Sign in from Mini App |
 | POST | `/telegram/miniapp/validate` | No | Validate initData |
 
+All endpoints are rate-limited. Signin/miniapp: 10 req/60s. Link/unlink: 5 req/60s. Validate: 20 req/60s. Brute-forcing was never a strategy, now it's also a throttled one.
+
+## Error Handling
+
+All endpoints throw `APIError` from `better-auth/api`. The plugin exposes `$ERROR_CODES` so you can match errors client-side like a civilised person:
+
+```typescript
+import { telegram } from "better-auth-telegram";
+
+const plugin = telegram({ botToken: "...", botUsername: "..." });
+
+// In your error handler:
+if (error.message === plugin.$ERROR_CODES.NOT_AUTHENTICATED) {
+  // handle it
+}
+```
+
+No more comparing against magic strings. You're welcome.
+
 ## Security
 
-HMAC-SHA-256 verification on all auth data. Timestamp validation against replay attacks. Bot token never touches the client. Secret key derived from SHA-256 hash of bot token.
+HMAC-SHA-256 verification on all auth data via Web Crypto API (`crypto.subtle`). Timestamp validation against replay attacks. Bot token never touches the client. Works in every runtime that implements the Web Crypto standard — which is all of them now, congratulations internet.
+
+Login Widget uses `SHA256(botToken)` as secret key. Mini Apps use `HMAC-SHA256("WebAppData", botToken)`. Different derivation paths, same level of paranoia.
 
 Is it bulletproof? No. Is it better than storing passwords in plain text? Significantly.
 
@@ -190,11 +226,24 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 
 See [`examples/`](./examples) for a Next.js implementation.
 
+## Migrating to v0.4.0
+
+**Breaking changes** — read before upgrading:
+
+- **Verification functions are now async** — `verifyTelegramAuth()` and `verifyMiniAppInitData()` return `Promise<boolean>`. Slap an `await` in front if you're calling them directly.
+- **Errors throw `APIError`** — all endpoints throw `APIError` instead of returning `ctx.json({ error })`. Switch to Better Auth's standard error shape.
+- **ESM-first** — `"type": "module"` in package.json. CJS still works via `.cjs` exports.
+- **Peer dep bumped** — requires `better-auth@^1.4.18`.
+
+Full changelog in [CHANGELOG.md](./CHANGELOG.md).
+
 ## Links
 
 - [Better Auth](https://better-auth.com)
 - [Telegram Login Widget](https://core.telegram.org/widgets/login)
+- [Telegram Mini Apps](https://core.telegram.org/bots/webapps)
 - [GitHub](https://github.com/vcode-sh/better-auth-telegram)
+- [Changelog](./CHANGELOG.md)
 
 ## License
 

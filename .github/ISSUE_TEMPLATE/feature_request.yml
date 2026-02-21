@@ -1,0 +1,36 @@
+name: Feature Request
+description: You want something I haven't built yet. Bold.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        So you have an idea. Congratulations. Most feature requests are thinly veiled complaints, and that's fine. Tell me what you need and I'll tell you why it's hard.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What itch are you trying to scratch? Paint me a picture of your suffering.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would this work in your ideal fantasy world?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What horrible workarounds have you tried so far?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Code examples, screenshots, links, desperate Stack Overflow threads -- whatever you've got

@@ -1,38 +1,37 @@
-# Troubleshooting Guide
+# Troubleshooting
 
-Common issues and solutions for better-auth-telegram plugin.
+Something broke. You're here. Let's fix it and move on with our lives.
 
 ## Table of Contents
 
-- [Common Issues (Start Here)](#common-issues-start-here)
+- [The Cookie Problem (Start Here)](#the-cookie-problem-start-here)
 - [Widget Issues](#widget-issues)
 - [Authentication Errors](#authentication-errors)
+- [Mini App Errors](#mini-app-errors)
 - [Session Problems](#session-problems)
-- [Database Issues](#database-issues)
-- [Environment and Configuration](#environment-and-configuration)
-- [Development Issues](#development-issues)
-- [Production Issues](#production-issues)
+- [Error Code Reference](#error-code-reference)
+- [Getting Help](#getting-help)
 
-## Common Issues (Start Here)
+## The Cookie Problem (Start Here)
+
+Nine times out of ten, you're here because of this one. Welcome to the club.
 
 ### "Not authenticated" When Linking Telegram
 
-**Symptom:** You get `{ error: "Not authenticated" }` when calling `linkTelegram()`, even though Telegram shows the bot as connected.
+**What you see:** `{ error: "Not authenticated" }` when calling `linkTelegram()`, even though Telegram clearly let you log in.
 
-**Cause:** Session cookies aren't being sent with the request.
+**What happened:** Your browser isn't sending session cookies with the request. No cookies, no session, no authentication. It's not personal.
 
-**Solution:**
-
-Add `credentials: "include"` to your auth client config:
+**The fix:**
 
 ```typescript
-// ❌ Wrong: Missing credentials
+// This is wrong. This is why you're here.
 export const authClient = createAuthClient({
   baseURL: window.location.origin,
   plugins: [telegramClient()],
 });
 
-// ✅ Correct: Include credentials for cookies
+// This is right. Add credentials.
 export const authClient = createAuthClient({
   baseURL: window.location.origin,
   fetchOptions: {
@@ -42,47 +41,41 @@ export const authClient = createAuthClient({
 });
 ```
 
-Without `credentials: "include"`, your browser won't send cookies with the request. No cookies = no session = "Not authenticated" error.
+**Why it works like this:**
 
-**Why this happens:**
+1. You sign in to your app (cookie gets set)
+2. You authenticate with Telegram (works fine, no cookie needed)
+3. You call `linkTelegram()` to connect both accounts
+4. Without `credentials: "include"`, your browser ghosts the cookie
+5. Server sees no session, returns "Not authenticated"
+6. You end up here
 
-1. You sign in to your app (session cookie is set)
-2. You authenticate with Telegram (this works fine)
-3. Your app calls `linkTelegram()` to connect the accounts
-4. Without `credentials: "include"`, the session cookie doesn't get sent
-5. Server can't find your session
-6. Returns "Not authenticated"
-
-**Also check:**
-
-Make sure your `baseURL` matches your actual domain:
+**Also double-check your `baseURL`:**
 
 ```typescript
-// ✅ Good: Auto-detect current origin
+// Good: auto-detect the origin
 baseURL: typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL
 
-// ❌ Bad: Different port/domain
-baseURL: "http://localhost:4000"  // when your app runs on :3000
+// Bad: wrong port. Your app runs on :3000, not :4000.
+baseURL: "http://localhost:4000"
 ```
 
 ## Widget Issues
 
 ### Widget Not Showing
 
-**Symptom:** The Telegram login button doesn't appear on the page.
+The Telegram login button has vanished into the void. Possible reasons:
 
-**Common Causes:**
-
-1. **Container element doesn't exist**
+**1. You're initializing before the DOM exists**
 
 ```typescript
-// ❌ Wrong: Widget initialized before element exists
+// Wrong: the element doesn't exist yet
 const App = () => {
   authClient.initTelegramWidget("container", {}, callback);
   return <div id="container"></div>;
 };
 
-// ✅ Correct: Use useEffect
+// Right: wait for mount
 const App = () => {
   useEffect(() => {
     authClient.initTelegramWidget("container", {}, callback);
@@ -91,729 +84,258 @@ const App = () => {
 };
 ```
 
-2. **Wrong container ID**
+**2. Mismatched container IDs**
 
 ```typescript
-// ❌ Wrong: Mismatched IDs
-authClient.initTelegramWidget("telegram-widget", {}, callback);
-return <div id="telegram-login"></div>;
-
-// ✅ Correct: Matching IDs
+// You wrote "telegram-widget" in one place and "telegram-login" in the other.
+// Computers are annoyingly literal about this.
 authClient.initTelegramWidget("telegram-login", {}, callback);
 return <div id="telegram-login"></div>;
 ```
 
-3. **Domain not set in BotFather**
+**3. Domain not set in BotFather**
 
-Check with @BotFather:
+Telegram won't render the widget if your domain isn't registered. Talk to @BotFather:
+
 ```
-You: /setdomain
-BotFather: Choose a bot...
-You: @your_bot
-BotFather: OK. Send me the domain...
-You: yourdomain.com
+/setdomain
+[Select your bot]
+yourdomain.com    (no https://, just the domain)
 ```
 
-4. **Script loading blocked**
+**4. Script blocked by CSP or ad blockers**
 
-Check browser console for:
-- Content Security Policy (CSP) violations
-- Ad blockers
-- Network errors
-
-**Solution:** Add CSP exception if needed:
+Check your browser console. If something is blocking `telegram.org`, add a CSP exception:
 
 ```html
 <meta http-equiv="Content-Security-Policy"
       content="script-src 'self' https://telegram.org;">
 ```
 
-### Widget Shows Error Message
+### "Bot domain invalid"
 
-**Error:** "Bot domain invalid"
+Your BotFather domain doesn't match the domain you're on. For local dev, you need a tunnel (ngrok or similar) and that tunnel's domain registered with BotFather.
 
-**Cause:** The domain in BotFather doesn't match your current domain.
+### Widget Renders But Nothing Happens on Click
 
-**Solution:**
-1. Check current domain in browser
-2. Update with `/setdomain` in @BotFather
-3. Make sure to enter domain without `https://`
-4. For local dev, use ngrok domain
-
-### Widget Not Responding
-
-**Symptom:** Widget appears but clicking doesn't do anything.
-
-**Debugging Steps:**
-
-1. **Check browser console:**
-
-```javascript
-// Add error handling
-authClient.initTelegramWidget(
-  "container",
-  {},
-  async (authData) => {
-    console.log("Received auth data:", authData);
-    try {
-      const result = await authClient.signInWithTelegram(authData);
-      console.log("Sign in result:", result);
-    } catch (error) {
-      console.error("Sign in error:", error);
-    }
-  }
-);
-```
-
-2. **Check network tab:**
-- Look for failed requests to `/api/auth/telegram/signin`
-- Check response status and body
-
-3. **Verify callback is defined:**
+**Check your callback exists and does something:**
 
 ```typescript
-// ❌ Wrong: Undefined callback
+// Wrong: undefined callback. The widget has nowhere to send data.
 authClient.initTelegramWidget("container", {}, undefined);
 
-// ✅ Correct: Proper callback
+// Right: actual callback that handles the auth data
 authClient.initTelegramWidget("container", {}, async (data) => {
-  await authClient.signInWithTelegram(data);
+  const result = await authClient.signInWithTelegram(data);
+  console.log("Result:", result);
 });
 ```
 
-## Authentication Errors
+Check the network tab for failed requests to `/api/auth/telegram/signin`. The response body usually tells you exactly what went wrong.
 
-### "Invalid authentication data"
+### Hot Reload Breaking the Widget
 
-**Cause:** HMAC verification failed.
-
-**Possible Reasons:**
-
-1. **Wrong bot token:**
-
-```typescript
-// Check .env file
-TELEGRAM_BOT_TOKEN="correct_token_from_botfather"
-```
-
-2. **Token not loaded:**
-
-```typescript
-// Add validation
-if (!process.env.TELEGRAM_BOT_TOKEN) {
-  throw new Error("TELEGRAM_BOT_TOKEN is not set");
-}
-```
-
-3. **Token has leading/trailing spaces:**
-
-```typescript
-// Trim token
-botToken: process.env.TELEGRAM_BOT_TOKEN!.trim()
-```
-
-4. **Using wrong bot:**
-
-Make sure the bot token matches the bot username.
-
-### "Authentication data is too old"
-
-**Cause:** `auth_date` exceeds `maxAuthAge`.
-
-**Solutions:**
-
-1. **Increase max age:**
-
-```typescript
-telegram({
-  maxAuthAge: 86400 * 2, // 2 days instead of 1
-})
-```
-
-2. **Check server time:**
-
-```bash
-# Make sure server time is correct
-date
-```
-
-If server time is wrong:
-```bash
-# Sync time (Linux)
-sudo ntpdate -s time.nist.gov
-
-# Or use systemd
-sudo timedatectl set-ntp true
-```
-
-3. **Check for clock skew:**
-
-```typescript
-// Add logging
-const authDate = data.auth_date;
-const currentTime = Math.floor(Date.now() / 1000);
-console.log("Auth date:", authDate);
-console.log("Current time:", currentTime);
-console.log("Difference:", currentTime - authDate);
-```
-
-### "User not found" or "Account doesn't exist"
-
-**Cause:** `autoCreateUser` is disabled and user doesn't exist.
-
-**Solution:**
-
-Either enable auto-creation:
-
-```typescript
-telegram({
-  autoCreateUser: true,
-})
-```
-
-Or manually create users before they sign in.
-
-### "Telegram account already linked"
-
-**Cause:** Trying to link a Telegram account that's already linked to another user.
-
-**Solution:**
-
-User must first unlink from the other account:
-
-```typescript
-// Have user sign in with Telegram
-await authClient.signInWithTelegram(data);
-
-// Then unlink
-await authClient.unlinkTelegram();
-
-// Then sign in with desired account and link
-await authClient.signIn(/* other method */);
-await authClient.linkTelegram(data);
-```
-
-## Session Problems
-
-### "No active session" After Successful Login
-
-**Symptom:** User logs in successfully but session shows as empty.
-
-**Common Causes:**
-
-1. **Client using wrong baseURL:**
-
-```typescript
-// ❌ Wrong: Using different domain
-export const authClient = createAuthClient({
-  baseURL: "https://different-domain.com",
-});
-
-// ✅ Correct: Use same origin
-export const authClient = createAuthClient({
-  baseURL: typeof window !== 'undefined'
-    ? window.location.origin
-    : process.env.NEXT_PUBLIC_APP_URL,
-  fetchOptions: {
-    credentials: "include",
-  },
-  plugins: [telegramClient()],
-});
-```
-
-2. **Cookies not being sent:**
-
-```typescript
-// Add credentials
-export const authClient = createAuthClient({
-  baseURL: window.location.origin,
-  fetchOptions: {
-    credentials: "include",
-  },
-  plugins: [telegramClient()],
-});
-```
-
-3. **Cookie domain mismatch:**
-
-Check browser DevTools → Application → Cookies:
-- Cookie should be set for your domain
-- Should have proper flags (HttpOnly, Secure if HTTPS)
-
-4. **CORS issues:**
-
-```typescript
-// Server config
-export const auth = betterAuth({
-  advanced: {
-    cors: {
-      origin: ["https://your-frontend-domain.com"],
-      credentials: true,
-    },
-  },
-});
-```
-
-### Session Expires Too Quickly
-
-**Cause:** Session configuration too short.
-
-**Solution:**
-
-```typescript
-export const auth = betterAuth({
-  session: {
-    expiresIn: 60 * 60 * 24 * 7,    // 7 days
-    updateAge: 60 * 60 * 24,        // Update every day
-  },
-});
-```
-
-### Session Not Updating
-
-**Symptom:** Changes to user data don't reflect in session.
-
-**Solution:**
-
-Refresh session after updates:
-
-```typescript
-// After updating user
-await authClient.getSession({ forceFresh: true });
-```
-
-Or invalidate and recreate:
-
-```typescript
-await authClient.signOut();
-await authClient.signInWithTelegram(authData);
-```
-
-## Database Issues
-
-### "no such table: user" or "no such table: account"
-
-**Cause:** Database tables don't exist.
-
-**Solution for Prisma:**
-
-```bash
-# Generate Prisma client
-npx prisma generate
-
-# Run migrations
-npx prisma migrate dev
-
-# Or for production
-npx prisma migrate deploy
-```
-
-**Solution for other ORMs:**
-
-Ensure migrations have been run and tables exist:
-
-```sql
--- Check if tables exist (PostgreSQL)
-SELECT tablename FROM pg_tables WHERE schemaname = 'public';
-
--- Check if tables exist (SQLite)
-SELECT name FROM sqlite_master WHERE type='table';
-```
-
-### "column does not exist: telegramId"
-
-**Cause:** Schema not updated with Telegram fields.
-
-**Solution:**
-
-Add migration to add columns:
-
-```sql
--- PostgreSQL/MySQL
-ALTER TABLE "User" ADD COLUMN "telegramId" TEXT;
-ALTER TABLE "User" ADD COLUMN "telegramUsername" TEXT;
-ALTER TABLE "Account" ADD COLUMN "telegramId" TEXT;
-ALTER TABLE "Account" ADD COLUMN "telegramUsername" TEXT;
-
--- SQLite
-ALTER TABLE User ADD COLUMN telegramId TEXT;
-ALTER TABLE User ADD COLUMN telegramUsername TEXT;
-ALTER TABLE Account ADD COLUMN telegramId TEXT;
-ALTER TABLE Account ADD COLUMN telegramUsername TEXT;
-```
-
-### "unable to open database file"
-
-**Cause:** Database file path is incorrect or doesn't exist.
-
-**Solution for SQLite:**
-
-```typescript
-// Use absolute path
-import path from "path";
-
-const dbPath = path.join(process.cwd(), "prisma", "dev.db");
-
-// Or in Prisma schema
-datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
-}
-```
-
-### "Failed to initialize database adapter"
-
-**Cause:** Database adapter not configured correctly.
-
-**Solution:**
-
-For Next.js, use Prisma adapter (not raw database):
-
-```typescript
-// ❌ Wrong: Using raw database in Next.js
-import Database from "better-sqlite3";
-const db = new Database("./dev.db");
-
-export const auth = betterAuth({
-  database: db,
-});
-
-// ✅ Correct: Using Prisma adapter
-import { PrismaClient } from "@prisma/client";
-import { prismaAdapter } from "better-auth/adapters/prisma";
-
-const prisma = new PrismaClient();
-
-export const auth = betterAuth({
-  database: prismaAdapter(prisma, { provider: "sqlite" }),
-});
-```
-
-## Environment and Configuration
-
-### Environment Variables Not Loaded
-
-**Symptom:** `process.env.VARIABLE_NAME` is `undefined`.
-
-**Solutions:**
-
-1. **Check file name:**
-   - Next.js: `.env.local` (not `.env`)
-   - Other: `.env`
-
-2. **Restart dev server:**
-
-```bash
-# Kill server
-Ctrl+C
-
-# Restart
-npm run dev
-```
-
-3. **Check .gitignore:**
-
-Make sure `.env.local` is in `.gitignore`:
-
-```gitignore
-.env
-.env.local
-.env*.local
-```
-
-4. **Verify variable format:**
-
-```env
-# ✅ Correct
-TELEGRAM_BOT_TOKEN="123:ABC"
-
-# ❌ Wrong (spaces)
-TELEGRAM_BOT_TOKEN = "123:ABC"
-
-# ❌ Wrong (quotes in value)
-TELEGRAM_BOT_TOKEN=""123:ABC""
-```
-
-5. **Client-side variables (Next.js):**
-
-Client-side variables need `NEXT_PUBLIC_` prefix:
-
-```env
-NEXT_PUBLIC_APP_URL="https://..."
-```
-
-### "Cannot find module 'better-auth-telegram'"
-
-**Cause:** Package not installed.
-
-**Solution:**
-
-```bash
-# Install package
-npm install better-auth-telegram
-
-# Or reinstall node_modules
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### TypeScript Errors
-
-**Error:** "Property 'telegramId' does not exist on type 'User'"
-
-**Solution:**
-
-Add type augmentation:
-
-```typescript
-// types/better-auth.d.ts
-import "better-auth";
-
-declare module "better-auth" {
-  interface User {
-    telegramId?: string;
-    telegramUsername?: string;
-  }
-}
-```
-
-## Development Issues
-
-### ngrok URL Changes Every Restart
-
-**Problem:** Free ngrok generates new URL each time.
-
-**Solutions:**
-
-1. **Upgrade to ngrok paid plan** for static domain
-
-2. **Use localtunnel (alternative):**
-
-```bash
-npm install -g localtunnel
-lt --port 3000 --subdomain myapp
-```
-
-3. **Deploy to staging environment:**
-   - Vercel preview deployments
-   - Netlify deploy previews
-   - Railway/Render staging
-
-### Cannot Test Locally Without ngrok
-
-**Problem:** Telegram requires HTTPS and public domain.
-
-**Solutions:**
-
-1. **Use ngrok (recommended):**
-
-```bash
-ngrok http 3000
-```
-
-2. **Deploy to staging:**
-
-```bash
-# Vercel
-vercel
-
-# Netlify
-netlify deploy
-```
-
-3. **Use test bot:**
-
-Create a separate bot for development with relaxed settings.
-
-### Hot Reload Breaking Widget
-
-**Symptom:** Widget stops working after hot reload in development.
-
-**Solution:**
-
-Clear widget on unmount:
+The widget script gets confused after hot reload. Clean up on unmount:
 
 ```typescript
 useEffect(() => {
   authClient.initTelegramWidget("container", {}, callback);
 
   return () => {
-    // Clean up
     const container = document.getElementById("container");
-    if (container) {
-      container.innerHTML = "";
-    }
+    if (container) container.innerHTML = "";
   };
 }, []);
 ```
 
-## Production Issues
+## Authentication Errors
 
-### 500 Internal Server Error
+### "Invalid Telegram auth data" (400)
 
-**Debugging steps:**
+The request body is missing required fields. The plugin expects `id` (number), `first_name` (string), `auth_date` (number), and `hash` (string) at minimum. If any of those are missing or the wrong type, you get this.
 
-1. **Check server logs:**
+Make sure you're passing the raw auth data object from Telegram, not a stringified version of it or some subset.
+
+### "Invalid Telegram authentication" (401)
+
+HMAC verification failed. The data didn't pass the cryptographic check. This means one of:
+
+1. **Wrong bot token** -- the token in your server config doesn't match the bot that generated the auth data
+2. **Token has whitespace** -- trailing spaces or newlines in your env var will silently break HMAC
+3. **Auth data is too old** -- the `auth_date` exceeded `maxAuthAge` (default: 86400 seconds / 24 hours)
+4. **Data was tampered with** -- someone (or something) modified the auth payload between Telegram and your server
 
 ```typescript
-// Add error logging
-try {
-  await authClient.signInWithTelegram(authData);
-} catch (error) {
-  console.error("Full error:", error);
-  // Send to error tracking (Sentry, etc.)
-}
+// Trim your token. Trust no env var.
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!.trim(),
+  botUsername: "your_bot",
+})
 ```
 
-2. **Check environment variables:**
+If the issue is expired auth data, bump `maxAuthAge`:
+
+```typescript
+telegram({
+  maxAuthAge: 86400 * 7, // 7 days, if you're feeling generous
+})
+```
+
+Or check that your server clock isn't lying to you:
 
 ```bash
-# Verify all variables are set in production
-echo $TELEGRAM_BOT_TOKEN
-echo $BETTER_AUTH_SECRET
+date    # is this anywhere near reality?
 ```
 
-3. **Check database connection:**
+### "User not found and auto-create is disabled" (404)
+
+You set `autoCreateUser: false` and a new Telegram user tried to sign in. The plugin won't create accounts on its own in that mode.
+
+Either enable it:
 
 ```typescript
-// Test database connection
-try {
-  await prisma.$connect();
-  console.log("Database connected");
-} catch (error) {
-  console.error("Database error:", error);
-}
+telegram({
+  autoCreateUser: true,
+})
 ```
 
-### CORS Errors in Production
+Or make sure users exist before they attempt Telegram sign-in.
 
-**Error:** "Access to fetch has been blocked by CORS policy"
+### "Linking Telegram accounts is disabled" (403)
 
-**Solution:**
+You set `allowUserToLink: false` (or it defaulted to... wait, no, it defaults to `true`). If you're getting this, you explicitly disabled linking. Check your plugin config.
+
+### "This Telegram account is already linked to another user" (409)
+
+Someone else already claimed this Telegram account. One Telegram account, one user. The existing link needs to be removed first before it can be linked to a different user.
+
+### "This Telegram account is already linked to your account" (409)
+
+You're trying to link a Telegram account that's already linked to... you. It's already done. You can stop now.
+
+### "No Telegram account linked" (404)
+
+You called `unlinkTelegram()` but there's no Telegram account linked to your user. Can't unlink what was never linked.
+
+## Mini App Errors
+
+These only apply if you've enabled Mini App support with `miniApp: { enabled: true }`.
+
+### "initData is required and must be a string" (400)
+
+You sent the Mini App sign-in request without `initData`, or it wasn't a string. Make sure you're grabbing it from the right place:
+
+```typescript
+const initData = window.Telegram.WebApp.initData;
+await authClient.signInWithMiniApp(initData);
+```
+
+### "Invalid Mini App initData" (401)
+
+The HMAC verification for Mini App data failed. Same vibes as the Login Widget version -- wrong bot token, expired data, or tampered payload. The Mini App uses a different HMAC scheme (`HMAC-SHA256` with `"WebAppData"` as the key prefix), but the usual suspects apply.
+
+### "Invalid Mini App data structure" (400)
+
+The `initData` parsed but the resulting object doesn't have the expected shape. Needs `auth_date` (number) and `hash` (string) at minimum. If `user` is present, it needs `id` (number) and `first_name` (string).
+
+### "No user data in initData" (400)
+
+The Mini App `initData` was valid but contained no `user` object. This can happen in certain Mini App contexts. The plugin needs user data to create or find an account.
+
+### "User not found and auto-signin is disabled for Mini Apps" (404)
+
+Both `autoCreateUser` and `miniApp.allowAutoSignin` need to be `true` for the plugin to auto-create users from Mini App sign-ins. If either is `false` and no existing account matches, you get this.
+
+## Session Problems
+
+### No Session After Successful Login
+
+The sign-in returned a user and session, but subsequent requests act like nobody's home.
+
+**1. Missing `credentials: "include"`** -- yes, that problem again. See [The Cookie Problem](#the-cookie-problem-start-here).
+
+**2. `baseURL` mismatch** -- if your client points to a different origin than where cookies were set, the browser won't send them:
+
+```typescript
+export const authClient = createAuthClient({
+  baseURL: typeof window !== 'undefined'
+    ? window.location.origin
+    : process.env.NEXT_PUBLIC_APP_URL,
+  fetchOptions: { credentials: "include" },
+  plugins: [telegramClient()],
+});
+```
+
+**3. CORS not configured** -- if your frontend and backend are on different origins:
 
 ```typescript
 export const auth = betterAuth({
   advanced: {
     cors: {
-      origin: [
-        "https://yourdomain.com",
-        "https://www.yourdomain.com",
-      ],
+      origin: ["https://your-frontend.com"],
       credentials: true,
     },
   },
 });
 ```
 
-### Cookies Not Being Set
+**4. Cookie domain mismatch** -- check DevTools > Application > Cookies. The cookie should be set for your domain with the right flags.
 
-**Cause:** `Secure` flag with HTTP, or wrong domain.
+### Cookies Not Being Set in Production
 
-**Solution:**
-
-Ensure HTTPS in production:
+Usually `Secure` flag + HTTP. In production, you need HTTPS. This is a Better Auth configuration concern:
 
 ```typescript
 advanced: {
   useSecureCookies: process.env.NODE_ENV === "production",
-  cookieDomain: undefined, // Let it auto-detect
 }
 ```
 
-### High Error Rates
+## Error Code Reference
 
-**Debugging:**
+Every error this plugin can throw, mapped to what actually went wrong:
 
-1. **Add monitoring:**
-
-```typescript
-// Track authentication attempts
-analytics.track("telegram_auth_attempt", {
-  success: !result.error,
-  error: result.error?.message,
-});
-```
-
-2. **Check bot status:**
-
-Talk to @BotFather:
-```
-/mybots
-[Select your bot]
-Bot Stats
-```
-
-3. **Review logs:**
-
-Look for patterns in failed authentications.
+| Error Message | HTTP Status | What It Means |
+|---|---|---|
+| `Telegram plugin: botToken is required` | N/A (thrown at init) | You didn't pass `botToken` to the plugin config. It won't even start. |
+| `Telegram plugin: botUsername is required` | N/A (thrown at init) | You didn't pass `botUsername` to the plugin config. Also won't start. |
+| `Invalid Telegram auth data` | 400 | Request body missing required fields (`id`, `first_name`, `auth_date`, `hash`). |
+| `Invalid Telegram authentication` | 401 | HMAC check failed. Wrong token, expired data, or tampered payload. |
+| `User not found and auto-create is disabled` | 404 | `autoCreateUser` is `false` and no existing account matches. |
+| `Not authenticated` | 401 | No valid session. Probably missing `credentials: "include"`. |
+| `Linking Telegram accounts is disabled` | 403 | `allowUserToLink` is `false`. |
+| `This Telegram account is already linked to another user` | 409 | Telegram account belongs to a different user. |
+| `This Telegram account is already linked to your account` | 409 | Already linked. Nothing to do. |
+| `No Telegram account linked` | 404 | Tried to unlink but nothing was linked. |
+| `initData is required and must be a string` | 400 | Mini App request missing `initData` or wrong type. |
+| `Invalid Mini App initData` | 401 | Mini App HMAC verification failed. |
+| `Invalid Mini App data structure` | 400 | Parsed initData has wrong structure. |
+| `No user data in initData` | 400 | initData has no `user` object. |
+| `User not found and auto-signin is disabled for Mini Apps` | 404 | `autoCreateUser` or `miniApp.allowAutoSignin` is `false`, no existing account. |
 
 ## Getting Help
 
-### Debug Information to Provide
-
-When reporting issues, include:
-
-1. **Plugin version:**
+### What to Include When Reporting Issues
 
 ```bash
-npm list better-auth-telegram
+npm list better-auth-telegram    # plugin version
+node --version                   # Node.js version
 ```
 
-2. **Environment:**
-   - Framework (Next.js, React, etc.)
-   - Version
-   - Node.js version (`node --version`)
+Plus: your framework, the error message (full text), and steps to reproduce. Sanitize your config (no tokens).
 
-3. **Configuration** (sanitized, no tokens):
+### Where to Go
 
-```typescript
-telegram({
-  botUsername: "my_bot",
-  allowUserToLink: true,
-  autoCreateUser: true,
-  maxAuthAge: 86400,
-})
-```
+- **GitHub Issues:** [github.com/vcode-sh/better-auth-telegram/issues](https://github.com/vcode-sh/better-auth-telegram/issues)
+- **Better Auth Discord:** [better-auth.com/discord](https://better-auth.com/discord)
 
-4. **Error messages:**
-   - Full error text
-   - Stack trace
-   - Browser console errors
+### Before You Open an Issue
 
-5. **Steps to reproduce:**
-   - What you did
-   - What you expected
-   - What actually happened
-
-### Where to Get Help
-
-1. **GitHub Issues:**
-   - [https://github.com/vcode-sh/better-auth-telegram/issues](https://github.com/vcode-sh/better-auth-telegram/issues)
-
-2. **Better Auth Discord:**
-   - [Better Auth Community](https://better-auth.com/discord)
-
-3. **Email Support:**
-   - [hello@vcode.sh](mailto:hello@vcode.sh)
-
-### Before Opening an Issue
-
-- [ ] Checked this troubleshooting guide
-- [ ] Searched existing GitHub issues
-- [ ] Verified environment variables are set
-- [ ] Tested with latest version
-- [ ] Can reproduce the issue consistently
-- [ ] Have minimal reproduction example
-
-## Common Error Codes
-
-| Code | Meaning | Common Cause |
-|------|---------|--------------|
-| 400 | Bad Request | Invalid auth data, HMAC verification failed |
-| 401 | Unauthorized | Not signed in, session expired |
-| 403 | Forbidden | Action not allowed (e.g., linking disabled) |
-| 409 | Conflict | Telegram account already linked |
-| 500 | Server Error | Database error, configuration error |
+- [ ] Read through this page (you're already here, so partial credit)
+- [ ] Searched existing issues
+- [ ] Verified env vars are set and trimmed
+- [ ] Tested with the latest version
+- [ ] Have a minimal reproduction
 
 ## Next Steps
 
