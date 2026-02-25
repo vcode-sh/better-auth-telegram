@@ -24,6 +24,7 @@ export const SUCCESS_MESSAGES = {
   TELEGRAM_UNLINKED: "Telegram account unlinked successfully",
 } as const;
 
+/** Unique identifier for the Telegram auth provider within Better Auth */
 export const PLUGIN_ID = "telegram";
 
 export const DEFAULT_MAX_AUTH_AGE = 86400;
