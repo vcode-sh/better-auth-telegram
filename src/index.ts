@@ -66,6 +66,7 @@ export const telegram = (options: TelegramPluginOptions) => {
     mapTelegramDataToUser,
     miniApp,
     oidc,
+    testMode = false,
   } = options;
 
   // Mini Apps configuration
@@ -83,6 +84,12 @@ export const telegram = (options: TelegramPluginOptions) => {
 
   if (!botUsername) {
     throw new Error(ERROR_CODES.BOT_USERNAME_REQUIRED.message);
+  }
+
+  if (testMode && oidcEnabled) {
+    console.warn(
+      "[better-auth-telegram] testMode is enabled with OIDC. Telegram's OIDC endpoint (oauth.telegram.org) has no documented test variant — OIDC authentication may not work with test server bot tokens."
+    );
   }
 
   return {
@@ -426,6 +433,7 @@ export const telegram = (options: TelegramPluginOptions) => {
             botUsername,
             miniAppEnabled,
             oidcEnabled,
+            testMode,
           })
       ),
 
@@ -636,3 +644,11 @@ export const telegram = (options: TelegramPluginOptions) => {
     ],
   } satisfies BetterAuthPlugin;
 };
+
+declare module "@better-auth/core" {
+  interface BetterAuthPluginRegistry<AuthOptions, Options> {
+    telegram: {
+      creator: typeof telegram;
+    };
+  }
+}

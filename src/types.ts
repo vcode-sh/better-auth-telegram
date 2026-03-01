@@ -190,6 +190,16 @@ export interface TelegramPluginOptions {
    * via oauth.telegram.org
    */
   oidc?: TelegramOIDCOptions;
+
+  /**
+   * Enable Telegram test server mode.
+   * When enabled, the client widget will use Telegram's test environment.
+   * HMAC verification works identically — only the bot token differs.
+   * Note: OIDC (oauth.telegram.org) has no documented test variant;
+   * a warning is logged if both testMode and oidc are enabled.
+   * @default false
+   */
+  testMode?: boolean;
 }
 
 /**

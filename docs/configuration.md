@@ -37,6 +37,7 @@ Every option, every default, no surprises (for once).
 | `mapTelegramDataToUser` | `function` | see below | Custom mapping from Telegram data to your user object. |
 | `miniApp` | `object` | see below | Mini App configuration. Disabled by default because not everyone lives inside Telegram. |
 | `oidc` | `object` | see below | Telegram OIDC configuration. Also disabled by default. |
+| `testMode` | `boolean` | `false` | Enable Telegram test server mode. The widget uses the test environment; HMAC verification stays the same. See [Test Server Mode](#test-server-mode). |
 
 ### Default User Mapping
 
@@ -134,6 +135,20 @@ telegram({
 | `mapOIDCProfileToUser` | `function` | uses `name` + `picture` from claims | Custom mapping from `TelegramOIDCClaims` to your user object. Gets `sub`, `name`, `preferred_username`, `picture`, `phone_number`. |
 
 OIDC uses Better Auth's built-in social login routes — no custom endpoints. The plugin injects a `telegram-oidc` provider via the `init` hook and Better Auth handles `POST /sign-in/social` and `GET /callback/telegram-oidc` automatically.
+
+### Test Server Mode
+
+Telegram runs a [test environment](https://core.telegram.org/bots/webapps#testing-mini-apps) -- separate bots, separate users, separate existential dread. Set `testMode: true` and the client widget will point at the test server. HMAC verification is identical; only the bot token differs (you get a test token from @BotFather's test environment).
+
+```typescript
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,   // test env token
+  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
+  testMode: true,
+})
+```
+
+One catch: Telegram's OIDC endpoint (`oauth.telegram.org`) has no documented test variant. If you enable both `testMode` and `oidc`, the plugin logs a `console.warn` to let you know you're on your own. OIDC may not play nicely with test server bot tokens. You've been warned.
 
 ### Lockdown Mode
 

@@ -5,6 +5,22 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-01
+
+### Fixed
+
+- **Residual TS2532 errors in OIDC tests** — `plugin.init!(mockCtx)` could return `void` because the `init` hook is conditionally spread. Added non-null assertions and extracted a `providers` variable. Three fewer red squiggles haunting the test suite. TypeScript is now merely disappointed, not furious.
+
+### Added
+
+- **Telegram test server support** (`testMode` option) — set `testMode: true` and your bot talks to Telegram's test environment DCs instead of production. HMAC verification is token-agnostic (same algorithm, different token), so zero crypto changes were needed. Logs a warning when combined with OIDC because `oauth.telegram.org` has no documented test variant — your OIDC flow might just stare into the void. Proceed at your own risk.
+- **`BetterAuthPluginRegistry` module augmentation** — declares the `telegram` plugin in Better Auth's plugin registry so `ctx.context.getPlugin("telegram")` and `ctx.context.hasPlugin("telegram")` actually know what they're looking at. Type-only, zero runtime impact. Emitted in both `.d.ts` and `.d.cts` because dual-format builds deserve dual-format suffering.
+
+### Changed
+
+- `GET /telegram/config` now returns `testMode` boolean alongside `botUsername`, `miniAppEnabled`, and `oidcEnabled`. Your client finally knows which universe it's authenticating against.
+- Test count: 173 → 218 tests. The test suite continues its inevitable march toward heat death.
+
 ## [1.1.0] - 2026-03-01
 
 ### Breaking Changes
@@ -362,6 +378,7 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.2.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.2.0
 [1.1.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.1.0
 [1.0.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.0.0
 [0.4.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.4.0

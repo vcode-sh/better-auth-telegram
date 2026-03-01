@@ -132,13 +132,13 @@ export const telegramClient = () => {
        * @param fetchOptions - Optional fetch options (e.g., custom headers, cache control)
        */
       getTelegramConfig: async (fetchOptions?: FetchOptions) => {
-        const response = await $fetch<{ botUsername: string }>(
-          "/telegram/config",
-          {
-            method: "GET",
-            ...fetchOptions,
-          }
-        );
+        const response = await $fetch<{
+          botUsername: string;
+          testMode: boolean;
+        }>("/telegram/config", {
+          method: "GET",
+          ...fetchOptions,
+        });
 
         return response;
       },

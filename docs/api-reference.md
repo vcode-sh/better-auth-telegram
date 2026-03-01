@@ -43,6 +43,7 @@ const plugin = telegram({
 | `mapTelegramDataToUser` | `(data: TelegramAuthData) => UserData` | Uses `first_name`/`last_name` for name, `photo_url` for image | Custom mapping from Telegram data to your user object. |
 | `miniApp` | `object` | `undefined` | Telegram Mini Apps configuration. See below. |
 | `oidc` | `TelegramOIDCOptions` | `undefined` | Telegram OIDC configuration. See below. |
+| `testMode` | `boolean` | `false` | Enable Telegram test server mode. Widget uses test environment; HMAC verification unchanged. |
 
 ##### `miniApp` Options
 
@@ -84,6 +85,20 @@ A `BetterAuthPlugin` object with:
 - `schema`: Database schema extensions for `user` and `account` tables
 - `rateLimit`: Per-endpoint rate limiting rules
 - `$ERROR_CODES`: Error codes as `RawError` objects (exposed for programmatic access)
+
+#### Module Augmentation
+
+The plugin declares a `BetterAuthPluginRegistry` module augmentation on `@better-auth/core`, registering `telegram` as a known plugin. This means Better Auth's type system knows about the plugin's endpoints and error codes without you lifting a finger. TypeScript does the work for once.
+
+```typescript
+declare module "@better-auth/core" {
+  interface BetterAuthPluginRegistry<AuthOptions, Options> {
+    telegram: {
+      creator: typeof telegram;
+    };
+  }
+}
+```
 
 #### Example
 
@@ -200,7 +215,7 @@ const config = await authClient.getTelegramConfig();
 |---|---|---|
 | `fetchOptions` | `Record<string, any>` | Optional fetch customization |
 
-**Returns:** `{ botUsername: string, miniAppEnabled: boolean, oidcEnabled: boolean }`
+**Returns:** `{ botUsername: string, miniAppEnabled: boolean, oidcEnabled: boolean, testMode: boolean }`
 
 ---
 
@@ -383,6 +398,7 @@ interface TelegramPluginOptions {
     };
   };
   oidc?: TelegramOIDCOptions;
+  testMode?: boolean;              // default: false
 }
 ```
 
@@ -612,7 +628,8 @@ Returns the bot configuration for client-side widget initialization. No authenti
 {
   "botUsername": "my_auth_bot",
   "miniAppEnabled": false,
-  "oidcEnabled": false
+  "oidcEnabled": false,
+  "testMode": false
 }
 ```
 

@@ -10,7 +10,7 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com). Login
 
 Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
 
-173 tests. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+218 tests. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
 
 ## Requirements
 
@@ -196,6 +196,7 @@ That's it. Standard Better Auth social login under the hood. PKCE, state tokens,
 | `allowUserToLink` | `true` | Let users link Telegram to existing accounts |
 | `autoCreateUser` | `true` | Create user on first sign-in |
 | `maxAuthAge` | `86400` | Auth data TTL in seconds (replay attack prevention) |
+| `testMode` | `false` | Enable Telegram test server mode |
 | `mapTelegramDataToUser` | — | Custom user data mapper |
 | `miniApp.enabled` | `false` | Enable Mini Apps endpoints |
 | `miniApp.validateInitData` | `true` | Verify Mini App initData |
@@ -216,7 +217,7 @@ Full types in [`src/types.ts`](./src/types.ts).
 | POST | `/telegram/signin` | No | Sign in with widget data |
 | POST | `/telegram/link` | Session | Link Telegram to account |
 | POST | `/telegram/unlink` | Session | Unlink Telegram |
-| GET | `/telegram/config` | No | Get bot username |
+| GET | `/telegram/config` | No | Get bot config (username, testMode, flags) |
 | POST | `/telegram/miniapp/signin` | No | Sign in from Mini App |
 | POST | `/telegram/miniapp/validate` | No | Validate initData |
 
@@ -264,6 +265,10 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 See [`examples/`](./examples) for a Next.js implementation.
 
 ## Migrating
+
+### To v1.2.0 (from v1.1.0)
+
+- No breaking changes. `testMode` is opt-in (default `false`). `BetterAuthPluginRegistry` module augmentation is type-only — zero runtime impact. Config endpoint now returns `testMode` boolean. Your existing code doesn't care.
 
 ### To v1.1.0 (from v1.0.0)
 

@@ -216,6 +216,18 @@ describe("telegramClient", () => {
 
       expect(result).toEqual(expectedResponse);
     });
+
+    it("should return testMode in config response", async () => {
+      const expectedResponse = {
+        data: { botUsername: "test_bot", testMode: true },
+      };
+      mockFetch.mockResolvedValueOnce(expectedResponse);
+
+      const actions = client.getActions(mockFetch);
+      const result = await actions.getTelegramConfig();
+
+      expect(result.data?.testMode).toBe(true);
+    });
   });
 
   describe("initTelegramWidget", () => {
@@ -854,6 +866,92 @@ describe("telegramClient", () => {
           {}
         )
       ).rejects.toThrow("Failed to get Telegram config");
+    });
+  });
+
+  describe("Adversarial: getTelegramConfig testMode shape", () => {
+    it("should type the config response to include testMode as boolean", async () => {
+      const expectedResponse = {
+        data: { botUsername: "test_bot", testMode: false },
+      };
+      mockFetch.mockResolvedValueOnce(expectedResponse);
+
+      const actions = client.getActions(mockFetch);
+      const result = await actions.getTelegramConfig();
+
+      expect(result.data).toHaveProperty("testMode");
+      expect(typeof result.data?.testMode).toBe("boolean");
+    });
+
+    it("should return testMode: false when server has no testMode set", async () => {
+      const expectedResponse = {
+        data: { botUsername: "test_bot", testMode: false },
+      };
+      mockFetch.mockResolvedValueOnce(expectedResponse);
+
+      const actions = client.getActions(mockFetch);
+      const result = await actions.getTelegramConfig();
+
+      expect(result.data?.testMode).toBe(false);
+    });
+
+    it("should return testMode: true when server has testMode enabled", async () => {
+      const expectedResponse = {
+        data: { botUsername: "test_bot", testMode: true },
+      };
+      mockFetch.mockResolvedValueOnce(expectedResponse);
+
+      const actions = client.getActions(mockFetch);
+      const result = await actions.getTelegramConfig();
+
+      expect(result.data?.testMode).toBe(true);
+    });
+
+    it("should return exactly the shape { botUsername, testMode } from config", async () => {
+      const expectedResponse = {
+        data: {
+          botUsername: "production_bot",
+          testMode: false,
+        },
+      };
+      mockFetch.mockResolvedValueOnce(expectedResponse);
+
+      const actions = client.getActions(mockFetch);
+      const result = await actions.getTelegramConfig();
+
+      // Verify the exact keys we expect
+      expect(Object.keys(result.data!)).toContain("botUsername");
+      expect(Object.keys(result.data!)).toContain("testMode");
+    });
+  });
+
+  describe("Adversarial: client plugin structure", () => {
+    it("should have $InferServerPlugin property", () => {
+      expect(client).toHaveProperty("$InferServerPlugin");
+    });
+
+    it("should include signInWithMiniApp action", () => {
+      const actions = client.getActions(mockFetch);
+      expect(actions).toHaveProperty("signInWithMiniApp");
+      expect(typeof actions.signInWithMiniApp).toBe("function");
+    });
+
+    it("should include validateMiniApp action", () => {
+      const actions = client.getActions(mockFetch);
+      expect(actions).toHaveProperty("validateMiniApp");
+      expect(typeof actions.validateMiniApp).toBe("function");
+    });
+
+    it("should include autoSignInFromMiniApp action", () => {
+      const actions = client.getActions(mockFetch);
+      expect(actions).toHaveProperty("autoSignInFromMiniApp");
+      expect(typeof actions.autoSignInFromMiniApp).toBe("function");
+    });
+
+    it("should include signInWithTelegramOIDC action", () => {
+      const actions = client.getActions(mockFetch);
+      expect(actions).toHaveProperty("signInWithTelegramOIDC");
+      expect(typeof actions.signInWithTelegramOIDC).toBe("function");
     });
   });
 
