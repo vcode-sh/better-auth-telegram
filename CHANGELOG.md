@@ -5,6 +5,86 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-01
+
+### Breaking Changes
+
+- **Peer dependency bumped to `better-auth@^1.5.0`** — if you're still on 1.4.x, this is your eviction notice. Better Auth 1.5 changed the `BetterAuthPlugin` interface and we had to follow. Upgrade or enjoy the red squiggles.
+
+### Changed
+
+- **Error codes migrated to `defineErrorCodes()`** — `ERROR_CODES` now uses `defineErrorCodes()` from `@better-auth/core/utils/error-codes`. Each error code is a proper `RawError` object (`{ code, message }`) instead of a plain string. This satisfies Better Auth 1.5's `$ERROR_CODES` type requirement — the whole reason [#11](https://github.com/vcode-sh/better-auth-telegram/issues/11) exists.
+- **All `APIError` throws migrated to `APIError.from()`** — 14 `throw new APIError("STATUS", { message })` calls replaced with `throw APIError.from("STATUS", ERROR_CODES.X)`. Same behaviour, new API. Better Auth 1.5 approves.
+- **Removed `(ctx: any)` on init hook** — the OIDC `init` callback now lets TypeScript infer `AuthContext` from the plugin type instead of pretending everything is `any`.
+- **`@better-auth/core` added to tsup externals** — the `defineErrorCodes` import won't get bundled into your dist. It's resolved at runtime from the better-auth ecosystem, as nature intended.
+
+### Fixed
+
+- **Type mismatch with `better-auth@1.5.0`** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — the plugin's `$ERROR_CODES` now satisfies `Record<string, RawError>` instead of the old `Record<string, string>`. Thanks to [@flxxxxddd](https://github.com/flxxxxddd) and [@RainyPixel](https://github.com/RainyPixel) for reporting and confirming the issue.
+- **OIDC test mocks updated** — `AuthContext` in Better Auth 1.5 now requires `getPlugin` and `hasPlugin` properties. Test mocks updated accordingly.
+
+### Upgraded
+
+- `better-auth` peer dependency: `^1.4.18` → `^1.5.0`
+
+## [1.0.0] - 2026-03-01
+
+### Added
+
+- **Telegram OIDC authentication** — Standard OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. Proper grown-up auth instead of widget callbacks. Telegram finally joined the OAuth federation with Bot API 9.5.
+- **Phone number access** — the `phone` scope gives you what the Login Widget never could. Set `requestPhone: true` and stop guessing.
+- **RS256 JWT verification** — ID tokens verified against Telegram's JWKS endpoint using `jose` library. Keys fetched and matched by `kid` — no hardcoded secrets, no trust-me-bro validation.
+- **Zero custom endpoints** — injects a `telegram-oidc` provider into Better Auth's social login system via the `init` hook. Uses standard `POST /sign-in/social` and `GET /callback/telegram-oidc` routes. Better Auth does the heavy lifting.
+- **New `telegramPhoneNumber` field** — added to the user schema, populated via OIDC phone scope.
+- **Client `signInWithTelegramOIDC()` method** — triggers the OIDC flow from the browser. Pass `callbackURL` and let Better Auth's social login pipeline handle the rest.
+- **New module `src/oidc.ts`** — OIDC provider factory. Creates an `OAuthProvider` with authorization, token exchange, user profile mapping, and ID token verification.
+- **New types** — `TelegramOIDCOptions`, `TelegramOIDCClaims` for OIDC configuration and JWT claims.
+- **New constants** — `TELEGRAM_OIDC_PROVIDER_ID`, `TELEGRAM_OIDC_ISSUER`, `TELEGRAM_OIDC_AUTH_ENDPOINT`, `TELEGRAM_OIDC_TOKEN_ENDPOINT`, `TELEGRAM_OIDC_JWKS_URI`.
+- **56 new tests** — comprehensive OIDC test suite covering provider creation, JWT verification, JWKS fetching, error cases, and init hook behaviour. 117 → 173 tests total.
+- **`CLAUDE.md`** — project instructions for Claude Code with architecture overview, commands, and review guidelines.
+- **Code of Conduct** — Contributor Covenant 2.1.
+- **Security Policy** — `SECURITY.md` with vulnerability reporting guidelines.
+- **Dependabot configuration** — automated dependency updates for npm and GitHub Actions.
+- **AI code review workflow** — Claude-powered PR reviews via `claude.yml`.
+- **Dependabot auto-merge workflow** — auto-merges minor/patch dependency bumps.
+- **Issue templates** — bug report and feature request templates with structured fields.
+- **`CODEOWNERS`** — code ownership for automated review assignment.
+
+### Changed
+
+- `GET /telegram/config` now returns `oidcEnabled` flag.
+- Documentation overhauled — streamlined docs, removed redundant content, added OIDC configuration and usage examples.
+
+### Configuration
+
+OIDC can be enabled by adding the `oidc` option:
+
+```typescript
+// Server
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,
+  botUsername: "your_bot_username",
+  oidc: {
+    enabled: true,
+    requestPhone: true,
+    requestBotAccess: false,
+    scopes: ["openid", "profile"],
+    mapOIDCProfileToUser: (claims) => ({
+      name: `${claims.first_name} ${claims.last_name}`,
+    }),
+  },
+});
+
+// Client
+await authClient.signInWithTelegramOIDC({
+  callbackURL: "/dashboard",
+});
+```
+
+### Breaking Changes
+
+None — OIDC is opt-in (`oidc.enabled: false` by default). All existing Login Widget and Mini App flows are untouched. Version bumped to 1.0.0 to mark feature completeness, not breaking changes.
+
 ## [0.4.0] - 2026-02-21
 
 ### Breaking Changes
@@ -282,6 +362,8 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.1.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.1.0
+[1.0.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.0.0
 [0.4.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.4.0
 [0.3.2]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.2
 [0.3.1]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v0.3.1
