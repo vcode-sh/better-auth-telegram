@@ -46,7 +46,7 @@ jobs:
   # Every PR gets judged. No exceptions. No feelings.
   review:
     name: AI Review
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
