@@ -43,8 +43,11 @@ export const auth = betterAuth({
       },
 
       // OIDC (OpenID Connect) support via oauth.telegram.org
+      // Requires separate bot with Web Login configured in @BotFather
       oidc: {
         enabled: true,
+        clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
+        clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
         requestPhone: true,
         requestBotAccess: true,
       },

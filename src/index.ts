@@ -211,35 +211,62 @@ export const telegram = (options: TelegramPluginOptions) => {
           if (existingAccount) {
             // User already has Telegram linked
             userId = (existingAccount as TelegramAccountRecord).userId;
-          } else if (autoCreateUser) {
-            // Create new user
-            const newUser = await ctx.context.adapter.create({
-              model: "user",
-              data: {
-                ...userData,
-                telegramId: telegramData.id.toString(),
-                telegramUsername: telegramData.username,
-              },
-            });
-
-            userId = newUser.id;
-
-            // Create account
-            await ctx.context.adapter.create({
-              model: "account",
-              data: {
-                userId: newUser.id,
-                providerId: PLUGIN_ID,
-                accountId: telegramData.id.toString(),
-                telegramId: telegramData.id.toString(),
-                telegramUsername: telegramData.username,
-              },
-            });
           } else {
-            throw APIError.from(
-              "NOT_FOUND",
-              ERROR_CODES.USER_CREATION_DISABLED
-            );
+            // Check if a user exists with this telegramId (e.g., created via OIDC or Mini App)
+            const existingUser = await ctx.context.adapter.findOne({
+              model: "user",
+              where: [
+                {
+                  field: "telegramId",
+                  value: telegramData.id.toString(),
+                },
+              ],
+            });
+
+            if (existingUser) {
+              // User exists from another provider — link telegram account to them
+              userId = (existingUser as User).id;
+
+              await ctx.context.adapter.create({
+                model: "account",
+                data: {
+                  userId,
+                  providerId: PLUGIN_ID,
+                  accountId: telegramData.id.toString(),
+                  telegramId: telegramData.id.toString(),
+                  telegramUsername: telegramData.username,
+                },
+              });
+            } else if (autoCreateUser) {
+              // Create new user
+              const newUser = await ctx.context.adapter.create({
+                model: "user",
+                data: {
+                  ...userData,
+                  telegramId: telegramData.id.toString(),
+                  telegramUsername: telegramData.username,
+                },
+              });
+
+              userId = newUser.id;
+
+              // Create account
+              await ctx.context.adapter.create({
+                model: "account",
+                data: {
+                  userId: newUser.id,
+                  providerId: PLUGIN_ID,
+                  accountId: telegramData.id.toString(),
+                  telegramId: telegramData.id.toString(),
+                  telegramUsername: telegramData.username,
+                },
+              });
+            } else {
+              throw APIError.from(
+                "NOT_FOUND",
+                ERROR_CODES.USER_CREATION_DISABLED
+              );
+            }
           }
 
           // Create session
@@ -520,35 +547,62 @@ export const telegram = (options: TelegramPluginOptions) => {
                 if (existingAccount) {
                   // User already has Telegram linked
                   userId = (existingAccount as TelegramAccountRecord).userId;
-                } else if (autoCreateUser && miniAppAllowAutoSignin) {
-                  // Create new user
-                  const newUser = await ctx.context.adapter.create({
-                    model: "user",
-                    data: {
-                      ...userData,
-                      telegramId: miniAppUser.id.toString(),
-                      telegramUsername: miniAppUser.username,
-                    },
-                  });
-
-                  userId = newUser.id;
-
-                  // Create account
-                  await ctx.context.adapter.create({
-                    model: "account",
-                    data: {
-                      userId: newUser.id,
-                      providerId: PLUGIN_ID,
-                      accountId: miniAppUser.id.toString(),
-                      telegramId: miniAppUser.id.toString(),
-                      telegramUsername: miniAppUser.username,
-                    },
-                  });
                 } else {
-                  throw APIError.from(
-                    "NOT_FOUND",
-                    ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED
-                  );
+                  // Check if a user exists with this telegramId (e.g., created via OIDC or Login Widget)
+                  const existingUser = await ctx.context.adapter.findOne({
+                    model: "user",
+                    where: [
+                      {
+                        field: "telegramId",
+                        value: miniAppUser.id.toString(),
+                      },
+                    ],
+                  });
+
+                  if (existingUser) {
+                    // User exists from another provider — link telegram account to them
+                    userId = (existingUser as User).id;
+
+                    await ctx.context.adapter.create({
+                      model: "account",
+                      data: {
+                        userId,
+                        providerId: PLUGIN_ID,
+                        accountId: miniAppUser.id.toString(),
+                        telegramId: miniAppUser.id.toString(),
+                        telegramUsername: miniAppUser.username,
+                      },
+                    });
+                  } else if (autoCreateUser && miniAppAllowAutoSignin) {
+                    // Create new user
+                    const newUser = await ctx.context.adapter.create({
+                      model: "user",
+                      data: {
+                        ...userData,
+                        telegramId: miniAppUser.id.toString(),
+                        telegramUsername: miniAppUser.username,
+                      },
+                    });
+
+                    userId = newUser.id;
+
+                    // Create account
+                    await ctx.context.adapter.create({
+                      model: "account",
+                      data: {
+                        userId: newUser.id,
+                        providerId: PLUGIN_ID,
+                        accountId: miniAppUser.id.toString(),
+                        telegramId: miniAppUser.id.toString(),
+                        telegramUsername: miniAppUser.username,
+                      },
+                    });
+                  } else {
+                    throw APIError.from(
+                      "NOT_FOUND",
+                      ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED
+                    );
+                  }
                 }
 
                 // Create session

@@ -164,28 +164,20 @@ const validation = await authClient.validateMiniApp(
 
 Standard OAuth 2.0 flow via `oauth.telegram.org`. Phone numbers, PKCE, RS256 JWTs — proper grown-up auth instead of widget callbacks. Telegram finally joined the federation.
 
-#### Prerequisites — Read This Before You Waste an Hour
+#### Prerequisites
 
-Telegram's OIDC infrastructure is live (`oauth.telegram.org/.well-known/openid-configuration` exists, JWKS endpoint works, RS256 JWTs, the whole spec) but **Telegram has not publicly documented how to register a bot as an OIDC client**. Without registration, the token endpoint returns `invalid_client` and the auth endpoint silently falls back to Login Widget redirects.
+BotFather has a whole ritual for this. Skipping steps means `invalid_client` errors and Telegram silently falling back to Login Widget redirects like nothing happened. Don't skip steps.
 
-What we know:
+1. Open [@BotFather](https://t.me/botfather) **as a mini app** (not the chat — the mini app). Go to **Bot Settings > Web Login**
+2. Add your website URL. Then **remove it**. Yes, remove it. Close the panel, open **Web Login** again — a new option appears: **OpenID Connect Login**. This is a permanent, one-way switch. Telegram doesn't mention this anywhere because documentation is for the weak
+3. Go through the OIDC setup flow. It's permanent. No going back. Commitment issues? Too late
+4. Add your **Allowed URL** — your website origin (e.g., `https://example.com`). This is the trusted origin for the OAuth flow
+5. Add your **Redirect URL** — your OIDC callback (e.g., `https://example.com/api/auth/callback/telegram-oidc`). If this isn't registered, Telegram returns auth codes via `#tgAuthResult` fragment instead of `?code=` query param, and your server never sees them
+6. Copy your **Client ID** and **Client Secret**. They're right there on the screen. The Client Secret is NOT your bot token — BotFather generates a separate secret for OIDC. If you use the bot token, the token endpoint returns `invalid_client` and you'll spend hours debugging something that was never going to work
 
-1. **`/setpublickey` via @BotFather** — registers an RSA public key for your bot. This is likely a prerequisite. Generate a key pair and try it:
+For local dev, point both URLs at your [ngrok](https://ngrok.com) tunnel (e.g., `https://abc123.ngrok-free.app` and `https://abc123.ngrok-free.app/api/auth/callback/telegram-oidc`). Every time ngrok restarts, you get a new URL. Update BotFather. Repeat until Stockholm syndrome sets in.
 
-```bash
-openssl genrsa 2048 > private.key
-openssl rsa -in private.key -pubout > public.key
-```
-
-Then in BotFather: `/setpublickey`, paste the full PEM contents of `public.key`.
-
-2. **`/setdomain`** — your domain must be registered with the bot (same as Login Widget).
-
-3. **There may be additional undocumented steps** — Telegram's OIDC might be in private beta, require manual enablement, or need registration via `my.telegram.org`. No one in the community has publicly confirmed a working native OIDC flow with `oauth.telegram.org/token`.
-
-If you get `invalid_client` from the token endpoint or `#tgAuthResult` in the redirect URL instead of `?code=`, your bot isn't recognized as an OIDC client. The plugin code is correct — the registration on Telegram's side isn't complete.
-
-We'll update this section when Telegram documents the process. In the meantime, the Login Widget and Mini App flows work reliably and don't require OIDC registration.
+See [Telegram's official OIDC docs](https://core.telegram.org/bots/telegram-login) for the spec. It exists now. We're living in the future.
 
 #### Setup
 
@@ -197,6 +189,7 @@ telegram({
   botUsername: "your_bot_username",
   oidc: {
     enabled: true,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!, // from BotFather Web Login
     requestPhone: true, // get phone numbers, finally
   },
 });
@@ -228,6 +221,7 @@ That's it. Standard Better Auth social login under the hood. PKCE, state tokens,
 | `miniApp.allowAutoSignin` | `true` | Allow auto sign-in from Mini Apps |
 | `miniApp.mapMiniAppDataToUser` | — | Custom Mini App user mapper |
 | `oidc.enabled` | `false` | Enable Telegram OIDC flow |
+| `oidc.clientSecret` | — | Client Secret from BotFather Web Login (NOT the bot token) |
 | `oidc.scopes` | `["openid", "profile"]` | OIDC scopes to request |
 | `oidc.requestPhone` | `false` | Request phone number (adds `phone` scope) |
 | `oidc.requestBotAccess` | `false` | Request bot access (adds `telegram:bot_access` scope) |
@@ -285,9 +279,9 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 
 **Local dev?** `ngrok http 3000`, use the ngrok URL in BotFather's `/setdomain` and as your app URL. Yes, it's annoying. Welcome to OAuth.
 
-**OIDC returns `invalid_client`?** Your bot isn't registered as an OIDC client with Telegram. See [OIDC Prerequisites](#prerequisites--read-this-before-you-waste-an-hour). Start with `/setpublickey` via @BotFather.
+**OIDC returns `invalid_client`?** You haven't registered Web Login in @BotFather (Bot Settings > Web Login). Or you're using the bot token as client secret instead of the separate secret BotFather provides. See [OIDC Prerequisites](#prerequisites).
 
-**OIDC redirects with `#tgAuthResult` instead of `?code=`?** Same problem — Telegram falls back to Login Widget redirect mode when it doesn't recognize the bot as an OIDC client. You'll get base64-encoded widget data in the URL hash instead of an authorization code.
+**OIDC redirects with `#tgAuthResult` instead of `?code=`?** Your redirect URI isn't registered in BotFather's Web Login Allowed URLs. Telegram falls back to Login Widget redirect mode. Register `https://yourdomain.com/api/auth/callback/telegram-oidc` in the Allowed URLs.
 
 ## Examples
 
@@ -295,9 +289,14 @@ See [`examples/`](./examples) for a Next.js implementation.
 
 ## Migrating
 
+### To v1.4.0 (from v1.3.x)
+
+- **OIDC users**: Add `oidc.clientSecret` — the Client Secret from BotFather's Web Login settings (Bot Settings > Web Login). This is NOT the bot token. Register your Allowed URLs there too, including `https://yourdomain.com/api/auth/callback/telegram-oidc`. The plugin falls back to bot token if `clientSecret` is omitted (with a warning), but Telegram rejects bot tokens as OIDC client secrets. Removed non-standard `origin` and `bot_id` params from the auth URL. See [OIDC Prerequisites](#prerequisites).
+- Login Widget and Mini App flows are unaffected.
+
 ### To v1.3.x (from v1.2.0)
 
-- No breaking changes. **If you're using OIDC**, read the [OIDC Prerequisites](#prerequisites--read-this-before-you-waste-an-hour) — Telegram's OIDC requires bot registration that isn't fully documented yet. Without it, you'll get `invalid_client` or `#tgAuthResult` fallbacks. The v1.3.x fixes (`bot_id` in auth URL, graceful `verifyIdToken` failure, placeholder email, `origin` param, diagnostic logging) are all valid for when OIDC registration works, but can't fix Telegram rejecting unregistered bots. Login Widget and Mini App flows are unaffected.
+- No breaking changes. v1.3.x added graceful `verifyIdToken` failure, placeholder email generation, diagnostic `getUserInfo` logging, and `origin` param (now removed in v1.4.0). If you're using OIDC, skip straight to v1.4.0.
 
 ### To v1.2.0 (from v1.1.0)
 

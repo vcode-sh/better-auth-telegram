@@ -73,6 +73,23 @@ export interface TelegramOIDCClaims {
  */
 export interface TelegramOIDCOptions {
   /**
+   * Client ID from @BotFather's Web Login settings.
+   * If omitted, extracted from the main botToken (first part before colon).
+   * Use this when your OIDC bot is different from your Login Widget bot.
+   */
+  clientId?: string;
+
+  /**
+   * Client Secret from @BotFather's Web Login settings.
+   * This is NOT your bot token — BotFather provides a separate secret
+   * when you configure Web Login under Bot Settings > Web Login.
+   *
+   * If omitted, falls back to the bot token (deprecated behavior that
+   * won't work with Telegram's official OIDC registration).
+   */
+  clientSecret?: string;
+
+  /**
    * Enable Telegram OIDC support
    * @default false
    */

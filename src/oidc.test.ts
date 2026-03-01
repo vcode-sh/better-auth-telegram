@@ -157,6 +157,43 @@ describe("createTelegramOIDCProvider", () => {
         clientSecret: BOT_TOKEN,
       });
     });
+
+    it("should use separate clientId when provided", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientId: "999888777",
+      });
+      expect(provider.options?.clientId).toBe("999888777");
+      warnSpy.mockRestore();
+    });
+
+    it("should use separate clientSecret when provided", () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: "separate-oidc-secret",
+      });
+      expect(provider.options).toEqual({
+        clientId: BOT_ID,
+        clientSecret: "separate-oidc-secret",
+      });
+    });
+
+    it("should fall back to bot token when clientSecret is not provided", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {});
+      expect(provider.options?.clientSecret).toBe(BOT_TOKEN);
+      warnSpy.mockRestore();
+    });
+
+    it("should warn when clientSecret is not provided", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      createTelegramOIDCProvider(BOT_TOKEN, {});
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("no clientSecret provided"),
+        expect.any(String),
+        expect.any(String)
+      );
+      warnSpy.mockRestore();
+    });
   });
 
   describe("Bot ID extraction", () => {
@@ -202,7 +239,6 @@ describe("createTelegramOIDCProvider", () => {
         state: "test-state",
         codeVerifier: "test-verifier",
         redirectURI: "https://example.com/callback",
-        additionalParams: { origin: "https://example.com", bot_id: BOT_ID },
       });
 
       expect(result).toBe(mockUrl);
@@ -249,6 +285,26 @@ describe("createTelegramOIDCProvider", () => {
       expect(callArgs.scopes).toContain("phone");
       expect(callArgs.scopes).toContain("telegram:bot_access");
     });
+
+    it("should NOT pass additionalParams, origin, or bot_id (issue #12)", async () => {
+      const mockUrl = new URL("https://oauth.telegram.org/auth");
+      mockedCreateAuthorizationURL.mockResolvedValueOnce(mockUrl);
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      await provider.createAuthorizationURL({
+        state: "state",
+        codeVerifier: "verifier",
+        redirectURI: "https://api.example.com/api/auth/callback/telegram-oidc",
+        scopes: undefined,
+        display: undefined,
+        loginHint: undefined,
+      });
+
+      const callArgs = mockedCreateAuthorizationURL.mock.calls[0]![0] as any;
+      expect(callArgs).not.toHaveProperty("additionalParams");
+      expect(callArgs).not.toHaveProperty("origin");
+      expect(callArgs).not.toHaveProperty("bot_id");
+    });
   });
 
   describe("validateAuthorizationCode", () => {
@@ -278,6 +334,29 @@ describe("createTelegramOIDCProvider", () => {
       });
 
       expect(result).toBe(mockTokens);
+    });
+
+    it("should use separate clientSecret for token exchange", async () => {
+      const mockTokens = { accessToken: "at", idToken: "it" };
+      mockedValidateAuthorizationCode.mockResolvedValueOnce(mockTokens);
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: "oidc-secret-from-botfather",
+      });
+      await provider.validateAuthorizationCode({
+        code: "auth-code",
+        codeVerifier: "verifier",
+        redirectURI: "https://example.com/cb",
+      });
+
+      expect(mockedValidateAuthorizationCode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: {
+            clientId: BOT_ID,
+            clientSecret: "oidc-secret-from-botfather",
+          },
+        })
+      );
     });
   });
 

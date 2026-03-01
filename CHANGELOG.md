@@ -5,15 +5,33 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-01
+
+### Fixed
+
+- **OIDC actually works now** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — Telegram published [official OIDC docs](https://core.telegram.org/bots/telegram-login) and it turns out: (1) the Client Secret is NOT the bot token — BotFather provides a separate secret via Bot Settings > Web Login, (2) `origin` and `bot_id` are not standard OIDC parameters and were causing Telegram to fall back to Login Widget redirects, (3) Allowed URLs (including the callback URI) must be registered in BotFather's Web Login settings. Removed `origin` and `bot_id` from `additionalParams`. Auth URL is now clean standard OIDC: `client_id`, `redirect_uri`, `response_type=code`, `scope`, `state`, PKCE. Previous versions used the bot token as `client_secret` which Telegram rejected with `invalid_client`.
+- **OIDC cross-domain redirect fixed** ([#12](https://github.com/vcode-sh/better-auth-telegram/issues/12)) — v1.3.0 derived `origin` from the backend `redirectURI` and passed it to Telegram's auth endpoint. When frontend and backend lived on different domains (e.g., `app.example.com` + `api.example.com`), Telegram redirected to `api.example.com/#tgAuthResult=...` — a hash fragment the server never sees. Removing `origin` entirely fixes this: Telegram now uses the standard `redirect_uri` with `?code=` query params. The OAuth 2.0 spec wins again.
+- **Login Widget / Mini App P2002 crash when user exists via OIDC** ([#13](https://github.com/vcode-sh/better-auth-telegram/issues/13)) — `/telegram/signin` and `/telegram/miniapp/signin` only looked for accounts with `providerId=telegram`. If the same Telegram user had previously authenticated via OIDC (`providerId=telegram-oidc`), the endpoint skipped straight to `adapter.create({ model: "user" })` and Prisma threw `P2002: Unique constraint failed on email`. Now both endpoints check for an existing user by `telegramId` before attempting user creation. If found, they link a `telegram` account to the existing user instead of creating a duplicate. Works regardless of `autoCreateUser` — linking an existing user is not creating a new one.
+
+### Added
+
+- **`oidc.clientSecret` option** — Pass the Client Secret from BotFather's Web Login settings. This is the actual OIDC client secret, not the bot token. Falls back to bot token with a `console.warn` if omitted (for backward compatibility), but OIDC won't work without the proper secret.
+- **Proper OIDC setup documentation** — Step-by-step BotFather Web Login walkthrough, including the undocumented "remove URL then reopen to unlock OpenID Connect Login" ritual. Covers Allowed URL (trusted origin), Redirect URL (callback URI), Client ID/Secret retrieval, and local dev ngrok setup. Because Telegram's own docs assume you already know. You didn't. Neither did we.
+
+### Changed
+
+- **Test app restructured** — Login Widget isolated to `/widget` page, Mini App SDK loaded dynamically only on `/miniapp`, home page is now a hub with links. Prevents cross-flow interference during testing.
+- Test count: 225 → 235. Nine new tests: cross-provider account linking for Login Widget (5) and Mini App (3) with P2002 reproduction, plus OIDC auth URL regression guard against `additionalParams`/`origin`/`bot_id` (1). All nine fail against v1.3.x code, pass against v1.4.0.
+
 ## [1.3.3] - 2026-03-01
 
 ### Fixed
 
-- **`bot_id` actually ships this time** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — The v1.3.2 source had the `bot_id` fix but the npm dist was built before the change landed. The published package sent `additionalParams: { origin }` instead of `additionalParams: { origin, bot_id: botId }`. This release rebuilds from the correct source. If you're on 1.3.2 and using OIDC, upgrade.
+- **`bot_id` actually ships this time** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — The v1.3.2 source had the `bot_id` fix but the npm dist was built before the change landed. The published package sent `additionalParams: { origin }` instead of `additionalParams: { origin, bot_id: botId }`. This release rebuilds from the correct source. Superseded by v1.4.0 which removes `bot_id` entirely per official Telegram OIDC docs.
 
 ### Added
 
-- **OIDC prerequisites documentation** — Telegram's OIDC infrastructure is live (`oauth.telegram.org/.well-known/openid-configuration`, JWKS, RS256 JWTs) but bot registration isn't publicly documented. Without it, the token endpoint returns `invalid_client` and the auth endpoint falls back to Login Widget redirects (`#tgAuthResult` hash fragment instead of `?code=` authorization code). README now documents this clearly: `/setpublickey` via @BotFather, `/setdomain`, and the fact that additional undocumented steps may be required. Troubleshooting section updated with OIDC-specific guidance.
+- **OIDC prerequisites documentation** — now updated in v1.4.0 with the correct BotFather Web Login setup.
 
 ### Changed
 
@@ -427,6 +445,8 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.4.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.4.0
+[1.3.3]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.3
 [1.3.2]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.2
 [1.3.1]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.1
 [1.3.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.0

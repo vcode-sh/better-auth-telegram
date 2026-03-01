@@ -73,7 +73,7 @@ function buildScopes(options: TelegramOIDCOptions): string[] {
  * Uses standard OAuth 2.0 Authorization Code flow with PKCE
  * via oauth.telegram.org.
  *
- * @param botToken - Bot token from @BotFather (used as client_id:client_secret)
+ * @param botToken - Bot token from @BotFather (bot ID extracted as client_id)
  * @param options - OIDC configuration options
  */
 export function createTelegramOIDCProvider(
@@ -82,9 +82,21 @@ export function createTelegramOIDCProvider(
 ): OAuthProvider<TelegramOIDCClaims> {
   const botId = botToken.split(":")[0]!;
 
+  // Client ID and secret come from BotFather's Web Login settings (Bot Settings > Web Login).
+  // Falls back to bot token values for backward compatibility.
+  const clientId = options.clientId || botId;
+  const clientSecret = options.clientSecret || botToken;
+  if (!options.clientSecret) {
+    console.warn(
+      "[better-auth-telegram] OIDC: no clientSecret provided. Using bot token as fallback.",
+      "For OIDC to work, configure Web Login in @BotFather (Bot Settings > Web Login)",
+      "and pass the Client Secret via oidc.clientSecret."
+    );
+  }
+
   const providerOptions = {
-    clientId: botId,
-    clientSecret: botToken,
+    clientId,
+    clientSecret,
   };
 
   return {
@@ -97,11 +109,6 @@ export function createTelegramOIDCProvider(
         _scopes.push(...scopes);
       }
 
-      // Telegram OIDC requires the "origin" parameter matching the redirect_uri origin.
-      // Telegram also expects "bot_id" — the standard "client_id" is sent by
-      // Better Auth's createAuthorizationURL, but Telegram may not recognise it.
-      const origin = new URL(redirectURI).origin;
-
       return createAuthorizationURL({
         id: TELEGRAM_OIDC_PROVIDER_ID,
         options: providerOptions,
@@ -110,7 +117,6 @@ export function createTelegramOIDCProvider(
         state,
         codeVerifier,
         redirectURI,
-        additionalParams: { origin, bot_id: botId },
       });
     },
 
@@ -135,7 +141,7 @@ export function createTelegramOIDCProvider(
         const { payload } = await jwtVerify(token, publicKey, {
           algorithms: [alg],
           issuer: TELEGRAM_OIDC_ISSUER,
-          audience: botId,
+          audience: clientId,
         });
 
         return !!payload;
