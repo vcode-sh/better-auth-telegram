@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/vcode-sh/better-auth-telegram/branch/main/graph/badge.svg)](https://codecov.io/gh/vcode-sh/better-auth-telegram)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Telegram authentication plugin for [Better Auth](https://better-auth.com). Login Widget. Mini Apps. Link/unlink. HMAC-SHA-256 verification. The whole circus.
+Telegram authentication plugin for [Better Auth](https://better-auth.com). Login Widget. Mini Apps. OIDC. Link/unlink. HMAC-SHA-256 verification. The whole circus.
 
 Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
 
@@ -63,13 +63,14 @@ export const authClient = createAuthClient({
 
 ### 4. Database
 
-The plugin adds `telegramId` and `telegramUsername` to both `user` and `account` tables. If using Prisma:
+The plugin adds `telegramId`, `telegramUsername`, and `telegramPhoneNumber` to the `user` table, and `telegramId` and `telegramUsername` to `account`. If using Prisma:
 
 ```prisma
 model User {
   // ... existing fields
-  telegramId       String?
-  telegramUsername  String?
+  telegramId          String?
+  telegramUsername    String?
+  telegramPhoneNumber String?  // populated via OIDC with phone scope
 }
 
 model Account {
@@ -159,6 +160,33 @@ const validation = await authClient.validateMiniApp(
 );
 ```
 
+### OIDC (OpenID Connect)
+
+Standard OAuth 2.0 flow via `oauth.telegram.org`. Phone numbers, PKCE, RS256 JWTs — proper grown-up auth instead of widget callbacks. Telegram finally joined the federation.
+
+Enable on server:
+
+```typescript
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,
+  botUsername: "your_bot_username",
+  oidc: {
+    enabled: true,
+    requestPhone: true, // get phone numbers, finally
+  },
+});
+```
+
+Then on client:
+
+```typescript
+await authClient.signInWithTelegramOIDC({
+  callbackURL: "/dashboard",
+});
+```
+
+That's it. Standard Better Auth social login under the hood. PKCE, state tokens, the works. You don't even need to think about it, which is the whole point.
+
 ## Configuration
 
 | Option | Default | Description |
@@ -173,6 +201,11 @@ const validation = await authClient.validateMiniApp(
 | `miniApp.validateInitData` | `true` | Verify Mini App initData |
 | `miniApp.allowAutoSignin` | `true` | Allow auto sign-in from Mini Apps |
 | `miniApp.mapMiniAppDataToUser` | — | Custom Mini App user mapper |
+| `oidc.enabled` | `false` | Enable Telegram OIDC flow |
+| `oidc.scopes` | `["openid", "profile"]` | OIDC scopes to request |
+| `oidc.requestPhone` | `false` | Request phone number (adds `phone` scope) |
+| `oidc.requestBotAccess` | `false` | Request bot access (adds `telegram:bot_access` scope) |
+| `oidc.mapOIDCProfileToUser` | — | Custom OIDC claims mapper |
 
 Full types in [`src/types.ts`](./src/types.ts).
 
@@ -186,6 +219,8 @@ Full types in [`src/types.ts`](./src/types.ts).
 | GET | `/telegram/config` | No | Get bot username |
 | POST | `/telegram/miniapp/signin` | No | Sign in from Mini App |
 | POST | `/telegram/miniapp/validate` | No | Validate initData |
+
+OIDC uses Better Auth's built-in social login routes — `POST /sign-in/social` with `provider: "telegram-oidc"` and `GET /callback/telegram-oidc`. No custom endpoints needed. Delegation at its finest.
 
 All endpoints are rate-limited. Signin/miniapp: 10 req/60s. Link/unlink: 5 req/60s. Validate: 20 req/60s. Brute-forcing was never a strategy, now it's also a throttled one.
 
@@ -211,6 +246,8 @@ No more comparing against magic strings. You're welcome.
 HMAC-SHA-256 verification on all auth data via Web Crypto API (`crypto.subtle`). Timestamp validation against replay attacks. Bot token never touches the client. Works in every runtime that implements the Web Crypto standard — which is all of them now, congratulations internet.
 
 Login Widget uses `SHA256(botToken)` as secret key. Mini Apps use `HMAC-SHA256("WebAppData", botToken)`. Different derivation paths, same level of paranoia.
+
+OIDC adds RS256 JWT verification via Telegram's JWKS endpoint, plus PKCE and state tokens for the OAuth flow. Keys are fetched and matched by `kid` — no hardcoded secrets, no trust-me-bro validation.
 
 Is it bulletproof? No. Is it better than storing passwords in plain text? Significantly.
 
@@ -242,6 +279,7 @@ Full changelog in [CHANGELOG.md](./CHANGELOG.md).
 - [Better Auth](https://better-auth.com)
 - [Telegram Login Widget](https://core.telegram.org/widgets/login)
 - [Telegram Mini Apps](https://core.telegram.org/bots/webapps)
+- [Telegram OIDC](https://core.telegram.org/bots/features#oidc-authorization)
 - [GitHub](https://github.com/vcode-sh/better-auth-telegram)
 - [Changelog](./CHANGELOG.md)
 

@@ -390,6 +390,39 @@ export const telegramClient = () => {
           ...fetchOptions,
         });
       },
+
+      /**
+       * Sign in with Telegram OIDC (OpenID Connect)
+       * Initiates the standard OAuth 2.0 Authorization Code flow with PKCE
+       * via oauth.telegram.org. Requires `oidc.enabled: true` on the server.
+       *
+       * @param options - Callback URLs for redirect after authentication
+       * @param fetchOptions - Optional fetch options
+       *
+       * @example
+       * ```ts
+       * await authClient.signInWithTelegramOIDC({
+       *   callbackURL: "/dashboard",
+       * });
+       * ```
+       */
+      signInWithTelegramOIDC: async (
+        options?: {
+          callbackURL?: string;
+          errorCallbackURL?: string;
+        },
+        fetchOptions?: FetchOptions
+      ) => {
+        return await $fetch("/sign-in/social", {
+          method: "POST",
+          body: {
+            provider: "telegram-oidc",
+            callbackURL: options?.callbackURL,
+            errorCallbackURL: options?.errorCallbackURL,
+          },
+          ...fetchOptions,
+        });
+      },
     }),
   } satisfies BetterAuthClientPlugin;
 };

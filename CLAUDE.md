@@ -1,6 +1,6 @@
 # better-auth-telegram
 
-Telegram authentication plugin for [Better Auth](https://www.better-auth.com/). Login Widget + Mini App auth flows, published as `better-auth-telegram` on npm.
+Telegram authentication plugin for [Better Auth](https://www.better-auth.com/). Login Widget + Mini App + OIDC auth flows, published as `better-auth-telegram` on npm.
 
 ## Architecture
 
@@ -12,8 +12,9 @@ Two entry points, two export paths:
 Supporting modules:
 
 - **`src/verify.ts`** -- HMAC-SHA256 verification via Web Crypto API. Two paths: Login Widget (`SHA256(botToken)`) and Mini App (`HMAC-SHA256("WebAppData", botToken)`)
-- **`src/types.ts`** -- All TypeScript interfaces (`TelegramPluginOptions`, `TelegramAuthData`, Mini App types)
-- **`src/constants.ts`** -- Error codes, success messages, `PLUGIN_ID`, `DEFAULT_MAX_AUTH_AGE`
+- **`src/oidc.ts`** -- Telegram OIDC provider factory. Creates an `OAuthProvider` for Better Auth's social login system using OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. RS256 JWT verification via JWKS.
+- **`src/types.ts`** -- All TypeScript interfaces (`TelegramPluginOptions`, `TelegramAuthData`, Mini App types, `TelegramOIDCOptions`, `TelegramOIDCClaims`)
+- **`src/constants.ts`** -- Error codes, success messages, `PLUGIN_ID`, `DEFAULT_MAX_AUTH_AGE`, OIDC endpoints/issuer constants
 
 ### Server Endpoints
 
@@ -26,7 +27,9 @@ Supporting modules:
 | POST | `/telegram/miniapp/signin` | None | Sign in from Mini App (optional) |
 | POST | `/telegram/miniapp/validate` | None | Validate Mini App initData (optional) |
 
-Schema extends `user` and `account` tables with `telegramId` and `telegramUsername` fields.
+OIDC (when `oidc.enabled`) uses Better Auth's built-in social login routes (`POST /sign-in/social` with `provider: "telegram-oidc"`, `GET /callback/telegram-oidc`). The plugin injects a `telegram-oidc` social provider via the `init` hook.
+
+Schema extends `user` table with `telegramId`, `telegramUsername`, and `telegramPhoneNumber` fields, and `account` table with `telegramId` and `telegramUsername` fields.
 
 ## Code Style
 
@@ -75,5 +78,6 @@ Single test file: `npx vitest run src/verify.test.ts`
 - Session-protected endpoints use `sessionMiddleware`. Don't forget it for authenticated routes.
 - Type guards (`validateTelegramAuthData`, `validateMiniAppData`) run before processing. Don't skip validation.
 - Mini App endpoints are conditionally registered (`miniApp.enabled`). Test both enabled and disabled paths.
+- OIDC provider is conditionally injected via `init` hook (`oidc.enabled`). JWT verification in `oidc.ts` uses `jose` library -- changes to JWKS fetching or token validation need scrutiny.
 - HTTP status codes: 400 (validation), 401 (auth), 403 (disabled), 404 (not found), 409 (conflict)
 - Coverage thresholds are enforced in CI. New code needs tests.

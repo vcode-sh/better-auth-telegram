@@ -11,6 +11,7 @@ import {
   PLUGIN_ID,
   SUCCESS_MESSAGES,
 } from "./constants";
+import { createTelegramOIDCProvider } from "./oidc";
 import type {
   TelegramAccountRecord,
   TelegramAuthData,
@@ -24,12 +25,16 @@ import {
   verifyTelegramAuth,
 } from "./verify";
 
+// biome-ignore lint/performance/noBarrelFile: Public API re-export
+export { createTelegramOIDCProvider } from "./oidc";
 export type {
   TelegramAccountRecord,
   TelegramAuthData,
   TelegramMiniAppChat,
   TelegramMiniAppData,
   TelegramMiniAppUser,
+  TelegramOIDCClaims,
+  TelegramOIDCOptions,
   TelegramPluginOptions,
 } from "./types";
 
@@ -60,10 +65,14 @@ export const telegram = (options: TelegramPluginOptions) => {
     maxAuthAge = DEFAULT_MAX_AUTH_AGE,
     mapTelegramDataToUser,
     miniApp,
+    oidc,
   } = options;
 
   // Mini Apps configuration
   const miniAppEnabled = miniApp?.enabled ?? false;
+
+  // OIDC configuration
+  const oidcEnabled = oidc?.enabled ?? false;
   const miniAppValidateInitData = miniApp?.validateInitData ?? true;
   const miniAppAllowAutoSignin = miniApp?.allowAutoSignin ?? true;
   const mapMiniAppDataToUser = miniApp?.mapMiniAppDataToUser;
@@ -79,10 +88,30 @@ export const telegram = (options: TelegramPluginOptions) => {
   return {
     id: PLUGIN_ID,
 
+    // Inject OIDC provider into better-auth's social providers
+    ...(oidcEnabled
+      ? {
+          init: (ctx: any) => ({
+            context: {
+              socialProviders: [
+                createTelegramOIDCProvider(botToken, oidc!),
+                ...ctx.socialProviders,
+              ],
+            },
+          }),
+        }
+      : {}),
+
     schema: {
       user: {
         fields: {
           telegramId: {
+            type: "string",
+            required: false,
+            unique: false,
+            input: false,
+          },
+          telegramPhoneNumber: {
             type: "string",
             required: false,
             unique: false,
@@ -403,6 +432,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           ctx.json({
             botUsername,
             miniAppEnabled,
+            oidcEnabled,
           })
       ),
 

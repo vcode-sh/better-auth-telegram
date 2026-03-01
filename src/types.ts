@@ -54,6 +54,60 @@ export interface TelegramMiniAppData {
 }
 
 /**
+ * JWT ID token claims from Telegram OIDC
+ */
+export interface TelegramOIDCClaims {
+  aud: string;
+  exp: number;
+  iat: number;
+  iss: string;
+  name?: string;
+  phone_number?: string;
+  picture?: string;
+  preferred_username?: string;
+  sub: string;
+}
+
+/**
+ * Configuration options for Telegram OIDC authentication
+ */
+export interface TelegramOIDCOptions {
+  /**
+   * Enable Telegram OIDC support
+   * @default false
+   */
+  enabled?: boolean;
+
+  /**
+   * Custom function to map OIDC claims to user object
+   */
+  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => {
+    name?: string;
+    email?: string;
+    image?: string;
+    [key: string]: any;
+  };
+
+  /**
+   * Request bot access (adds "telegram:bot_access" scope)
+   * @default false
+   */
+  requestBotAccess?: boolean;
+
+  /**
+   * Request phone number (adds "phone" scope)
+   * @default false
+   */
+  requestPhone?: boolean;
+
+  /**
+   * Additional scopes beyond "openid"
+   * @default ["profile"]
+   */
+  scopes?: string[];
+}
+
+/**
  * Configuration options for the Telegram plugin
  */
 export interface TelegramPluginOptions {
@@ -129,6 +183,13 @@ export interface TelegramPluginOptions {
       [key: string]: any;
     };
   };
+
+  /**
+   * Telegram OIDC (OpenID Connect) configuration
+   * Uses standard OAuth 2.0 Authorization Code flow with PKCE
+   * via oauth.telegram.org
+   */
+  oidc?: TelegramOIDCOptions;
 }
 
 /**
@@ -136,6 +197,7 @@ export interface TelegramPluginOptions {
  */
 export interface TelegramUserFields {
   telegramId?: string;
+  telegramPhoneNumber?: string;
   telegramUsername?: string;
 }
 

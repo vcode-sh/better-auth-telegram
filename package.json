@@ -1,6 +1,6 @@
 {
   "name": "better-auth-telegram",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Telegram authentication plugin for Better Auth",
   "main": "./dist/index.cjs",

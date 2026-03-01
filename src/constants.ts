@@ -27,3 +27,10 @@ export const SUCCESS_MESSAGES = {
 export const PLUGIN_ID = "telegram";
 
 export const DEFAULT_MAX_AUTH_AGE = 86400;
+
+export const TELEGRAM_OIDC_PROVIDER_ID = "telegram-oidc";
+export const TELEGRAM_OIDC_ISSUER = "https://oauth.telegram.org";
+export const TELEGRAM_OIDC_AUTH_ENDPOINT = "https://oauth.telegram.org/auth";
+export const TELEGRAM_OIDC_TOKEN_ENDPOINT = "https://oauth.telegram.org/token";
+export const TELEGRAM_OIDC_JWKS_URI =
+  "https://oauth.telegram.org/.well-known/jwks.json";
