@@ -202,7 +202,7 @@ describe("createTelegramOIDCProvider", () => {
         state: "test-state",
         codeVerifier: "test-verifier",
         redirectURI: "https://example.com/callback",
-        additionalParams: { origin: "https://example.com" },
+        additionalParams: { origin: "https://example.com", bot_id: BOT_ID },
       });
 
       expect(result).toBe(mockUrl);

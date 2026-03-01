@@ -97,7 +97,9 @@ export function createTelegramOIDCProvider(
         _scopes.push(...scopes);
       }
 
-      // Telegram OIDC requires the "origin" parameter matching the redirect_uri origin
+      // Telegram OIDC requires the "origin" parameter matching the redirect_uri origin.
+      // Telegram also expects "bot_id" — the standard "client_id" is sent by
+      // Better Auth's createAuthorizationURL, but Telegram may not recognise it.
       const origin = new URL(redirectURI).origin;
 
       return createAuthorizationURL({
@@ -108,7 +110,7 @@ export function createTelegramOIDCProvider(
         state,
         codeVerifier,
         redirectURI,
-        additionalParams: { origin },
+        additionalParams: { origin, bot_id: botId },
       });
     },
 
@@ -144,17 +146,33 @@ export function createTelegramOIDCProvider(
 
     getUserInfo(token) {
       if (!token.idToken) {
+        console.warn(
+          "[better-auth-telegram] OIDC getUserInfo: no id_token in token response.",
+          "Token keys:",
+          Object.keys(token).filter((k) => k !== "raw"),
+          "Raw keys:",
+          token.raw ? Object.keys(token.raw) : "none"
+        );
         return Promise.resolve(null);
       }
 
       let claims: TelegramOIDCClaims;
       try {
         claims = decodeJwt(token.idToken) as TelegramOIDCClaims;
-      } catch {
+      } catch (e) {
+        console.warn(
+          "[better-auth-telegram] OIDC getUserInfo: failed to decode id_token.",
+          e instanceof Error ? e.message : e
+        );
         return Promise.resolve(null);
       }
 
       if (!claims.sub) {
+        console.warn(
+          "[better-auth-telegram] OIDC getUserInfo: id_token has no sub claim.",
+          "Claims:",
+          Object.keys(claims)
+        );
         return Promise.resolve(null);
       }
 
