@@ -12,7 +12,7 @@ export const authClient = createAuthClient({
       ? window.location.origin
       : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
   fetchOptions: {
-    credentials: "include", // Required for session cookies
+    credentials: "include", // required for link/unlink session cookies
   },
   plugins: [telegramClient()],
 });

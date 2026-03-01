@@ -1,4 +1,4 @@
-// Component for linking Telegram to existing account
+// Account linking component
 // app/components/TelegramLinkButton.tsx
 
 "use client";
@@ -12,7 +12,6 @@ export function TelegramLinkButton() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initialize Telegram Login Widget for linking
     authClient
       .initTelegramWidget(
         "telegram-link-container",
@@ -36,7 +35,7 @@ export function TelegramLinkButton() {
           }
         }
       )
-      .catch((_err) => {
+      .catch(() => {
         setError("Failed to load Telegram widget");
       });
   }, []);
@@ -48,7 +47,7 @@ export function TelegramLinkButton() {
     try {
       await authClient.unlinkTelegram();
       setSuccess(false);
-      window.location.reload(); // Refresh to show link button again
+      window.location.reload();
     } catch (err: any) {
       setError(err?.message || "Failed to unlink Telegram account");
     } finally {
@@ -65,7 +64,7 @@ export function TelegramLinkButton() {
       {success && (
         <div className="space-y-2">
           <div className="text-green-600 text-sm">
-            ✓ Telegram account linked successfully!
+            Telegram account linked successfully
           </div>
           <button
             className="rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600 disabled:opacity-50"

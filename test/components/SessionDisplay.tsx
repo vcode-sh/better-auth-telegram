@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
@@ -75,7 +76,7 @@ export function SessionDisplay() {
       <div className="rounded-lg bg-white p-6 shadow-md">
         <div className="flex items-center space-x-4">
           {session.user.image && (
-            <img
+            <Image
               alt={session.user.name}
               className="h-16 w-16 rounded-full"
               height={64}

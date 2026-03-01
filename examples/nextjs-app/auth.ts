@@ -6,7 +6,6 @@ import { telegram } from "better-auth-telegram";
 
 export const auth = betterAuth({
   database: {
-    // Your database configuration
     provider: "postgresql",
     url: process.env.DATABASE_URL!,
   },
@@ -26,6 +25,21 @@ export const auth = betterAuth({
       allowUserToLink: true,
       autoCreateUser: true,
       maxAuthAge: 86400, // 24 hours
+
+      // Mini Apps — enable if you're building a Telegram Mini App
+      miniApp: {
+        enabled: true,
+        validateInitData: true,
+        allowAutoSignin: true,
+      },
+
+      // OIDC — OAuth 2.0 flow via oauth.telegram.org
+      // Requires BotFather Web Login setup. See README prerequisites.
+      oidc: {
+        enabled: true,
+        clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
+        requestPhone: true,
+      },
     }),
   ],
 });

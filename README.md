@@ -285,7 +285,7 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 
 ## Examples
 
-See [`examples/`](./examples) for a Next.js implementation.
+See [`examples/nextjs-app/`](./examples/nextjs-app) for a Next.js implementation covering all three auth flows: Login Widget, OIDC, Mini Apps, plus account linking/unlinking. Copy-paste-ready components and server/client setup. There's also a full test playground app in [`test/`](./test) if you want to see everything wired together with a real database.
 
 ## Migrating
 

@@ -1,4 +1,4 @@
-// Component for Telegram Login
+// Login Widget component
 // app/components/TelegramLoginButton.tsx
 
 "use client";
@@ -13,7 +13,6 @@ export function TelegramLoginButton() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initialize Telegram Login Widget
     authClient
       .initTelegramWidget(
         "telegram-login-container",
@@ -28,18 +27,16 @@ export function TelegramLoginButton() {
           setError(null);
 
           try {
-            const _result = await authClient.signInWithTelegram(authData);
-
-            // Redirect to dashboard or home
+            await authClient.signInWithTelegram(authData);
             router.push("/dashboard");
-          } catch (_err) {
+          } catch {
             setError("Failed to sign in with Telegram");
           } finally {
             setLoading(false);
           }
         }
       )
-      .catch((_err) => {
+      .catch(() => {
         setError("Failed to load Telegram login widget");
       });
   }, [router]);
