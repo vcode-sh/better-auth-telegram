@@ -10,7 +10,7 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com). Login
 
 Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
 
-219 tests. 100% coverage. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+221 tests. 100% coverage. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
 
 ## Requirements
 
@@ -265,6 +265,10 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 See [`examples/`](./examples) for a Next.js implementation.
 
 ## Migrating
+
+### To v1.3.x (from v1.2.0)
+
+- No breaking changes. v1.3.0 fixes OIDC `getUserInfo` returning `null` on malformed tokens, adds placeholder email generation for Telegram's missing email claim, and sends the `origin` parameter to `oauth.telegram.org/auth`. v1.3.1 wraps `verifyIdToken` in a try-catch so JWKS fetch failures and invalid tokens return `false` instead of throwing unhandled errors into Better Auth's callback handler. If you're using OIDC, upgrade. If you're not, your code doesn't care.
 
 ### To v1.2.0 (from v1.1.0)
 

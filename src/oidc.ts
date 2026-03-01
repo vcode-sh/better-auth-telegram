@@ -123,19 +123,23 @@ export function createTelegramOIDCProvider(
     },
 
     async verifyIdToken(token) {
-      const { kid, alg } = decodeProtectedHeader(token);
-      if (!(kid && alg)) {
+      try {
+        const { kid, alg } = decodeProtectedHeader(token);
+        if (!(kid && alg)) {
+          return false;
+        }
+
+        const publicKey = await getTelegramPublicKey(kid);
+        const { payload } = await jwtVerify(token, publicKey, {
+          algorithms: [alg],
+          issuer: TELEGRAM_OIDC_ISSUER,
+          audience: botId,
+        });
+
+        return !!payload;
+      } catch {
         return false;
       }
-
-      const publicKey = await getTelegramPublicKey(kid);
-      const { payload } = await jwtVerify(token, publicKey, {
-        algorithms: [alg],
-        issuer: TELEGRAM_OIDC_ISSUER,
-        audience: botId,
-      });
-
-      return !!payload;
     },
 
     getUserInfo(token) {

@@ -533,7 +533,7 @@ describe("createTelegramOIDCProvider", () => {
       expect(result).toBe(false);
     });
 
-    it("should throw when JWKS fetch fails", async () => {
+    it("should return false when JWKS fetch fails", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: null,
       } as any);
@@ -541,12 +541,11 @@ describe("createTelegramOIDCProvider", () => {
       const token = await createSignedJWT({ sub: "12345" });
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      await expect(provider.verifyIdToken!(token)).rejects.toThrow(
-        "Failed to fetch Telegram JWKS"
-      );
+      const result = await provider.verifyIdToken!(token);
+      expect(result).toBe(false);
     });
 
-    it("should throw when kid is not found in JWKS", async () => {
+    it("should return false when kid is not found in JWKS", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: {
           keys: [{ ...jwk, kid: "different-kid" }],
@@ -556,12 +555,11 @@ describe("createTelegramOIDCProvider", () => {
       const token = await createSignedJWT({ sub: "12345" });
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      await expect(provider.verifyIdToken!(token)).rejects.toThrow(
-        "JWK with kid test-kid-1 not found"
-      );
+      const result = await provider.verifyIdToken!(token);
+      expect(result).toBe(false);
     });
 
-    it("should reject a token with wrong issuer", async () => {
+    it("should return false for a token with wrong issuer", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: { keys: [jwk] },
       } as any);
@@ -576,10 +574,11 @@ describe("createTelegramOIDCProvider", () => {
       const signedToken = await token.sign(rsaKeyPair.privateKey);
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      await expect(provider.verifyIdToken!(signedToken)).rejects.toThrow();
+      const result = await provider.verifyIdToken!(signedToken);
+      expect(result).toBe(false);
     });
 
-    it("should reject a token with wrong audience", async () => {
+    it("should return false for a token with wrong audience", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: { keys: [jwk] },
       } as any);
@@ -594,10 +593,11 @@ describe("createTelegramOIDCProvider", () => {
       const signedToken = await token.sign(rsaKeyPair.privateKey);
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      await expect(provider.verifyIdToken!(signedToken)).rejects.toThrow();
+      const result = await provider.verifyIdToken!(signedToken);
+      expect(result).toBe(false);
     });
 
-    it("should reject an expired token", async () => {
+    it("should return false for an expired token", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: { keys: [jwk] },
       } as any);
@@ -612,10 +612,11 @@ describe("createTelegramOIDCProvider", () => {
       const signedToken = await token.sign(rsaKeyPair.privateKey);
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      await expect(provider.verifyIdToken!(signedToken)).rejects.toThrow();
+      const result = await provider.verifyIdToken!(signedToken);
+      expect(result).toBe(false);
     });
 
-    it("should reject a token signed with a different key", async () => {
+    it("should return false for a token signed with a different key", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: { keys: [jwk] },
       } as any);
@@ -633,7 +634,8 @@ describe("createTelegramOIDCProvider", () => {
       const signedToken = await token.sign(otherKeyPair.privateKey);
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      await expect(provider.verifyIdToken!(signedToken)).rejects.toThrow();
+      const result = await provider.verifyIdToken!(signedToken);
+      expect(result).toBe(false);
     });
   });
 });

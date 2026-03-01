@@ -5,6 +5,16 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-03-01
+
+### Fixed
+
+- **OIDC `verifyIdToken` now fails gracefully** — previously, if the JWKS fetch failed, the key ID wasn't found, the token had a wrong issuer/audience, was expired, or was signed with a different key, `verifyIdToken` would throw an unhandled error straight into Better Auth's callback handler. Better Auth would catch it and log `Unable to get user info` — technically accurate, spectacularly unhelpful. Now wrapped in a try-catch that returns `false` instead of throwing. Invalid tokens get rejected cleanly. Network failures don't produce cryptic error messages. The OIDC flow degrades gracefully instead of dramatically.
+
+### Changed
+
+- Six `verifyIdToken` tests updated from `rejects.toThrow()` to `expect(result).toBe(false)` — the tests now match the graceful failure behaviour instead of expecting explosions.
+
 ## [1.3.0] - 2026-03-01
 
 ### Fixed
@@ -393,6 +403,7 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.3.1]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.1
 [1.3.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.0
 [1.2.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.2.0
 [1.1.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.1.0
