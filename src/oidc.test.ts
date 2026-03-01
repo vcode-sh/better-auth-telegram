@@ -651,14 +651,18 @@ describe("Plugin integration", () => {
         oidc: { enabled: true },
       });
 
-      const mockCtx = { socialProviders: [] };
+      const mockCtx = {
+        socialProviders: [],
+        getPlugin: () => undefined,
+        hasPlugin: () => false,
+      } as any;
       const result = plugin.init!(mockCtx);
 
-      expect(result.context.socialProviders).toHaveLength(1);
-      expect(result.context.socialProviders[0].id).toBe(
+      expect(result.context!.socialProviders).toHaveLength(1);
+      expect(result.context!.socialProviders![0]!.id).toBe(
         TELEGRAM_OIDC_PROVIDER_ID
       );
-      expect(result.context.socialProviders[0].name).toBe("Telegram");
+      expect(result.context!.socialProviders![0]!.name).toBe("Telegram");
     });
 
     it("should preserve existing social providers via concat", async () => {
@@ -673,14 +677,18 @@ describe("Plugin integration", () => {
         id: "google",
         name: "Google",
       };
-      const mockCtx = { socialProviders: [existingProvider] };
+      const mockCtx = {
+        socialProviders: [existingProvider],
+        getPlugin: () => undefined,
+        hasPlugin: () => false,
+      } as any;
       const result = plugin.init!(mockCtx);
 
-      expect(result.context.socialProviders).toHaveLength(2);
-      expect(result.context.socialProviders[0].id).toBe(
+      expect(result.context!.socialProviders).toHaveLength(2);
+      expect(result.context!.socialProviders![0]!.id).toBe(
         TELEGRAM_OIDC_PROVIDER_ID
       );
-      expect(result.context.socialProviders[1]).toBe(existingProvider);
+      expect(result.context!.socialProviders![1]!).toBe(existingProvider);
     });
 
     it("should pass OIDC options to the provider", async () => {
@@ -695,12 +703,16 @@ describe("Plugin integration", () => {
         },
       });
 
-      const mockCtx = { socialProviders: [] };
+      const mockCtx = {
+        socialProviders: [],
+        getPlugin: () => undefined,
+        hasPlugin: () => false,
+      } as any;
       const result = plugin.init!(mockCtx);
-      const provider = result.context.socialProviders[0];
+      const provider = result.context!.socialProviders![0];
 
-      expect(provider.options?.clientId).toBe(BOT_ID);
-      expect(provider.options?.clientSecret).toBe(BOT_TOKEN);
+      expect(provider!.options?.clientId).toBe(BOT_ID);
+      expect(provider!.options?.clientSecret).toBe(BOT_TOKEN);
     });
   });
 

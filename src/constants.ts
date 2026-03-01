@@ -1,4 +1,6 @@
-export const ERROR_CODES = {
+import { defineErrorCodes } from "@better-auth/core/utils/error-codes";
+
+export const ERROR_CODES = defineErrorCodes({
   BOT_TOKEN_REQUIRED: "Telegram plugin: botToken is required",
   BOT_USERNAME_REQUIRED: "Telegram plugin: botUsername is required",
   INVALID_AUTH_DATA: "Invalid Telegram auth data",
@@ -17,7 +19,7 @@ export const ERROR_CODES = {
   NO_USER_IN_INIT_DATA: "No user data in initData",
   MINI_APP_AUTO_SIGNIN_DISABLED:
     "User not found and auto-signin is disabled for Mini Apps",
-} as const;
+});
 
 export const SUCCESS_MESSAGES = {
   TELEGRAM_LINKED: "Telegram account linked successfully",

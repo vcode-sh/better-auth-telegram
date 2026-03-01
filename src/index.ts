@@ -78,11 +78,11 @@ export const telegram = (options: TelegramPluginOptions) => {
   const mapMiniAppDataToUser = miniApp?.mapMiniAppDataToUser;
 
   if (!botToken) {
-    throw new Error(ERROR_CODES.BOT_TOKEN_REQUIRED);
+    throw new Error(ERROR_CODES.BOT_TOKEN_REQUIRED.message);
   }
 
   if (!botUsername) {
-    throw new Error(ERROR_CODES.BOT_USERNAME_REQUIRED);
+    throw new Error(ERROR_CODES.BOT_USERNAME_REQUIRED.message);
   }
 
   return {
@@ -91,7 +91,7 @@ export const telegram = (options: TelegramPluginOptions) => {
     // Inject OIDC provider into better-auth's social providers
     ...(oidcEnabled
       ? {
-          init: (ctx: any) => ({
+          init: (ctx) => ({
             context: {
               socialProviders: [
                 createTelegramOIDCProvider(botToken, oidc!),
@@ -152,9 +152,7 @@ export const telegram = (options: TelegramPluginOptions) => {
 
           // Validate auth data structure
           if (!validateTelegramAuthData(body)) {
-            throw new APIError("BAD_REQUEST", {
-              message: ERROR_CODES.INVALID_AUTH_DATA,
-            });
+            throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_AUTH_DATA);
           }
 
           const telegramData = body as TelegramAuthData;
@@ -167,9 +165,10 @@ export const telegram = (options: TelegramPluginOptions) => {
           );
 
           if (!isValid) {
-            throw new APIError("UNAUTHORIZED", {
-              message: ERROR_CODES.INVALID_AUTHENTICATION,
-            });
+            throw APIError.from(
+              "UNAUTHORIZED",
+              ERROR_CODES.INVALID_AUTHENTICATION
+            );
           }
 
           // Map Telegram data to user
@@ -230,9 +229,10 @@ export const telegram = (options: TelegramPluginOptions) => {
               },
             });
           } else {
-            throw new APIError("NOT_FOUND", {
-              message: ERROR_CODES.USER_CREATION_DISABLED,
-            });
+            throw APIError.from(
+              "NOT_FOUND",
+              ERROR_CODES.USER_CREATION_DISABLED
+            );
           }
 
           // Create session
@@ -264,25 +264,19 @@ export const telegram = (options: TelegramPluginOptions) => {
         },
         async (ctx) => {
           if (!allowUserToLink) {
-            throw new APIError("FORBIDDEN", {
-              message: ERROR_CODES.LINKING_DISABLED,
-            });
+            throw APIError.from("FORBIDDEN", ERROR_CODES.LINKING_DISABLED);
           }
 
           const body = await ctx.body;
           const session = ctx.context.session;
 
           if (!session?.user?.id) {
-            throw new APIError("UNAUTHORIZED", {
-              message: ERROR_CODES.NOT_AUTHENTICATED,
-            });
+            throw APIError.from("UNAUTHORIZED", ERROR_CODES.NOT_AUTHENTICATED);
           }
 
           // Validate auth data
           if (!validateTelegramAuthData(body)) {
-            throw new APIError("BAD_REQUEST", {
-              message: ERROR_CODES.INVALID_AUTH_DATA,
-            });
+            throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_AUTH_DATA);
           }
 
           const telegramData = body as TelegramAuthData;
@@ -295,9 +289,10 @@ export const telegram = (options: TelegramPluginOptions) => {
           );
 
           if (!isValid) {
-            throw new APIError("UNAUTHORIZED", {
-              message: ERROR_CODES.INVALID_AUTHENTICATION,
-            });
+            throw APIError.from(
+              "UNAUTHORIZED",
+              ERROR_CODES.INVALID_AUTHENTICATION
+            );
           }
 
           // Check if Telegram account is already linked to another user
@@ -320,15 +315,17 @@ export const telegram = (options: TelegramPluginOptions) => {
             (existingAccount as TelegramAccountRecord).userId !==
               session.user.id
           ) {
-            throw new APIError("CONFLICT", {
-              message: ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER,
-            });
+            throw APIError.from(
+              "CONFLICT",
+              ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER
+            );
           }
 
           if (existingAccount) {
-            throw new APIError("CONFLICT", {
-              message: ERROR_CODES.TELEGRAM_ALREADY_LINKED_SELF,
-            });
+            throw APIError.from(
+              "CONFLICT",
+              ERROR_CODES.TELEGRAM_ALREADY_LINKED_SELF
+            );
           }
 
           // Create account link
@@ -370,9 +367,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           const session = ctx.context.session;
 
           if (!session?.user?.id) {
-            throw new APIError("UNAUTHORIZED", {
-              message: ERROR_CODES.NOT_AUTHENTICATED,
-            });
+            throw APIError.from("UNAUTHORIZED", ERROR_CODES.NOT_AUTHENTICATED);
           }
 
           // Find and delete Telegram account
@@ -391,9 +386,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           });
 
           if (!account) {
-            throw new APIError("NOT_FOUND", {
-              message: ERROR_CODES.NOT_LINKED,
-            });
+            throw APIError.from("NOT_FOUND", ERROR_CODES.NOT_LINKED);
           }
 
           await ctx.context.adapter.delete({
@@ -449,9 +442,10 @@ export const telegram = (options: TelegramPluginOptions) => {
                 const { initData } = body;
 
                 if (!initData || typeof initData !== "string") {
-                  throw new APIError("BAD_REQUEST", {
-                    message: ERROR_CODES.INIT_DATA_REQUIRED,
-                  });
+                  throw APIError.from(
+                    "BAD_REQUEST",
+                    ERROR_CODES.INIT_DATA_REQUIRED
+                  );
                 }
 
                 // Verify initData
@@ -459,9 +453,10 @@ export const telegram = (options: TelegramPluginOptions) => {
                   miniAppValidateInitData &&
                   !(await verifyMiniAppInitData(initData, botToken, maxAuthAge))
                 ) {
-                  throw new APIError("UNAUTHORIZED", {
-                    message: ERROR_CODES.INVALID_MINI_APP_INIT_DATA,
-                  });
+                  throw APIError.from(
+                    "UNAUTHORIZED",
+                    ERROR_CODES.INVALID_MINI_APP_INIT_DATA
+                  );
                 }
 
                 // Parse initData
@@ -469,15 +464,17 @@ export const telegram = (options: TelegramPluginOptions) => {
 
                 // Validate structure
                 if (!validateMiniAppData(data)) {
-                  throw new APIError("BAD_REQUEST", {
-                    message: ERROR_CODES.INVALID_MINI_APP_DATA_STRUCTURE,
-                  });
+                  throw APIError.from(
+                    "BAD_REQUEST",
+                    ERROR_CODES.INVALID_MINI_APP_DATA_STRUCTURE
+                  );
                 }
 
                 if (!data.user) {
-                  throw new APIError("BAD_REQUEST", {
-                    message: ERROR_CODES.NO_USER_IN_INIT_DATA,
-                  });
+                  throw APIError.from(
+                    "BAD_REQUEST",
+                    ERROR_CODES.NO_USER_IN_INIT_DATA
+                  );
                 }
 
                 const miniAppUser = data.user;
@@ -540,9 +537,10 @@ export const telegram = (options: TelegramPluginOptions) => {
                     },
                   });
                 } else {
-                  throw new APIError("NOT_FOUND", {
-                    message: ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED,
-                  });
+                  throw APIError.from(
+                    "NOT_FOUND",
+                    ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED
+                  );
                 }
 
                 // Create session
@@ -576,9 +574,10 @@ export const telegram = (options: TelegramPluginOptions) => {
                 const { initData } = body;
 
                 if (!initData || typeof initData !== "string") {
-                  throw new APIError("BAD_REQUEST", {
-                    message: ERROR_CODES.INIT_DATA_REQUIRED,
-                  });
+                  throw APIError.from(
+                    "BAD_REQUEST",
+                    ERROR_CODES.INIT_DATA_REQUIRED
+                  );
                 }
 
                 const isValid = await verifyMiniAppInitData(

@@ -1,6 +1,6 @@
 {
   "name": "better-auth-telegram",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Telegram authentication plugin for Better Auth",
   "main": "./dist/index.cjs",
@@ -66,7 +66,7 @@
   },
   "homepage": "https://github.com/vcode-sh/better-auth-telegram#readme",
   "peerDependencies": {
-    "better-auth": "^1.4.18"
+    "better-auth": "^1.5.0"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -76,7 +76,7 @@
     "@types/node": "^25.3.0",
     "@vitest/coverage-v8": "4.0.18",
     "@vitest/ui": "^4.0.18",
-    "better-auth": "^1.4.18",
+    "better-auth": "1.5.0",
     "happy-dom": "20.7.0",
     "lint-staged": "16.2.7",
     "node-loader": "^2.1.0",
