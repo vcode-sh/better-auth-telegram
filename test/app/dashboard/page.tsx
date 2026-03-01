@@ -1,15 +1,15 @@
-import { SessionDisplay } from "@/components/SessionDisplay";
 import Link from "next/link";
+import { SessionDisplay } from "@/components/SessionDisplay";
 
 export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto py-12 space-y-8">
+      <div className="mx-auto max-w-4xl space-y-8 py-12">
         <div className="flex items-center justify-between">
-          <h1 className="text-4xl font-bold text-gray-900">Dashboard</h1>
+          <h1 className="font-bold text-4xl text-gray-900">Dashboard</h1>
           <Link
+            className="text-blue-600 underline hover:text-blue-800"
             href="/"
-            className="text-blue-600 hover:text-blue-800 underline"
           >
             Back to Home
           </Link>
@@ -18,9 +18,9 @@ export default function DashboardPage() {
         <SessionDisplay />
 
         {/* Feature Cards */}
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        <div className="grid gap-6 md:grid-cols-3">
+          <div className="rounded-lg bg-white p-6 shadow">
+            <h3 className="mb-2 font-semibold text-gray-900 text-lg">
               Login Widget
             </h3>
             <ul className="space-y-2 text-gray-700 text-sm">
@@ -43,8 +43,8 @@ export default function DashboardPage() {
             </ul>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          <div className="rounded-lg bg-white p-6 shadow">
+            <h3 className="mb-2 font-semibold text-gray-900 text-lg">
               Security
             </h3>
             <ul className="space-y-2 text-gray-700 text-sm">
@@ -67,10 +67,8 @@ export default function DashboardPage() {
             </ul>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              OIDC
-            </h3>
+          <div className="rounded-lg bg-white p-6 shadow">
+            <h3 className="mb-2 font-semibold text-gray-900 text-lg">OIDC</h3>
             <ul className="space-y-2 text-gray-700 text-sm">
               <li className="flex items-center space-x-2">
                 <span className="text-green-500">&#10003;</span>
@@ -93,42 +91,58 @@ export default function DashboardPage() {
         </div>
 
         {/* API Endpoints Info */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">
+        <div className="rounded-lg bg-white p-6 shadow">
+          <h3 className="mb-4 font-semibold text-gray-900 text-xl">
             Available API Endpoints
           </h3>
           <div className="space-y-3 font-mono text-sm">
             <div className="flex items-center space-x-3">
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">POST</span>
+              <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs">
+                POST
+              </span>
               <code>/api/auth/telegram/signin</code>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">POST</span>
+              <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs">
+                POST
+              </span>
               <code>/api/auth/telegram/link</code>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">POST</span>
+              <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs">
+                POST
+              </span>
               <code>/api/auth/telegram/unlink</code>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">GET</span>
+              <span className="rounded bg-blue-100 px-2 py-1 text-blue-800 text-xs">
+                GET
+              </span>
               <code>/api/auth/telegram/config</code>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">POST</span>
+              <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs">
+                POST
+              </span>
               <code>/api/auth/telegram/miniapp/signin</code>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">POST</span>
+              <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs">
+                POST
+              </span>
               <code>/api/auth/telegram/miniapp/validate</code>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">POST</span>
+              <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs">
+                POST
+              </span>
               <code>/api/auth/sign-in/social</code>
               <span className="text-gray-500 text-xs">(OIDC)</span>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">GET</span>
+              <span className="rounded bg-blue-100 px-2 py-1 text-blue-800 text-xs">
+                GET
+              </span>
               <code>/api/auth/callback/telegram-oidc</code>
               <span className="text-gray-500 text-xs">(OIDC callback)</span>
             </div>

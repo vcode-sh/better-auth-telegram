@@ -14,11 +14,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script src="https://telegram.org/js/telegram-web-app.js" async></script>
+        <script async src="https://telegram.org/js/telegram-web-app.js" />
       </head>
-      <body className="bg-gray-50 min-h-screen">
-        {children}
-      </body>
+      <body className="min-h-screen bg-gray-50">{children}</body>
     </html>
   );
 }

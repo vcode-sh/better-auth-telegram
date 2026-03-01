@@ -1,8 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
 
 export function TelegramLoginButton() {
   const router = useRouter();
@@ -46,7 +46,11 @@ export function TelegramLoginButton() {
             }, 1000);
           } catch (err) {
             console.error("Sign in error:", err);
-            setError(err instanceof Error ? err.message : "Failed to sign in with Telegram");
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Failed to sign in with Telegram"
+            );
           } finally {
             setLoading(false);
           }
@@ -59,39 +63,49 @@ export function TelegramLoginButton() {
   }, [router]);
 
   return (
-    <div className="flex flex-col items-center space-y-4 p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold text-gray-800">
+    <div className="flex flex-col items-center space-y-4 rounded-lg bg-white p-6 shadow-md">
+      <h2 className="font-bold text-2xl text-gray-800">
         Sign in with Telegram
       </h2>
 
-      <div id="telegram-login-container" className="min-h-[50px]"></div>
+      <div className="min-h-[50px]" id="telegram-login-container" />
 
       {loading && (
         <div className="flex items-center space-x-2 text-blue-600">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+          <div className="h-4 w-4 animate-spin rounded-full border-blue-600 border-b-2" />
           <span className="text-sm">Signing in...</span>
         </div>
       )}
 
       {success && (
-        <div className="text-sm text-green-600 flex items-center space-x-2">
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        <div className="flex items-center space-x-2 text-green-600 text-sm">
+          <svg
+            aria-label="Success"
+            className="h-4 w-4"
+            fill="currentColor"
+            role="img"
+            viewBox="0 0 20 20"
+          >
+            <path
+              clipRule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+              fillRule="evenodd"
+            />
           </svg>
           <span>Successfully signed in! Redirecting...</span>
         </div>
       )}
 
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 p-3 rounded border border-red-200">
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-red-600 text-sm">
           <strong>Error:</strong> {error}
         </div>
       )}
 
-      <div className="text-xs text-gray-500 text-center max-w-md">
+      <div className="max-w-md text-center text-gray-500 text-xs">
         <p>
-          By signing in, you agree to share your Telegram name, username, and profile picture.
-          Your phone number remains private.
+          By signing in, you agree to share your Telegram name, username, and
+          profile picture. Your phone number remains private.
         </p>
       </div>
     </div>

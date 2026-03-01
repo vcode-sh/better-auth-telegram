@@ -1,10 +1,14 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
 
 interface Session {
+  session: {
+    token: string;
+    expiresAt: string;
+  };
   user: {
     id: string;
     name: string;
@@ -13,10 +17,6 @@ interface Session {
     telegramUsername?: string;
     telegramPhoneNumber?: string;
   };
-  session: {
-    token: string;
-    expiresAt: string;
-  };
 }
 
 export function SessionDisplay() {
@@ -24,6 +24,7 @@ export function SessionDisplay() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount
   useEffect(() => {
     checkSession();
   }, []);
@@ -54,15 +55,15 @@ export function SessionDisplay() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <div className="flex items-center justify-center p-8">
+        <div className="h-8 w-8 animate-spin rounded-full border-gray-900 border-b-2" />
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-6">
         <p className="text-yellow-800">No active session. Please sign in.</p>
       </div>
     );
@@ -71,17 +72,19 @@ export function SessionDisplay() {
   return (
     <div className="space-y-6">
       {/* User Card */}
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="rounded-lg bg-white p-6 shadow-md">
         <div className="flex items-center space-x-4">
           {session.user.image && (
             <img
-              src={session.user.image}
               alt={session.user.name}
-              className="w-16 h-16 rounded-full"
+              className="h-16 w-16 rounded-full"
+              height={64}
+              src={session.user.image}
+              width={64}
             />
           )}
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2 className="font-bold text-2xl text-gray-900">
               {session.user.name}
             </h2>
             {session.user.telegramUsername && (
@@ -98,13 +101,17 @@ export function SessionDisplay() {
           {session.user.telegramId && (
             <div className="flex justify-between">
               <span className="text-gray-600">Telegram ID:</span>
-              <span className="font-mono text-gray-900">{session.user.telegramId}</span>
+              <span className="font-mono text-gray-900">
+                {session.user.telegramId}
+              </span>
             </div>
           )}
           {session.user.telegramPhoneNumber && (
             <div className="flex justify-between">
               <span className="text-gray-600">Phone Number:</span>
-              <span className="font-mono text-gray-900">{session.user.telegramPhoneNumber}</span>
+              <span className="font-mono text-gray-900">
+                {session.user.telegramPhoneNumber}
+              </span>
             </div>
           )}
           <div className="flex justify-between">
@@ -116,19 +123,19 @@ export function SessionDisplay() {
         </div>
 
         <button
+          className="mt-6 w-full rounded bg-red-500 px-4 py-2 font-semibold text-white transition duration-200 hover:bg-red-600"
           onClick={handleSignOut}
-          className="mt-6 w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded transition duration-200"
         >
           Sign Out
         </button>
       </div>
 
       {/* Debug Info */}
-      <details className="bg-gray-100 rounded-lg p-4">
+      <details className="rounded-lg bg-gray-100 p-4">
         <summary className="cursor-pointer font-semibold text-gray-700">
           Debug: Session Data
         </summary>
-        <pre className="mt-4 text-xs overflow-auto bg-white p-4 rounded border">
+        <pre className="mt-4 overflow-auto rounded border bg-white p-4 text-xs">
           {JSON.stringify(session, null, 2)}
         </pre>
       </details>

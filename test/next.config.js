@@ -4,14 +4,14 @@ const nextConfig = {
   turbopack: {},
   experimental: {
     serverActions: {
-      bodySizeLimit: '2mb',
+      bodySizeLimit: "2mb",
     },
   },
   webpack: (config, { isServer }) => {
     // Handle .node files (native modules like better-sqlite3)
     config.module.rules.push({
       test: /\.node$/,
-      use: 'node-loader',
+      use: "node-loader",
     });
 
     // Exclude node-only modules from client bundle
@@ -21,12 +21,12 @@ const nextConfig = {
         fs: false,
         net: false,
         tls: false,
-        'better-sqlite3': false,
+        "better-sqlite3": false,
       };
     }
 
     return config;
   },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

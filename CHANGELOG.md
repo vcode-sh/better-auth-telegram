@@ -5,6 +5,21 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-03-01
+
+### Fixed
+
+- **OIDC "Unable to get user info" error** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — two bugs squashed in one commit. First: `getUserInfo` was silently returning `null` on malformed JWT tokens instead of catching the decode error. Better Auth's callback handler interprets `null` as "this provider is broken" and logs the terrifying `Unable to get user info` message that made [@flxxxxddd](https://github.com/flxxxxddd) file a comment. Now it catches `decodeJwt` failures gracefully. Second: Telegram OIDC doesn't provide an email claim (because Telegram), but Better Auth's callback flow *requires* one or it rejects with `email_not_found`. Now generates a placeholder email (`{telegramId}@telegram.oidc`) so the flow completes. Users can override via `mapOIDCProfileToUser` if they have a real email. The `sub` claim is also validated — no more phantom users from empty JWTs.
+- **OIDC "origin required" error** — Telegram's `oauth.telegram.org/auth` endpoint requires an `origin` parameter matching the redirect URI's origin. We weren't sending it. Now extracted from `redirectURI` and passed via `additionalParams`. The redirect actually redirects now. Revolutionary.
+
+### Added
+
+- **Test playground app** (`test/` directory) — a full Next.js 16 app demonstrating all three auth flows: Login Widget, Mini App, and OIDC. Includes ngrok setup instructions for testing OIDC locally. Because "just trust me, it works" stopped being acceptable three versions ago. SQLite + Prisma for zero-config database setup. No credentials committed — `.env.local.example` tells you what to fill in.
+
+### Changed
+
+- Test count: 219 → 221 tests. Two new edge cases for OIDC `getUserInfo`: malformed JWT handling and missing `sub` claim validation. Coverage remains at 100% because we don't ship regressions, we ship fixes.
+
 ## [1.2.0] - 2026-03-01
 
 ### Fixed
@@ -378,6 +393,7 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.3.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.0
 [1.2.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.2.0
 [1.1.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.1.0
 [1.0.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.0.0
