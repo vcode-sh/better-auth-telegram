@@ -5,6 +5,16 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-03-01
+
+### Fixed
+
+- **OIDC authorization URL missing `bot_id` parameter** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — Telegram's `oauth.telegram.org/auth` endpoint expects `bot_id`, not the standard OAuth2 `client_id`. Better Auth's pipeline sends `client_id` (per spec), and Telegram *appears* to accept it — the user authorizes, gets a code back, everything looks fine. But the scopes don't stick. The token endpoint returns tokens without `id_token`, our `getUserInfo` checks `token.idToken`, finds nothing, returns null, and Better Auth logs "Unable to get user info". The fix: send `bot_id` alongside `client_id` in `additionalParams`. Telegram gets what it wants, the spec stays satisfied, `id_token` comes back in the token response. Everybody wins. Confirmed by [@flxxxxddd](https://github.com/flxxxxddd) who reproduced the bug on the test playground app — so this wasn't a config issue, it was genuinely broken.
+
+### Added
+
+- **Diagnostic logging in `getUserInfo`** — when `getUserInfo` returns null, it now `console.warn`s with the exact reason: missing `id_token` (with token keys and raw response keys), failed JWT decode (with the error message), or missing `sub` claim (with the claim keys present). No more guessing which of the three null-return paths killed your OIDC flow.
+
 ## [1.3.1] - 2026-03-01
 
 ### Fixed
@@ -403,6 +413,7 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.3.2]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.2
 [1.3.1]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.1
 [1.3.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.0
 [1.2.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.2.0
