@@ -97,6 +97,9 @@ export function createTelegramOIDCProvider(
         _scopes.push(...scopes);
       }
 
+      // Telegram OIDC requires the "origin" parameter matching the redirect_uri origin
+      const origin = new URL(redirectURI).origin;
+
       return createAuthorizationURL({
         id: TELEGRAM_OIDC_PROVIDER_ID,
         options: providerOptions,
@@ -105,6 +108,7 @@ export function createTelegramOIDCProvider(
         state,
         codeVerifier,
         redirectURI,
+        additionalParams: { origin },
       });
     },
 
@@ -139,17 +143,32 @@ export function createTelegramOIDCProvider(
         return Promise.resolve(null);
       }
 
-      const claims = decodeJwt(token.idToken) as TelegramOIDCClaims;
+      let claims: TelegramOIDCClaims;
+      try {
+        claims = decodeJwt(token.idToken) as TelegramOIDCClaims;
+      } catch {
+        return Promise.resolve(null);
+      }
+
+      if (!claims.sub) {
+        return Promise.resolve(null);
+      }
+
       const userMap = options.mapOIDCProfileToUser
         ? options.mapOIDCProfileToUser(claims)
         : undefined;
+
+      // Telegram OIDC doesn't provide email — generate a placeholder
+      // so Better Auth's callback flow doesn't reject with "email_not_found".
+      // Users can override via mapOIDCProfileToUser if they have a real email.
+      const placeholderEmail = `${claims.sub}@telegram.oidc`;
 
       return Promise.resolve({
         user: {
           id: claims.sub,
           name: claims.name,
           image: claims.picture,
-          email: undefined,
+          email: placeholderEmail,
           emailVerified: false,
           ...userMap,
         },

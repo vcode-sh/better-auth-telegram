@@ -202,6 +202,7 @@ describe("createTelegramOIDCProvider", () => {
         state: "test-state",
         codeVerifier: "test-verifier",
         redirectURI: "https://example.com/callback",
+        additionalParams: { origin: "https://example.com" },
       });
 
       expect(result).toBe(mockUrl);
@@ -327,7 +328,7 @@ describe("createTelegramOIDCProvider", () => {
       expect(result!.user.name).toBe("Alice Smith");
       expect(result!.user.image).toBe("https://example.com/alice.jpg");
       expect(result!.user.emailVerified).toBe(false);
-      expect(result!.user.email).toBeUndefined();
+      expect(result!.user.email).toBe("99999@telegram.oidc");
     });
 
     it("should return claims as data", async () => {
@@ -371,13 +372,42 @@ describe("createTelegramOIDCProvider", () => {
       expect(result!.user.emailVerified).toBe(false);
     });
 
-    it("should always set email to undefined", async () => {
+    it("should generate placeholder email from telegram sub", async () => {
       const idToken = createTestJWT({ sub: "12345" });
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
       const result = await provider.getUserInfo({ idToken });
 
-      expect(result!.user.email).toBeUndefined();
+      expect(result!.user.email).toBe("12345@telegram.oidc");
+    });
+
+    it("should return null for malformed idToken", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const result = await provider.getUserInfo({ idToken: "not-a-jwt" });
+
+      expect(result).toBeNull();
+    });
+
+    it("should return null when JWT has no sub claim", async () => {
+      const header = Buffer.from(
+        JSON.stringify({ alg: "RS256", typ: "JWT" })
+      ).toString("base64url");
+      const payload = Buffer.from(
+        JSON.stringify({
+          name: "No Sub User",
+          iss: TELEGRAM_OIDC_ISSUER,
+          aud: BOT_ID,
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        })
+      ).toString("base64url");
+      const signature = Buffer.from("fake-signature").toString("base64url");
+      const idToken = `${header}.${payload}.${signature}`;
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const result = await provider.getUserInfo({ idToken });
+
+      expect(result).toBeNull();
     });
 
     it("should use mapOIDCProfileToUser when provided", async () => {
