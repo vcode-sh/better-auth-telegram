@@ -2,7 +2,7 @@
 
 Telegram auth for [Better Auth](https://www.better-auth.com/). Login Widget, Mini Apps, the whole circus -- in one plugin that somehow works on every runtime.
 
-v0.4.0 | 117 tests | ESM + CJS | Web Crypto API | Works where `node:crypto` fears to tread
+v1.1.0 | 173 tests | ESM + CJS | Web Crypto API | Works where `node:crypto` fears to tread
 
 ---
 
@@ -59,6 +59,7 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 ## Features
 
 - **Login Widget** -- callback and redirect modes, because one way to authenticate was never enough
+- **OIDC (OpenID Connect)** -- standard OAuth 2.0 with PKCE via `oauth.telegram.org`. Phone numbers, RS256 JWTs, grown-up auth. Telegram finally joined the federation
 - **Mini Apps** -- auto-signin, manual signin, initData validation. Enable it, forget it works
 - **Link/unlink** -- attach Telegram to existing accounts, detach when you inevitably change your mind
 - **HMAC-SHA-256 via Web Crypto API** (`crypto.subtle`) -- runs on Node, Bun, Cloudflare Workers, edge runtimes, presumably a toaster
@@ -90,7 +91,7 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 ## Requirements
 
 - Node.js >= 22 (or Bun, or any runtime with Web Crypto API)
-- `better-auth@^1.4.18`
+- `better-auth@^1.5.0`
 - HTTPS (Telegram insists, and honestly, so should you)
 - Public domain (use ngrok for local dev)
 
@@ -104,6 +105,7 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 - [Better Auth](https://www.better-auth.com/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [Telegram Login Widget](https://core.telegram.org/widgets/login)
+- [Telegram OIDC](https://core.telegram.org/bots/features#oidc-authorization)
 
 ---
 

@@ -187,6 +187,71 @@ if (result.error) {
 }
 ```
 
+## OIDC (OpenID Connect)
+
+Standard OAuth 2.0 flow via `oauth.telegram.org`. No widgets, no callbacks, no injecting scripts into your DOM. The user clicks a button, gets redirected to Telegram, comes back authenticated. Like every other social login, except it's Telegram and it took them until Bot API 9.5 to ship it.
+
+Enable on server:
+
+```typescript
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,
+  botUsername: "your_bot_username",
+  oidc: {
+    enabled: true,
+    requestPhone: true,  // phone numbers -- the Login Widget's biggest regret
+  },
+});
+```
+
+Trigger from client:
+
+```typescript
+await authClient.signInWithTelegramOIDC({
+  callbackURL: "/dashboard",
+});
+```
+
+That's it. Better Auth's social login system handles the PKCE, state tokens, JWT verification, and callback. You don't need to think about any of it. The `telegram-oidc` provider is injected automatically via the `init` hook — no manual provider registration.
+
+### OIDC + Phone Numbers
+
+The `phone` scope gives you what the Login Widget never could. When `requestPhone: true`, the user's phone number lands in `telegramPhoneNumber` on the user record after OIDC sign-in.
+
+```typescript
+// After OIDC sign-in, your user record has:
+{
+  name: "John Doe",
+  telegramId: "123456789",
+  telegramUsername: "johndoe",
+  telegramPhoneNumber: "+1234567890",  // only via OIDC with phone scope
+}
+```
+
+### React Example
+
+```tsx
+"use client";
+
+import { authClient } from "@/lib/auth-client";
+
+export function TelegramOIDCLogin() {
+  return (
+    <button
+      onClick={() =>
+        authClient.signInWithTelegramOIDC({
+          callbackURL: "/dashboard",
+        })
+      }
+    >
+      Sign in with Telegram
+    </button>
+  );
+}
+```
+
+No widget scripts, no container elements, no cleanup on unmount. A button. That's it.
+
 ## Mini App
 
 Running inside a Telegram Mini App? There's a whole separate flow for that. See [Mini Apps](./miniapps.md).

@@ -246,6 +246,39 @@ The Mini App `initData` was valid but contained no `user` object. This can happe
 
 Both `autoCreateUser` and `miniApp.allowAutoSignin` need to be `true` for the plugin to auto-create users from Mini App sign-ins. If either is `false` and no existing account matches, you get this.
 
+## OIDC Errors
+
+These apply if you've enabled OIDC with `oidc: { enabled: true }`.
+
+### "Provider not found" or OIDC Route Returns 404
+
+The `telegram-oidc` provider isn't being injected. Check:
+
+1. `oidc.enabled` is `true` in your server config
+2. You're calling `signInWithTelegramOIDC()` from the client, not some hand-rolled fetch
+3. Better Auth version is `^1.5.0` — older versions may not support the `init` hook correctly
+
+### OIDC Redirects to Telegram But Callback Fails
+
+The OAuth callback failed. Usual suspects:
+
+1. **Bot token mismatch** — the bot ID (first part of the token, before the `:`) is used as the `client_id`. If the token is wrong, Telegram rejects the token exchange.
+2. **Callback URL not configured** — Better Auth needs to know where your callback lives. Check your `BETTER_AUTH_URL` or `baseURL` configuration.
+3. **JWKS fetch failed** — the plugin fetches public keys from `oauth.telegram.org/.well-known/jwks.json`. If your server can't reach that URL (firewall, DNS, corporate proxy), JWT verification fails silently.
+
+### "Phone number not populated"
+
+You need `requestPhone: true` in your OIDC config **and** the user needs to consent to sharing their phone number during the OAuth flow. If they decline, you get everything except the phone.
+
+```typescript
+oidc: {
+  enabled: true,
+  requestPhone: true,  // this one
+}
+```
+
+Also make sure your `user` table has the `telegramPhoneNumber` column. The plugin won't yell at you if it's missing — it'll just silently not store it.
+
 ## Session Problems
 
 ### No Session After Successful Login

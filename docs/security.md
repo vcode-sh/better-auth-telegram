@@ -104,6 +104,39 @@ These limits are enforced via Better Auth's built-in rate limiting system. Link 
 
 If you need stricter limits or distributed rate limiting (multiple server instances), you can layer on additional protection at the infrastructure level — your reverse proxy, CDN, or framework middleware. But the defaults will keep the script kiddies at bay.
 
+## OIDC Security
+
+The OIDC flow adds a whole separate layer of cryptographic joy on top of the HMAC-based flows:
+
+### OAuth 2.0 with PKCE
+
+The plugin uses Authorization Code flow with Proof Key for Code Exchange (PKCE). This means:
+
+1. Client generates a random `code_verifier` and its SHA-256 `code_challenge`
+2. Authorization request includes `code_challenge` — no client secret exposed in the browser
+3. Token exchange sends `code_verifier` to prove the same client that started the flow is finishing it
+4. State parameter prevents CSRF on the callback
+
+All of this is handled by Better Auth's social login system. You don't configure any of it.
+
+### RS256 JWT Verification
+
+ID tokens from Telegram are signed with RS256 (RSA + SHA-256). The plugin verifies them against Telegram's JWKS endpoint (`oauth.telegram.org/.well-known/jwks.json`):
+
+1. Decode the JWT header to get the `kid` (Key ID)
+2. Fetch the public key set from Telegram's JWKS endpoint
+3. Match by `kid`, verify the signature
+4. Validate `iss` (issuer), `aud` (audience = your bot ID), and `exp` (expiration)
+
+Keys are fetched per verification — no caching means no stale-key vulnerabilities. The `jose` library handles the heavy lifting.
+
+### What This Prevents
+
+- **Token forgery** — RS256 signatures require Telegram's private key. Good luck with that.
+- **Token replay** — `exp` claim enforces expiration. `aud` ensures the token was meant for your bot.
+- **Authorization code interception** — PKCE makes stolen auth codes useless without the original `code_verifier`.
+- **CSRF on callback** — state parameter binds the callback to the session that initiated the flow.
+
 ## Token Security
 
 Your bot token is the key to the castle. If it leaks, someone can impersonate your bot, read messages, and generally ruin your week.

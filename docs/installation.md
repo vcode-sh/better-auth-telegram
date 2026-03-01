@@ -5,7 +5,7 @@ You want Telegram auth in your app. Bold choice. Let's get it done without a twe
 ## Prerequisites
 
 - Node.js >= 22
-- A [Better Auth](https://www.better-auth.com/) project (v1.4.18+)
+- A [Better Auth](https://www.better-auth.com/) project (v1.5.0+)
 - A Telegram account (shocking, I know)
 
 ## Install
@@ -80,20 +80,40 @@ No secret handshakes required. The client fetches bot config from your server au
 
 ## Database Schema
 
-The plugin adds two nullable fields to **both** the `user` and `account` tables:
+The plugin adds fields to **both** the `user` and `account` tables:
+
+**User table:**
+
+| Field                 | Type     | Nullable | Notes |
+| --------------------- | -------- | -------- | ----- |
+| `telegramId`          | `string` | Yes      | |
+| `telegramUsername`    | `string` | Yes      | |
+| `telegramPhoneNumber` | `string` | Yes      | Populated via OIDC with `phone` scope |
+
+**Account table:**
 
 | Field              | Type     | Nullable |
 | ------------------ | -------- | -------- |
 | `telegramId`       | `string` | Yes      |
 | `telegramUsername`  | `string` | Yes      |
 
-If you use Better Auth's CLI to generate migrations, it handles this for you. Otherwise, add those four columns (two per table) to your database however your ORM of choice demands.
+If you use Better Auth's CLI to generate migrations, it handles this for you. Otherwise, add those columns to your database however your ORM of choice demands.
 
-Prisma example -- add to both `User` and `Account` models:
+Prisma example:
 
 ```prisma
-telegramId       String?
-telegramUsername  String?
+model User {
+  // ... existing fields
+  telegramId          String?
+  telegramUsername     String?
+  telegramPhoneNumber  String?  // only needed if using OIDC with phone scope
+}
+
+model Account {
+  // ... existing fields
+  telegramId       String?
+  telegramUsername  String?
+}
 ```
 
 Then run your migration and move on with your life.

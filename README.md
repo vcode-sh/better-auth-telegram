@@ -10,12 +10,12 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com). Login
 
 Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
 
-117 tests. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+173 tests. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
 
 ## Requirements
 
 - Node.js >= 22 (or Bun, or any runtime with Web Crypto API)
-- `better-auth@^1.4.18`
+- `better-auth@^1.5.0`
 
 ## Install
 
@@ -226,7 +226,7 @@ All endpoints are rate-limited. Signin/miniapp: 10 req/60s. Link/unlink: 5 req/6
 
 ## Error Handling
 
-All endpoints throw `APIError` from `better-auth/api`. The plugin exposes `$ERROR_CODES` so you can match errors client-side like a civilised person:
+All endpoints throw `APIError` via `APIError.from()`. The plugin exposes `$ERROR_CODES` — each code is a `RawError` object with `code` and `message` properties:
 
 ```typescript
 import { telegram } from "better-auth-telegram";
@@ -234,7 +234,7 @@ import { telegram } from "better-auth-telegram";
 const plugin = telegram({ botToken: "...", botUsername: "..." });
 
 // In your error handler:
-if (error.message === plugin.$ERROR_CODES.NOT_AUTHENTICATED) {
+if (error.code === plugin.$ERROR_CODES.NOT_AUTHENTICATED.code) {
   // handle it
 }
 ```
@@ -263,14 +263,21 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 
 See [`examples/`](./examples) for a Next.js implementation.
 
-## Migrating to v0.4.0
+## Migrating
 
-**Breaking changes** — read before upgrading:
+### To v1.1.0 (from v1.0.0)
+
+- **Peer dep bumped to `better-auth@^1.5.0`** — upgrade better-auth first, then update the plugin. The `$ERROR_CODES` type changed from `Record<string, string>` to `Record<string, RawError>` and this release follows suit.
+
+### To v1.0.0 (from v0.4.0)
+
+- No breaking changes. OIDC is opt-in (`oidc.enabled: false` by default). Add `telegramPhoneNumber` column to your user table if you plan to use OIDC with phone scope.
+
+### To v0.4.0 (from v0.3.x)
 
 - **Verification functions are now async** — `verifyTelegramAuth()` and `verifyMiniAppInitData()` return `Promise<boolean>`. Slap an `await` in front if you're calling them directly.
 - **Errors throw `APIError`** — all endpoints throw `APIError` instead of returning `ctx.json({ error })`. Switch to Better Auth's standard error shape.
 - **ESM-first** — `"type": "module"` in package.json. CJS still works via `.cjs` exports.
-- **Peer dep bumped** — requires `better-auth@^1.4.18`.
 
 Full changelog in [CHANGELOG.md](./CHANGELOG.md).
 

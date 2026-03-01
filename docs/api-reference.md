@@ -42,6 +42,7 @@ const plugin = telegram({
 | `maxAuthAge` | `number` | `86400` (24 hours) | Maximum age of `auth_date` in seconds. Prevents replay attacks. |
 | `mapTelegramDataToUser` | `(data: TelegramAuthData) => UserData` | Uses `first_name`/`last_name` for name, `photo_url` for image | Custom mapping from Telegram data to your user object. |
 | `miniApp` | `object` | `undefined` | Telegram Mini Apps configuration. See below. |
+| `oidc` | `TelegramOIDCOptions` | `undefined` | Telegram OIDC configuration. See below. |
 
 ##### `miniApp` Options
 
@@ -52,7 +53,17 @@ const plugin = telegram({
 | `miniApp.allowAutoSignin` | `boolean` | `true` | Allow auto-creation of users from Mini App sign-in. |
 | `miniApp.mapMiniAppDataToUser` | `(data: TelegramMiniAppUser) => UserData` | Uses `first_name`/`last_name` for name, `photo_url` for image | Custom mapping from Mini App user data. |
 
-The `UserData` return type for both mapping functions:
+##### `oidc` Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `oidc.enabled` | `boolean` | `false` | Enable Telegram OIDC. Injects `telegram-oidc` social provider via the `init` hook. |
+| `oidc.scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. |
+| `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. Populates `telegramPhoneNumber` on the user record. |
+| `oidc.requestBotAccess` | `boolean` | `false` | Add `telegram:bot_access` scope. |
+| `oidc.mapOIDCProfileToUser` | `(claims: TelegramOIDCClaims) => UserData` | uses `name` + `picture` from claims | Custom mapping from OIDC claims. |
+
+The `UserData` return type for all mapping functions:
 
 ```typescript
 {
@@ -68,10 +79,11 @@ The `UserData` return type for both mapping functions:
 A `BetterAuthPlugin` object with:
 
 - `id`: `"telegram"`
+- `init`: OIDC social provider injection (when `oidc.enabled`)
 - `endpoints`: Authentication endpoints (4 base + 2 when Mini App is enabled)
 - `schema`: Database schema extensions for `user` and `account` tables
 - `rateLimit`: Per-endpoint rate limiting rules
-- `$ERROR_CODES`: The full error codes object (exposed for programmatic access)
+- `$ERROR_CODES`: Error codes as `RawError` objects (exposed for programmatic access)
 
 #### Example
 
@@ -92,6 +104,10 @@ export const auth = betterAuth({
         enabled: true,
         validateInitData: true,
         allowAutoSignin: true,
+      },
+      oidc: {
+        enabled: true,
+        requestPhone: true,
       },
     }),
   ],
@@ -184,7 +200,7 @@ const config = await authClient.getTelegramConfig();
 |---|---|---|
 | `fetchOptions` | `Record<string, any>` | Optional fetch customization |
 
-**Returns:** `{ botUsername: string, miniAppEnabled: boolean }`
+**Returns:** `{ botUsername: string, miniAppEnabled: boolean, oidcEnabled: boolean }`
 
 ---
 
@@ -300,6 +316,24 @@ try {
 
 ---
 
+#### `signInWithTelegramOIDC(options?)`
+
+Trigger the Telegram OIDC sign-in flow. Redirects to `oauth.telegram.org` for authentication, then back to your callback URL. Standard Better Auth social login under the hood — PKCE, state tokens, the works. Only works when `oidc.enabled` is `true` on the server.
+
+```typescript
+await authClient.signInWithTelegramOIDC({
+  callbackURL: "/dashboard",
+});
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `options.callbackURL` | `string` | URL to redirect after authentication |
+
+**Returns:** Redirects the browser. After callback, user has a session.
+
+---
+
 ## Types
 
 Every type this plugin exports, straight from the source. No creative liberties taken.
@@ -348,6 +382,44 @@ interface TelegramPluginOptions {
       [key: string]: any;
     };
   };
+  oidc?: TelegramOIDCOptions;
+}
+```
+
+### `TelegramOIDCOptions`
+
+Configuration for the OIDC authentication flow.
+
+```typescript
+interface TelegramOIDCOptions {
+  enabled?: boolean;             // default: false
+  scopes?: string[];             // default: ["openid", "profile"]
+  requestPhone?: boolean;        // default: false — adds "phone" scope
+  requestBotAccess?: boolean;    // default: false — adds "telegram:bot_access" scope
+  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => {
+    name?: string;
+    email?: string;
+    image?: string;
+    [key: string]: any;
+  };
+}
+```
+
+### `TelegramOIDCClaims`
+
+JWT ID token claims from Telegram OIDC. What you get back after the OAuth dance.
+
+```typescript
+interface TelegramOIDCClaims {
+  aud: string;                   // bot ID (client_id)
+  exp: number;                   // expiration timestamp
+  iat: number;                   // issued at timestamp
+  iss: string;                   // "https://oauth.telegram.org"
+  sub: string;                   // Telegram user ID
+  name?: string;                 // display name
+  preferred_username?: string;   // Telegram username
+  picture?: string;              // profile photo URL
+  phone_number?: string;         // only with "phone" scope
 }
 ```
 
@@ -539,7 +611,8 @@ Returns the bot configuration for client-side widget initialization. No authenti
 ```json
 {
   "botUsername": "my_auth_bot",
-  "miniAppEnabled": false
+  "miniAppEnabled": false,
+  "oidcEnabled": false
 }
 ```
 
@@ -622,31 +695,44 @@ Validate Mini App `initData` without creating a session. Only available when `mi
 
 ---
 
+### OIDC Routes
+
+OIDC doesn't register custom endpoints. It injects a `telegram-oidc` social provider via the `init` hook, and Better Auth's built-in routes handle the rest:
+
+- **`POST /sign-in/social`** with `{ provider: "telegram-oidc", callbackURL: "/dashboard" }` — initiates the OAuth 2.0 Authorization Code flow with PKCE
+- **`GET /callback/telegram-oidc`** — handles the OAuth callback, verifies the RS256 JWT ID token against Telegram's JWKS endpoint, creates/links user, sets session
+
+Zero custom endpoints. Delegation at its finest.
+
+---
+
 ## Error Codes
 
-The full `$ERROR_CODES` object exposed by the plugin. Every error message the plugin can throw, in one place. Bookmark this for your 3am debugging sessions.
+The `$ERROR_CODES` object exposed by the plugin. Since v1.1.0, each code is a `RawError` object (`{ code, message }`) created via `defineErrorCodes()` from `@better-auth/core`. The `code` is the UPPER_SNAKE_CASE key, the `message` is the human-readable string. `toString()` returns the code. Bookmark this for your 3am debugging sessions.
+
+| Code | Message |
+|------|---------|
+| `BOT_TOKEN_REQUIRED` | Telegram plugin: botToken is required |
+| `BOT_USERNAME_REQUIRED` | Telegram plugin: botUsername is required |
+| `INVALID_AUTH_DATA` | Invalid Telegram auth data |
+| `INVALID_AUTHENTICATION` | Invalid Telegram authentication |
+| `USER_CREATION_DISABLED` | User not found and auto-create is disabled |
+| `NOT_AUTHENTICATED` | Not authenticated |
+| `LINKING_DISABLED` | Linking Telegram accounts is disabled |
+| `TELEGRAM_ALREADY_LINKED_OTHER` | This Telegram account is already linked to another user |
+| `TELEGRAM_ALREADY_LINKED_SELF` | This Telegram account is already linked to your account |
+| `NOT_LINKED` | No Telegram account linked |
+| `INIT_DATA_REQUIRED` | initData is required and must be a string |
+| `INVALID_MINI_APP_INIT_DATA` | Invalid Mini App initData |
+| `INVALID_MINI_APP_DATA_STRUCTURE` | Invalid Mini App data structure |
+| `NO_USER_IN_INIT_DATA` | No user data in initData |
+| `MINI_APP_AUTO_SIGNIN_DISABLED` | User not found and auto-signin is disabled for Mini Apps |
 
 ```typescript
-const ERROR_CODES = {
-  BOT_TOKEN_REQUIRED: "Telegram plugin: botToken is required",
-  BOT_USERNAME_REQUIRED: "Telegram plugin: botUsername is required",
-  INVALID_AUTH_DATA: "Invalid Telegram auth data",
-  INVALID_AUTHENTICATION: "Invalid Telegram authentication",
-  USER_CREATION_DISABLED: "User not found and auto-create is disabled",
-  NOT_AUTHENTICATED: "Not authenticated",
-  LINKING_DISABLED: "Linking Telegram accounts is disabled",
-  TELEGRAM_ALREADY_LINKED_OTHER:
-    "This Telegram account is already linked to another user",
-  TELEGRAM_ALREADY_LINKED_SELF:
-    "This Telegram account is already linked to your account",
-  NOT_LINKED: "No Telegram account linked",
-  INIT_DATA_REQUIRED: "initData is required and must be a string",
-  INVALID_MINI_APP_INIT_DATA: "Invalid Mini App initData",
-  INVALID_MINI_APP_DATA_STRUCTURE: "Invalid Mini App data structure",
-  NO_USER_IN_INIT_DATA: "No user data in initData",
-  MINI_APP_AUTO_SIGNIN_DISABLED:
-    "User not found and auto-signin is disabled for Mini Apps",
-} as const;
+// Matching errors client-side:
+if (error.code === plugin.$ERROR_CODES.NOT_AUTHENTICATED.code) {
+  // redirect to login
+}
 ```
 
 ### Success Messages
@@ -687,10 +773,11 @@ The plugin extends Better Auth's database schema with these fields. User fields 
 
 ### User Table
 
-| Field | Type | Required | Unique | Input |
-|---|---|---|---|---|
-| `telegramId` | `string` | `false` | `false` | `false` |
-| `telegramUsername` | `string` | `false` | `false` | `false` |
+| Field | Type | Required | Unique | Input | Notes |
+|---|---|---|---|---|---|
+| `telegramId` | `string` | `false` | `false` | `false` | |
+| `telegramUsername` | `string` | `false` | `false` | `false` | |
+| `telegramPhoneNumber` | `string` | `false` | `false` | `false` | Populated via OIDC with `phone` scope |
 
 ### Account Table
 

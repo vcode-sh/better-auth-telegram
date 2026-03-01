@@ -36,6 +36,7 @@ Every option, every default, no surprises (for once).
 | `maxAuthAge` | `number` | `86400` | How many seconds old the auth data can be before we reject it. 86400 = 24 hours. Prevents replay attacks from time travellers. |
 | `mapTelegramDataToUser` | `function` | see below | Custom mapping from Telegram data to your user object. |
 | `miniApp` | `object` | see below | Mini App configuration. Disabled by default because not everyone lives inside Telegram. |
+| `oidc` | `object` | see below | Telegram OIDC configuration. Also disabled by default. |
 
 ### Default User Mapping
 
@@ -102,6 +103,37 @@ telegram({
 | `validateInitData` | `boolean` | `true` | Verify the HMAC signature on `initData`. Only set to `false` if you enjoy security incidents. |
 | `allowAutoSignin` | `boolean` | `true` | Auto-create users from Mini App sign-ins. Works in tandem with `autoCreateUser` -- both must be `true` for new users to be created. |
 | `mapMiniAppDataToUser` | `function` | same as login widget | Custom mapping from `TelegramMiniAppUser` to your user object. Gets `id`, `first_name`, `last_name?`, `username?`, `photo_url?`, `language_code?`, `is_premium?`, `allows_write_to_pm?`. |
+
+### OIDC Configuration
+
+Standard OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. Phone numbers, RS256 JWT verification, proper grown-up auth. Disabled by default because not everyone needs the full federation experience.
+
+```typescript
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,
+  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
+  oidc: {
+    enabled: true,
+    requestPhone: true,        // get phone numbers via the `phone` scope
+    requestBotAccess: false,   // request bot access via `telegram:bot_access` scope
+    scopes: ["openid", "profile"],  // default scopes
+    mapOIDCProfileToUser: (claims) => ({
+      name: `${claims.name}`,
+      image: claims.picture,
+    }),
+  },
+})
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | `boolean` | `false` | Turn on Telegram OIDC. Injects a `telegram-oidc` provider into Better Auth's social login system via the `init` hook. |
+| `scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always included regardless. |
+| `requestPhone` | `boolean` | `false` | Add the `phone` scope. Gets you `telegramPhoneNumber` on the user record. The Login Widget never could. |
+| `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |
+| `mapOIDCProfileToUser` | `function` | uses `name` + `picture` from claims | Custom mapping from `TelegramOIDCClaims` to your user object. Gets `sub`, `name`, `preferred_username`, `picture`, `phone_number`. |
+
+OIDC uses Better Auth's built-in social login routes — no custom endpoints. The plugin injects a `telegram-oidc` provider via the `init` hook and Better Auth handles `POST /sign-in/social` and `GET /callback/telegram-oidc` automatically.
 
 ### Lockdown Mode
 
