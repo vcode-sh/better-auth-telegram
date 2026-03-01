@@ -25,6 +25,14 @@ export default function MiniAppPage() {
 
       setStatus("⏳ Loading Telegram WebApp SDK...");
 
+      // Load telegram-web-app.js if not already present
+      if (!document.querySelector('script[src*="telegram-web-app.js"]')) {
+        const script = document.createElement("script");
+        script.src = "https://telegram.org/js/telegram-web-app.js";
+        script.async = true;
+        document.head.appendChild(script);
+      }
+
       // Wait for Telegram WebApp SDK to load (max 5 seconds)
       let attempts = 0;
       while (attempts < 50) {

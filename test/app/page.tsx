@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { TelegramLoginButton } from "@/components/TelegramLoginButton";
 
 export default function Home() {
   return (
@@ -25,7 +24,18 @@ export default function Home() {
           </div>
         </div>
 
-        <TelegramLoginButton />
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <h3 className="mb-2 font-semibold text-blue-900">Login Widget:</h3>
+          <Link
+            className="block w-full rounded-lg bg-blue-600 px-4 py-2 text-center font-medium text-white transition-colors hover:bg-blue-700"
+            href="/widget"
+          >
+            Sign in with Login Widget
+          </Link>
+          <p className="mt-2 text-blue-600 text-xs">
+            HMAC-SHA-256 verified callback via telegram-widget.js
+          </p>
+        </div>
 
         <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
           <h3 className="mb-2 font-semibold text-purple-900">Mini App Test:</h3>
@@ -65,25 +75,24 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm">
-          <h3 className="mb-2 font-semibold text-blue-900">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
+          <h3 className="mb-2 font-semibold text-gray-900">
             Setup Instructions:
           </h3>
-          <ol className="list-inside list-decimal space-y-1 text-blue-800">
+          <ol className="list-inside list-decimal space-y-1 text-gray-700">
             <li>Create a bot with @BotFather on Telegram</li>
             <li>
-              Send <code className="rounded bg-blue-100 px-1">/setdomain</code>{" "}
-              and set to{" "}
-              <code className="rounded bg-blue-100 px-1">localhost</code>
+              Send <code className="rounded bg-gray-200 px-1">/setdomain</code>{" "}
+              and set to your domain
             </li>
             <li>
               Update{" "}
-              <code className="rounded bg-blue-100 px-1">.env.local</code> with
+              <code className="rounded bg-gray-200 px-1">.env.local</code> with
               your bot token and username
             </li>
             <li>
-              Run <code className="rounded bg-blue-100 px-1">npm install</code>{" "}
-              and <code className="rounded bg-blue-100 px-1">npm run dev</code>
+              Run <code className="rounded bg-gray-200 px-1">npm install</code>{" "}
+              and <code className="rounded bg-gray-200 px-1">npm run dev</code>
             </li>
           </ol>
         </div>

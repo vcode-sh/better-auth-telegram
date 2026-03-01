@@ -164,6 +164,31 @@ const validation = await authClient.validateMiniApp(
 
 Standard OAuth 2.0 flow via `oauth.telegram.org`. Phone numbers, PKCE, RS256 JWTs — proper grown-up auth instead of widget callbacks. Telegram finally joined the federation.
 
+#### Prerequisites — Read This Before You Waste an Hour
+
+Telegram's OIDC infrastructure is live (`oauth.telegram.org/.well-known/openid-configuration` exists, JWKS endpoint works, RS256 JWTs, the whole spec) but **Telegram has not publicly documented how to register a bot as an OIDC client**. Without registration, the token endpoint returns `invalid_client` and the auth endpoint silently falls back to Login Widget redirects.
+
+What we know:
+
+1. **`/setpublickey` via @BotFather** — registers an RSA public key for your bot. This is likely a prerequisite. Generate a key pair and try it:
+
+```bash
+openssl genrsa 2048 > private.key
+openssl rsa -in private.key -pubout > public.key
+```
+
+Then in BotFather: `/setpublickey`, paste the full PEM contents of `public.key`.
+
+2. **`/setdomain`** — your domain must be registered with the bot (same as Login Widget).
+
+3. **There may be additional undocumented steps** — Telegram's OIDC might be in private beta, require manual enablement, or need registration via `my.telegram.org`. No one in the community has publicly confirmed a working native OIDC flow with `oauth.telegram.org/token`.
+
+If you get `invalid_client` from the token endpoint or `#tgAuthResult` in the redirect URL instead of `?code=`, your bot isn't recognized as an OIDC client. The plugin code is correct — the registration on Telegram's side isn't complete.
+
+We'll update this section when Telegram documents the process. In the meantime, the Login Widget and Mini App flows work reliably and don't require OIDC registration.
+
+#### Setup
+
 Enable on server:
 
 ```typescript
@@ -260,6 +285,10 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 
 **Local dev?** `ngrok http 3000`, use the ngrok URL in BotFather's `/setdomain` and as your app URL. Yes, it's annoying. Welcome to OAuth.
 
+**OIDC returns `invalid_client`?** Your bot isn't registered as an OIDC client with Telegram. See [OIDC Prerequisites](#prerequisites--read-this-before-you-waste-an-hour). Start with `/setpublickey` via @BotFather.
+
+**OIDC redirects with `#tgAuthResult` instead of `?code=`?** Same problem — Telegram falls back to Login Widget redirect mode when it doesn't recognize the bot as an OIDC client. You'll get base64-encoded widget data in the URL hash instead of an authorization code.
+
 ## Examples
 
 See [`examples/`](./examples) for a Next.js implementation.
@@ -268,7 +297,7 @@ See [`examples/`](./examples) for a Next.js implementation.
 
 ### To v1.3.x (from v1.2.0)
 
-- No breaking changes. v1.3.2 fixes the real cause of the OIDC "Unable to get user info" error — Telegram's auth endpoint expects `bot_id`, not `client_id`, so the token response was missing `id_token`. Also adds diagnostic `console.warn` when `getUserInfo` returns null. v1.3.1 wraps `verifyIdToken` in a try-catch. v1.3.0 adds placeholder email generation, `origin` parameter, and JWT decode error handling. If you're using OIDC, upgrade to 1.3.2. If you're not, your code doesn't care.
+- No breaking changes. **If you're using OIDC**, read the [OIDC Prerequisites](#prerequisites--read-this-before-you-waste-an-hour) — Telegram's OIDC requires bot registration that isn't fully documented yet. Without it, you'll get `invalid_client` or `#tgAuthResult` fallbacks. The v1.3.x fixes (`bot_id` in auth URL, graceful `verifyIdToken` failure, placeholder email, `origin` param, diagnostic logging) are all valid for when OIDC registration works, but can't fix Telegram rejecting unregistered bots. Login Widget and Mini App flows are unaffected.
 
 ### To v1.2.0 (from v1.1.0)
 
