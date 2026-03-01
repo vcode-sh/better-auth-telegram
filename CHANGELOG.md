@@ -5,6 +5,20 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-03-01
+
+### Fixed
+
+- **`bot_id` actually ships this time** ([#11](https://github.com/vcode-sh/better-auth-telegram/issues/11)) — The v1.3.2 source had the `bot_id` fix but the npm dist was built before the change landed. The published package sent `additionalParams: { origin }` instead of `additionalParams: { origin, bot_id: botId }`. This release rebuilds from the correct source. If you're on 1.3.2 and using OIDC, upgrade.
+
+### Added
+
+- **OIDC prerequisites documentation** — Telegram's OIDC infrastructure is live (`oauth.telegram.org/.well-known/openid-configuration`, JWKS, RS256 JWTs) but bot registration isn't publicly documented. Without it, the token endpoint returns `invalid_client` and the auth endpoint falls back to Login Widget redirects (`#tgAuthResult` hash fragment instead of `?code=` authorization code). README now documents this clearly: `/setpublickey` via @BotFather, `/setdomain`, and the fact that additional undocumented steps may be required. Troubleshooting section updated with OIDC-specific guidance.
+
+### Changed
+
+- **Test app restructured** — Login Widget isolated to `/widget` page, Mini App SDK loaded dynamically only on `/miniapp`, home page is now a hub with links. Prevents cross-flow interference during testing (the widget was auto-initializing and hijacking OIDC redirects).
+
 ## [1.3.2] - 2026-03-01
 
 ### Fixed
