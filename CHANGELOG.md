@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `GET /telegram/config` now returns `testMode` boolean alongside `botUsername`, `miniAppEnabled`, and `oidcEnabled`. Your client finally knows which universe it's authenticating against.
-- Test count: 173 → 218 tests. The test suite continues its inevitable march toward heat death.
+- Test count: 173 → 219 tests. 100% coverage across statements, branches, functions, and lines. The test suite has achieved its final form.
 
 ## [1.1.0] - 2026-03-01
 

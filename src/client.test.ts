@@ -836,6 +836,50 @@ describe("telegramClient", () => {
       document.createElement = originalCreateElement;
     });
 
+    it("should resolve via script.onload when Telegram.Login is not pre-loaded", async () => {
+      // Don't set Telegram.Login — force script loading path
+      delete (window as any).Telegram;
+
+      const originalCreateElement = document.createElement.bind(document);
+
+      document.createElement = ((tagName: string) => {
+        const element = originalCreateElement(tagName);
+        if (tagName === "script") {
+          const originalAppendChild = document.head.appendChild.bind(
+            document.head
+          );
+          document.head.appendChild = ((node: Node) => {
+            if (node === element) {
+              // Trigger onload instead of actually loading
+              setTimeout(() => {
+                if ((element as HTMLScriptElement).onload) {
+                  (element as HTMLScriptElement).onload!(new Event("load"));
+                }
+              }, 0);
+              return node;
+            }
+            return originalAppendChild(node);
+          }) as any;
+        }
+        return element;
+      }) as any;
+
+      mockFetch.mockResolvedValueOnce({
+        data: { botUsername: "test_bot" },
+      });
+
+      const actions = client.getActions(mockFetch);
+      await actions.initTelegramWidget("telegram-widget-test", {}, () => {});
+
+      // If we got here without throwing, onload resolved the promise
+      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
+        method: "GET",
+      });
+
+      // Restore
+      document.createElement = originalCreateElement;
+    });
+
     it("should handle missing config data in initTelegramWidget", async () => {
       (window as any).Telegram = { Login: {} };
 
