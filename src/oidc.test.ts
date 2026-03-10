@@ -986,8 +986,8 @@ describe("Plugin integration", () => {
         oidc: { enabled: true },
       });
 
-      expect(plugin.schema!.user.fields).toHaveProperty("telegramPhoneNumber");
-      expect(plugin.schema!.user.fields.telegramPhoneNumber).toEqual({
+      expect(plugin.schema!.user!.fields).toHaveProperty("telegramPhoneNumber");
+      expect(plugin.schema!.user!.fields.telegramPhoneNumber).toEqual({
         type: "string",
         required: false,
         unique: false,
@@ -1549,7 +1549,7 @@ describe("Adversarial: schema shape", () => {
       botUsername: "test_bot",
     });
 
-    const userFields = Object.keys(plugin.schema!.user.fields);
+    const userFields = Object.keys(plugin.schema!.user!.fields);
     expect(userFields).toContain("telegramId");
     expect(userFields).toContain("telegramUsername");
     expect(userFields).toContain("telegramPhoneNumber");
@@ -1563,7 +1563,7 @@ describe("Adversarial: schema shape", () => {
       botUsername: "test_bot",
     });
 
-    const accountFields = Object.keys(plugin.schema!.account.fields);
+    const accountFields = Object.keys(plugin.schema!.account!.fields);
     expect(accountFields).toContain("telegramId");
     expect(accountFields).toContain("telegramUsername");
     expect(accountFields.length).toBe(2);
@@ -1576,7 +1576,7 @@ describe("Adversarial: schema shape", () => {
       botUsername: "test_bot",
     });
 
-    for (const [, field] of Object.entries(plugin.schema!.user.fields)) {
+    for (const [, field] of Object.entries(plugin.schema!.user!.fields)) {
       expect(field.required).toBe(false);
       expect(field.input).toBe(false);
     }
