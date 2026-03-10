@@ -5,6 +5,22 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-03-10
+
+### Added
+
+- **`loginWidget` option** ([#16](https://github.com/vcode-sh/better-auth-telegram/issues/16)) — `loginWidget?: boolean` (default `true`). Set to `false` to disable Login Widget endpoints (`/telegram/signin`, `/telegram/link`, `/telegram/unlink`) and omit Telegram-specific schema fields (`telegramId`, `telegramUsername`, `telegramPhoneNumber` on user; `telegramId`, `telegramUsername` on account). OIDC-only setups no longer get 5 unused database columns cluttering their schema. Schema fields are still included when `miniApp.enabled` is true, because Mini App flows need them. Zero breaking changes — `undefined` defaults to `true`.
+- **`loginWidgetEnabled` in config response** — `GET /telegram/config` now returns `loginWidgetEnabled` boolean alongside existing flags. Client `getTelegramConfig` type updated.
+
+### Fixed
+
+- **Incorrect cross-provider comments** — Comments in `/telegram/signin` and `/telegram/miniapp/signin` said "created via OIDC or Mini App" / "created via OIDC or Login Widget". OIDC never sets `telegramId` on the user table, so those comments were wrong. Fixed to just "Mini App" / "Login Widget".
+- **Rate limits always registered** — Widget and Mini App rate limits were always included regardless of whether those flows were enabled. Now conditional — only registered when the corresponding flow is active.
+
+### Changed
+
+- Test count: 235 → ~261. 26 new tests covering `loginWidget` schema derivation, endpoint registration, config response, rate limits, edge cases, and backward compatibility.
+
 ## [1.4.0] - 2026-03-01
 
 ### Fixed
@@ -445,6 +461,7 @@ None - v0.2.0 is fully backward compatible with v0.1.0
 - License: MIT
 - Keywords: better-auth, telegram, authentication, plugin, typescript
 
+[1.5.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.5.0
 [1.4.0]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.4.0
 [1.3.3]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.3
 [1.3.2]: https://github.com/vcode-sh/better-auth-telegram/releases/tag/v1.3.2

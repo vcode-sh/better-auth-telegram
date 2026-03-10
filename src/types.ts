@@ -152,6 +152,14 @@ export interface TelegramPluginOptions {
   botUsername: string;
 
   /**
+   * Enable Login Widget endpoints (signin, link, unlink).
+   * When false, Widget endpoints are not registered and Telegram-specific
+   * user/account schema fields are omitted (unless Mini App is enabled).
+   * @default true
+   */
+  loginWidget?: boolean;
+
+  /**
    * Custom function to map Telegram data to user object
    */
   mapTelegramDataToUser?: (data: TelegramAuthData) => {

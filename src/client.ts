@@ -134,6 +134,7 @@ export const telegramClient = () => {
       getTelegramConfig: async (fetchOptions?: FetchOptions) => {
         const response = await $fetch<{
           botUsername: string;
+          loginWidgetEnabled: boolean;
           testMode: boolean;
         }>("/telegram/config", {
           method: "GET",

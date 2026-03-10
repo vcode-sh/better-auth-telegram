@@ -10,7 +10,7 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com). Login
 
 Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
 
-221 tests. 100% coverage. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+261 tests. 100% coverage. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ export const authClient = createAuthClient({
 
 ### 4. Database
 
-The plugin adds `telegramId`, `telegramUsername`, and `telegramPhoneNumber` to the `user` table, and `telegramId` and `telegramUsername` to `account`. If using Prisma:
+The plugin adds `telegramId`, `telegramUsername`, and `telegramPhoneNumber` to the `user` table, and `telegramId` and `telegramUsername` to `account` when Login Widget or Mini App flows are enabled (the default). OIDC-only setups (`loginWidget: false`) skip these fields entirely. If using Prisma:
 
 ```prisma
 model User {
@@ -205,6 +205,23 @@ await authClient.signInWithTelegramOIDC({
 
 That's it. Standard Better Auth social login under the hood. PKCE, state tokens, the works. You don't even need to think about it, which is the whole point.
 
+#### OIDC-only mode
+
+Don't need the Login Widget? Set `loginWidget: false` and skip the widget endpoints, rate limits, and the 5 Telegram-specific database columns entirely. Pure OIDC, no baggage:
+
+```typescript
+// OIDC-only (no widget endpoints, no extra schema fields)
+telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN!,
+  botUsername: "your_bot_username",
+  loginWidget: false,
+  oidc: {
+    enabled: true,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
+  },
+});
+```
+
 ## Configuration
 
 | Option | Default | Description |
@@ -215,6 +232,7 @@ That's it. Standard Better Auth social login under the hood. PKCE, state tokens,
 | `autoCreateUser` | `true` | Create user on first sign-in |
 | `maxAuthAge` | `86400` | Auth data TTL in seconds (replay attack prevention) |
 | `testMode` | `false` | Enable Telegram test server mode |
+| `loginWidget` | `true` | Enable Login Widget endpoints and schema fields |
 | `mapTelegramDataToUser` | — | Custom user data mapper |
 | `miniApp.enabled` | `false` | Enable Mini Apps endpoints |
 | `miniApp.validateInitData` | `true` | Verify Mini App initData |
@@ -233,9 +251,9 @@ Full types in [`src/types.ts`](./src/types.ts).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/telegram/signin` | No | Sign in with widget data |
-| POST | `/telegram/link` | Session | Link Telegram to account |
-| POST | `/telegram/unlink` | Session | Unlink Telegram |
+| POST | `/telegram/signin` | No | Sign in with widget data (when `loginWidget` enabled) |
+| POST | `/telegram/link` | Session | Link Telegram to account (when `loginWidget` enabled) |
+| POST | `/telegram/unlink` | Session | Unlink Telegram (when `loginWidget` enabled) |
 | GET | `/telegram/config` | No | Get bot config (username, testMode, flags) |
 | POST | `/telegram/miniapp/signin` | No | Sign in from Mini App |
 | POST | `/telegram/miniapp/validate` | No | Validate initData |
@@ -288,6 +306,12 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 See [`examples/nextjs-app/`](./examples/nextjs-app) for a Next.js implementation covering all three auth flows: Login Widget, OIDC, Mini Apps, plus account linking/unlinking. Copy-paste-ready components and server/client setup. There's also a full test playground app in [`test/`](./test) if you want to see everything wired together with a real database.
 
 ## Migrating
+
+### To v1.5.0 (from v1.4.0)
+
+- No breaking changes. New `loginWidget` option defaults to `true` — existing setups are unaffected.
+- OIDC-only users can now set `loginWidget: false` to skip Widget endpoints and the 5 Telegram-specific database columns (`telegramId`, `telegramUsername`, `telegramPhoneNumber` on user; `telegramId`, `telegramUsername` on account).
+- Config endpoint now returns `loginWidgetEnabled` boolean. Client `getTelegramConfig` type updated accordingly.
 
 ### To v1.4.0 (from v1.3.x)
 
