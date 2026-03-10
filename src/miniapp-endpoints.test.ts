@@ -127,18 +127,18 @@ describe("signInWithMiniApp", () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), {});
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INIT_DATA_REQUIRED.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INIT_DATA_REQUIRED.message
+    );
   });
 
   it("rejects when initData is not a string", async () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { initData: 12345 });
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INIT_DATA_REQUIRED.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INIT_DATA_REQUIRED.message
+    );
   });
 
   it("rejects invalid initData verification", async () => {
@@ -146,9 +146,9 @@ describe("signInWithMiniApp", () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INVALID_MINI_APP_INIT_DATA.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INVALID_MINI_APP_INIT_DATA.message
+    );
   });
 
   it("skips verification when miniAppValidateInitData is false", async () => {
@@ -172,9 +172,9 @@ describe("signInWithMiniApp", () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INVALID_MINI_APP_DATA_STRUCTURE.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INVALID_MINI_APP_DATA_STRUCTURE.message
+    );
   });
 
   it("rejects when no user in initData", async () => {
@@ -186,16 +186,20 @@ describe("signInWithMiniApp", () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.NO_USER_IN_INIT_DATA.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.NO_USER_IN_INIT_DATA.message
+    );
   });
 
   it("signs in with existing account", async () => {
     const adapter = mockAdapter({
       findOne: vi.fn().mockImplementation(({ model }: any) => {
-        if (model === "account") return { userId: "existing-u", id: "a1" };
-        if (model === "user") return { id: "existing-u", name: "Bob" };
+        if (model === "account") {
+          return { userId: "existing-u", id: "a1" };
+        }
+        if (model === "user") {
+          return { id: "existing-u", name: "Bob" };
+        }
         return null;
       }),
     });
@@ -213,12 +217,18 @@ describe("signInWithMiniApp", () => {
   it("links existing user found by telegramId", async () => {
     const adapter = mockAdapter({
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
-        if (model === "account") return null;
+        if (model === "account") {
+          return null;
+        }
         if (model === "user") {
           const tgFilter = where.find((w: any) => w.field === "telegramId");
-          if (tgFilter) return { id: "user-tg" };
+          if (tgFilter) {
+            return { id: "user-tg" };
+          }
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "user-tg", name: "Bob" };
+          if (idFilter) {
+            return { id: "user-tg", name: "Bob" };
+          }
         }
         return null;
       }),
@@ -247,12 +257,16 @@ describe("signInWithMiniApp", () => {
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "new-u", name: "Bob Jones" };
+          if (idFilter) {
+            return { id: "new-u", name: "Bob Jones" };
+          }
         }
         return null;
       }),
       create: vi.fn().mockImplementation(({ model }: any) => {
-        if (model === "user") return { id: "new-u" };
+        if (model === "user") {
+          return { id: "new-u" };
+        }
         return { id: "acc-1" };
       }),
     });
@@ -275,9 +289,9 @@ describe("signInWithMiniApp", () => {
     );
     const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED.message
+    );
   });
 
   it("throws when miniAppAllowAutoSignin is false and no user exists", async () => {
@@ -286,9 +300,9 @@ describe("signInWithMiniApp", () => {
     );
     const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
 
-    await expect(
-      (endpoints.signInWithMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED.message);
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.MINI_APP_AUTO_SIGNIN_DISABLED.message
+    );
   });
 
   it("uses mapMiniAppDataToUser when provided", async () => {
@@ -301,7 +315,9 @@ describe("signInWithMiniApp", () => {
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "new-u" };
+          if (idFilter) {
+            return { id: "new-u" };
+          }
         }
         return null;
       }),
@@ -329,7 +345,9 @@ describe("signInWithMiniApp", () => {
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "u1" };
+          if (idFilter) {
+            return { id: "u1" };
+          }
         }
         return null;
       }),
@@ -368,18 +386,18 @@ describe("validateMiniApp", () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), {});
 
-    await expect(
-      (endpoints.validateMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INIT_DATA_REQUIRED.message);
+    await expect((endpoints.validateMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INIT_DATA_REQUIRED.message
+    );
   });
 
   it("rejects when initData is not a string", async () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { initData: 42 });
 
-    await expect(
-      (endpoints.validateMiniApp as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INIT_DATA_REQUIRED.message);
+    await expect((endpoints.validateMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INIT_DATA_REQUIRED.message
+    );
   });
 
   it("returns valid: false when verification fails", async () => {

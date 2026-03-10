@@ -40,10 +40,7 @@ vi.mock("./verify", () => ({
 import { ERROR_CODES, SUCCESS_MESSAGES } from "./constants";
 import type { TelegramPluginConfig } from "./plugin-config";
 import { validateTelegramAuthData, verifyTelegramAuth } from "./verify";
-import {
-  createWidgetEndpoints,
-  getWidgetRateLimits,
-} from "./widget-endpoints";
+import { createWidgetEndpoints, getWidgetRateLimits } from "./widget-endpoints";
 
 const mockedValidate = vi.mocked(validateTelegramAuthData);
 const mockedVerify = vi.mocked(verifyTelegramAuth);
@@ -136,7 +133,7 @@ describe("signInWithTelegram", () => {
 
   it("signs in with existing account (no user creation)", async () => {
     const adapter = mockAdapter({
-      findOne: vi.fn().mockImplementation(({ model, where }: any) => {
+      findOne: vi.fn().mockImplementation(({ model }: any) => {
         if (model === "account") {
           return { userId: "existing-user", id: "acc-1" };
         }
@@ -166,13 +163,17 @@ describe("signInWithTelegram", () => {
         // user-by-id (after creation) → the new user
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "new-user-1", name: "Alice" };
+          if (idFilter) {
+            return { id: "new-user-1", name: "Alice" };
+          }
           return null; // telegramId lookup → not found
         }
         return null;
       }),
       create: vi.fn().mockImplementation(({ model }: any) => {
-        if (model === "user") return { id: "new-user-1" };
+        if (model === "user") {
+          return { id: "new-user-1" };
+        }
         return { id: "acc-1" };
       }),
     });
@@ -206,9 +207,9 @@ describe("signInWithTelegram", () => {
     );
     const ctx = mockCtx(adapter, TELEGRAM_DATA);
 
-    await expect(
-      (endpoints.signInWithTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.USER_CREATION_DISABLED.message);
+    await expect((endpoints.signInWithTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.USER_CREATION_DISABLED.message
+    );
   });
 
   it("uses mapTelegramDataToUser when provided", async () => {
@@ -222,7 +223,9 @@ describe("signInWithTelegram", () => {
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "new-1", name: "Custom Name" };
+          if (idFilter) {
+            return { id: "new-1", name: "Custom Name" };
+          }
           return null;
         }
         return null;
@@ -247,7 +250,9 @@ describe("signInWithTelegram", () => {
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "u1", name: "Alice" };
+          if (idFilter) {
+            return { id: "u1", name: "Alice" };
+          }
           return null;
         }
         return null;
@@ -267,7 +272,9 @@ describe("signInWithTelegram", () => {
       findOne: vi.fn().mockImplementation(({ model, where }: any) => {
         if (model === "user") {
           const idFilter = where.find((w: any) => w.field === "id");
-          if (idFilter) return { id: "u1", name: "Alice Smith" };
+          if (idFilter) {
+            return { id: "u1", name: "Alice Smith" };
+          }
           return null;
         }
         return null;
@@ -313,27 +320,27 @@ describe("linkTelegram", () => {
     );
     const ctx = mockCtx(mockAdapter(), TELEGRAM_DATA, session);
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.LINKING_DISABLED.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.LINKING_DISABLED.message
+    );
   });
 
   it("throws NOT_AUTHENTICATED when session is missing", async () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), TELEGRAM_DATA, null);
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.NOT_AUTHENTICATED.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.NOT_AUTHENTICATED.message
+    );
   });
 
   it("throws NOT_AUTHENTICATED when session has no user id", async () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), TELEGRAM_DATA, { user: {} });
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.NOT_AUTHENTICATED.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.NOT_AUTHENTICATED.message
+    );
   });
 
   it("rejects invalid auth data", async () => {
@@ -341,9 +348,9 @@ describe("linkTelegram", () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { bad: true }, session);
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INVALID_AUTH_DATA.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INVALID_AUTH_DATA.message
+    );
   });
 
   it("rejects failed verification", async () => {
@@ -351,9 +358,9 @@ describe("linkTelegram", () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), TELEGRAM_DATA, session);
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.INVALID_AUTHENTICATION.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.INVALID_AUTHENTICATION.message
+    );
   });
 
   it("throws TELEGRAM_ALREADY_LINKED_OTHER when linked to different user", async () => {
@@ -367,9 +374,9 @@ describe("linkTelegram", () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(adapter, TELEGRAM_DATA, session);
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER.message
+    );
   });
 
   it("throws TELEGRAM_ALREADY_LINKED_SELF when already linked to same user", async () => {
@@ -383,9 +390,9 @@ describe("linkTelegram", () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(adapter, TELEGRAM_DATA, session);
 
-    await expect(
-      (endpoints.linkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.TELEGRAM_ALREADY_LINKED_SELF.message);
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.TELEGRAM_ALREADY_LINKED_SELF.message
+    );
   });
 
   it("creates account link and updates user on success", async () => {
@@ -393,7 +400,7 @@ describe("linkTelegram", () => {
 
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(adapter, TELEGRAM_DATA, session);
-    const result = await (endpoints.linkTelegram as any)(ctx);
+    await (endpoints.linkTelegram as any)(ctx);
 
     // Account created
     expect(adapter.create).toHaveBeenCalledWith({
@@ -435,9 +442,9 @@ describe("unlinkTelegram", () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), {}, null);
 
-    await expect(
-      (endpoints.unlinkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.NOT_AUTHENTICATED.message);
+    await expect((endpoints.unlinkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.NOT_AUTHENTICATED.message
+    );
   });
 
   it("throws NOT_LINKED when no telegram account found", async () => {
@@ -446,9 +453,9 @@ describe("unlinkTelegram", () => {
     const endpoints = createWidgetEndpoints(makeConfig());
     const ctx = mockCtx(adapter, {}, session);
 
-    await expect(
-      (endpoints.unlinkTelegram as any)(ctx)
-    ).rejects.toThrow(ERROR_CODES.NOT_LINKED.message);
+    await expect((endpoints.unlinkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.NOT_LINKED.message
+    );
   });
 
   it("deletes account and clears user Telegram data on success", async () => {

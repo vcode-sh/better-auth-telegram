@@ -57,9 +57,7 @@ describe("createConfigEndpoint", () => {
   });
 
   it("reflects widget disabled", async () => {
-    const endpoint = createConfigEndpoint(
-      makeConfig({ widgetEnabled: false })
-    );
+    const endpoint = createConfigEndpoint(makeConfig({ widgetEnabled: false }));
     const ctx = mockCtx();
     await (endpoint.getTelegramConfig as any)(ctx);
 
