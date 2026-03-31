@@ -19,7 +19,7 @@ Everything you never knew you needed to know about `better-auth-telegram`, laid 
 
 ### `telegram(options)`
 
-The main server plugin function. Returns a `BetterAuthPlugin` object. If you forget `botToken`, it throws immediately -- no silent failures here.
+The main server plugin function. Returns a `BetterAuthPlugin` object.
 
 ```typescript
 import { telegram } from "better-auth-telegram";
@@ -33,16 +33,16 @@ const plugin = telegram({
 
 #### Options: `TelegramPluginOptions`
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `botToken` | `string` | **required** | Bot token from @BotFather. The plugin throws if missing. |
-| `botUsername` | `string` | **required** | Bot username without the `@`. Also throws if missing. |
-| `allowUserToLink` | `boolean` | `true` | Allow authenticated users to link their Telegram account. |
-| `autoCreateUser` | `boolean` | `true` | Auto-create a user when a new Telegram user signs in. |
-| `maxAuthAge` | `number` | `86400` (24 hours) | Maximum age of `auth_date` in seconds. Prevents replay attacks. |
-| `mapTelegramDataToUser` | `(data: TelegramAuthData) => UserData` | Uses `first_name`/`last_name` for name, `photo_url` for image | Custom mapping from Telegram data to your user object. |
-| `miniApp` | `object` | `undefined` | Telegram Mini Apps configuration. See below. |
-| `oidc` | `TelegramOIDCOptions` | `undefined` | Telegram OIDC configuration. See below. |
+| Option | Type | Default | Description                                                                                  |
+|---|---|---|----------------------------------------------------------------------------------------------|
+| `botToken` | `string` | **required** | Bot token from @BotFather. The plugin warns if missing.                                      |
+| `botUsername` | `string` | **required** | Bot username without the `@`. Also warns if missing.                                        |
+| `allowUserToLink` | `boolean` | `true` | Allow authenticated users to link their Telegram account.                                    |
+| `autoCreateUser` | `boolean` | `true` | Auto-create a user when a new Telegram user signs in.                                        |
+| `maxAuthAge` | `number` | `86400` (24 hours) | Maximum age of `auth_date` in seconds. Prevents replay attacks.                              |
+| `mapTelegramDataToUser` | `(data: TelegramAuthData) => UserData` | Uses `first_name`/`last_name` for name, `photo_url` for image | Custom mapping from Telegram data to your user object.                                       |
+| `miniApp` | `object` | `undefined` | Telegram Mini Apps configuration. See below.                                                 |
+| `oidc` | `TelegramOIDCOptions` | `undefined` | Telegram OIDC configuration. See below.                                                      |
 | `testMode` | `boolean` | `false` | Enable Telegram test server mode. Widget uses test environment; HMAC verification unchanged. |
 
 ##### `miniApp` Options
