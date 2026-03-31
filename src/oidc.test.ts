@@ -4,6 +4,7 @@
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ERROR_CODES,
   TELEGRAM_OIDC_AUTH_ENDPOINT,
   TELEGRAM_OIDC_ISSUER,
   TELEGRAM_OIDC_JWKS_URI,
@@ -1379,28 +1380,42 @@ describe("Adversarial: config endpoint shape with testMode", () => {
 });
 
 describe("Adversarial: plugin constructor error cases", () => {
-  it("should throw when botToken is empty string", async () => {
+  it("should warn when botToken is empty string", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: "", botUsername: "test_bot" })).toThrow();
+    telegram({ botToken: "", botUsername: "test_bot" });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("botToken"));
+    warnSpy.mockRestore();
   });
 
-  it("should throw when botUsername is empty string", async () => {
+  it("should warn when botUsername is empty string", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: BOT_TOKEN, botUsername: "" })).toThrow();
-  });
-
-  it("should throw the specific BOT_TOKEN_REQUIRED message", async () => {
-    const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: "", botUsername: "test_bot" })).toThrow(
-      "Telegram plugin: botToken is required"
+    telegram({ botToken: BOT_TOKEN, botUsername: "" });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("botUsername")
     );
+    warnSpy.mockRestore();
   });
 
-  it("should throw the specific BOT_USERNAME_REQUIRED message", async () => {
+  it("should warn when botToken is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: BOT_TOKEN, botUsername: "" })).toThrow(
-      "Telegram plugin: botUsername is required"
+    telegram({ botToken: "", botUsername: "test_bot" });
+    expect(warnSpy).toHaveBeenCalledWith(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_TOKEN_REQUIRED.message}`
     );
+    warnSpy.mockRestore();
+  });
+
+  it("should warn when botUsername is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { telegram } = await import("./index");
+    telegram({ botToken: BOT_TOKEN, botUsername: "" });
+    expect(warnSpy).toHaveBeenCalledWith(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_USERNAME_REQUIRED.message}`
+    );
+    warnSpy.mockRestore();
   });
 });
 

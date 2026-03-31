@@ -39,7 +39,7 @@ export interface TelegramPluginConfig {
 
 /**
  * Parses and validates `TelegramPluginOptions`, applying defaults.
- * Throws if required fields (`botToken`, `botUsername`) are missing.
+ * Warns if required fields (`botToken`, `botUsername`) are missing.
  */
 export function createPluginConfig(
   options: TelegramPluginOptions
@@ -58,11 +58,15 @@ export function createPluginConfig(
   } = options;
 
   if (!botToken) {
-    throw new Error(ERROR_CODES.BOT_TOKEN_REQUIRED.message);
+    console.warn(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_TOKEN_REQUIRED.message}`
+    );
   }
 
   if (!botUsername) {
-    throw new Error(ERROR_CODES.BOT_USERNAME_REQUIRED.message);
+    console.warn(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_USERNAME_REQUIRED.message}`
+    );
   }
 
   const widgetEnabled = loginWidget !== false;
@@ -76,8 +80,8 @@ export function createPluginConfig(
   }
 
   return {
-    botToken,
-    botUsername,
+    botToken: botToken ?? "",
+    botUsername: botUsername ?? "",
     widgetEnabled,
     miniAppEnabled,
     oidcEnabled,

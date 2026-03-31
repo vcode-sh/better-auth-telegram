@@ -10,16 +10,22 @@ const BASE = {
 describe("createPluginConfig", () => {
   // ── Validation ─────────────────────────────────────────────────────
 
-  it("throws when botToken is missing", () => {
-    expect(() =>
-      createPluginConfig({ botToken: "", botUsername: "bot" })
-    ).toThrow(ERROR_CODES.BOT_TOKEN_REQUIRED.message);
+  it("warns when botToken is missing", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createPluginConfig({ botToken: "", botUsername: "bot" });
+    expect(warnSpy).toHaveBeenCalledWith(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_TOKEN_REQUIRED.message}`
+    );
+    warnSpy.mockRestore();
   });
 
-  it("throws when botUsername is missing", () => {
-    expect(() =>
-      createPluginConfig({ botToken: "tok:en", botUsername: "" })
-    ).toThrow(ERROR_CODES.BOT_USERNAME_REQUIRED.message);
+  it("warns when botUsername is missing", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createPluginConfig({ botToken: "tok:en", botUsername: "" });
+    expect(warnSpy).toHaveBeenCalledWith(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_USERNAME_REQUIRED.message}`
+    );
+    warnSpy.mockRestore();
   });
 
   // ── Defaults ───────────────────────────────────────────────────────
