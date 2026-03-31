@@ -5,6 +5,16 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1]
+
+### Fixed
+
+- **Configuration validation now warns instead of throwing** — `botToken` and `botUsername` are no longer required at plugin initialization. If missing, the plugin emits `console.warn()` instead of throwing an error. Login Widget and Mini App endpoints will still throw `APIError` at runtime if these values are missing, but the plugin itself won't crash your Better Auth setup during config. Useful for OIDC-only deployments where bot credentials aren't needed.
+
+### Changed
+
+- **API reference documentation updated** — reflects new optional validation behavior for `botToken` and `botUsername`.
+
 ## [1.5.0] - 2026-03-10
 
 ### Added
