@@ -12,16 +12,16 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted", "linux", "x64", "vps"]') }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [22.x, 24.x]
+        node-version: [24.x]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -36,8 +36,8 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage
-        if: matrix.node-version == '22.x'
-        uses: codecov/codecov-action@v5
+        if: matrix.node-version == '24.x'
+        uses: codecov/codecov-action@v7.0.0
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: false
@@ -48,10 +48,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
 
@@ -65,16 +65,16 @@ jobs:
         run: bun run test
 
   build:
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted", "linux", "x64", "vps"]') }}
+    runs-on: ubuntu-latest
     needs: [test, test-bun]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
-      - name: Use Node.js 22.x
-        uses: actions/setup-node@v6
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
 
       - name: Install dependencies
@@ -85,26 +85,28 @@ jobs:
 
       - name: Verify dist artifacts
         run: |
-          echo "## Build Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Build Artifacts"
+            echo "| File | Size |"
+            echo "|------|------|"
+          } >> "$GITHUB_STEP_SUMMARY"
           for f in dist/index.js dist/index.cjs dist/index.d.ts dist/index.d.cts \
                    dist/client.js dist/client.cjs dist/client.d.ts dist/client.d.cts; do
             test -f "$f" || { echo "::error::Missing artifact: $f"; exit 1; }
             SIZE=$(wc -c < "$f" | tr -d ' ')
-            echo "| $f | ${SIZE}B |" >> $GITHUB_STEP_SUMMARY
+            echo "| $f | ${SIZE}B |" >> "$GITHUB_STEP_SUMMARY"
           done
 
   lint:
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted", "linux", "x64", "vps"]') }}
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
-      - name: Use Node.js 22.x
-        uses: actions/setup-node@v6
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
 
       - name: Install dependencies

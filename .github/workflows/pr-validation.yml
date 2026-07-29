@@ -12,14 +12,14 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Use Node.js 22.x
-        uses: actions/setup-node@v6
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
 
       - name: Install dependencies
@@ -48,12 +48,12 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
-      - name: Use Node.js 22.x
-        uses: actions/setup-node@v6
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
 
       - name: Install dependencies
@@ -65,12 +65,12 @@ jobs:
   size-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
-      - name: Use Node.js 22.x
-        uses: actions/setup-node@v6
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
 
       - name: Install dependencies
@@ -81,12 +81,14 @@ jobs:
 
       - name: Report bundle size
         run: |
-          echo "## Bundle Size" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Bundle Size"
+            echo "| File | Size |"
+            echo "|------|------|"
+          } >> "$GITHUB_STEP_SUMMARY"
           for f in dist/index.js dist/index.cjs dist/client.js dist/client.cjs; do
             if [ -f "$f" ]; then
               SIZE=$(wc -c < "$f" | tr -d ' ')
-              echo "| $(basename $f) | ${SIZE}B |" >> $GITHUB_STEP_SUMMARY
+              echo "| $(basename "$f") | ${SIZE}B |" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
