@@ -59,7 +59,7 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 ## Features
 
 - **Login Widget** -- callback and redirect modes, because one way to authenticate was never enough
-- **OIDC (OpenID Connect)** -- standard OAuth 2.0 with PKCE via `oauth.telegram.org`. Phone numbers and JWKS-verified JWTs, without the legacy widget callback
+- **OIDC (OpenID Connect)** -- standard OAuth 2.0 with PKCE via `oauth.telegram.org`. Phone numbers when the `phone` scope is requested, plus JWKS-verified JWTs, without the legacy widget callback
 - **Mini Apps** -- auto-signin, manual signin, initData validation. Enable it, forget it works
 - **Link/unlink** -- attach Telegram to existing accounts, detach when you inevitably change your mind
 - **HMAC-SHA-256 via Web Crypto API** (`crypto.subtle`) -- runs on Node, Bun, Cloudflare Workers, edge runtimes, presumably a toaster

@@ -742,6 +742,22 @@ describe("createTelegramOIDCProvider", () => {
       expect(result).toBe(false);
     });
 
+    it("should select the JWK matching both kid and algorithm", async () => {
+      mockedBetterFetch.mockResolvedValueOnce({
+        data: {
+          keys: [
+            { ...jwk, alg: "ES256" },
+            { ...jwk, alg: "RS256" },
+          ],
+        },
+      } as any);
+
+      const token = await createSignedJWT({ sub: "12345" });
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+
+      await expect(provider.verifyIdToken!(token)).resolves.toBe(true);
+    });
+
     it("should return false when JWKS fetch fails", async () => {
       mockedBetterFetch.mockResolvedValueOnce({
         data: null,

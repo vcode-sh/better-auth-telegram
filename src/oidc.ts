@@ -34,15 +34,9 @@ const getTelegramPublicKey = async (kid: string, algorithm: string) => {
     throw new Error("Failed to fetch Telegram JWKS");
   }
 
-  const jwk = data.keys.find((key) => key.kid === kid);
+  const jwk = data.keys.find((key) => key.kid === kid && key.alg === algorithm);
   if (!jwk) {
-    throw new Error(`JWK with kid ${kid} not found`);
-  }
-
-  if (jwk.alg !== algorithm) {
-    throw new Error(
-      `JWK algorithm does not match token algorithm ${algorithm}`
-    );
+    throw new Error(`JWK with kid ${kid} and algorithm ${algorithm} not found`);
   }
 
   return await importJWK(jwk, algorithm);

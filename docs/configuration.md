@@ -131,7 +131,7 @@ telegram({
 |--------|------|---------|-------------|
 | `enabled` | `boolean` | `false` | Turn on Telegram OIDC. Injects a `telegram-oidc` provider into Better Auth's social login system via the `init` hook. |
 | `clientId` | `string` | bot ID from `botToken` | Client ID from BotFather Web Login. Required when `botToken` is omitted. |
-| `clientSecret` | `string` | `botToken` fallback | Client Secret from BotFather Web Login. Configure it explicitly; a bot token is not a valid OIDC client secret. |
+| `clientSecret` | `string` | `botToken` compatibility fallback | Client Secret from BotFather Web Login. The bot-token fallback is retained for backward compatibility, but Telegram's official OIDC flow requires the Web Login Client Secret. |
 | `scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always included regardless. |
 | `requestPhone` | `boolean` | `false` | Add the `phone` scope. Read `claims.phone_number` in `mapOIDCProfileToUser` to persist it. |
 | `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |

@@ -10,6 +10,14 @@ type TelegramPlugin = typeof telegram;
  */
 type FetchOptions = Record<string, any>;
 
+interface TelegramConfigResponse {
+  botUsername: string;
+  loginWidgetEnabled: boolean;
+  miniAppEnabled: boolean;
+  oidcEnabled: boolean;
+  testMode: boolean;
+}
+
 /**
  * Telegram Login Widget script URL
  */
@@ -158,14 +166,13 @@ export const telegramClient = () => {
        * @param fetchOptions - Optional fetch options (e.g., custom headers, cache control)
        */
       getTelegramConfig: async (fetchOptions?: FetchOptions) => {
-        const response = await $fetch<{
-          botUsername: string;
-          loginWidgetEnabled: boolean;
-          testMode: boolean;
-        }>("/telegram/config", {
-          method: "GET",
-          ...fetchOptions,
-        });
+        const response = await $fetch<TelegramConfigResponse>(
+          "/telegram/config",
+          {
+            method: "GET",
+            ...fetchOptions,
+          }
+        );
 
         return response;
       },
@@ -198,7 +205,7 @@ export const telegramClient = () => {
         await loadTelegramWidgetScript();
 
         // Get bot username from server
-        const configResponse = await $fetch<{ botUsername?: string }>(
+        const configResponse = await $fetch<TelegramConfigResponse>(
           "/telegram/config",
           {
             method: "GET",
@@ -279,7 +286,7 @@ export const telegramClient = () => {
         await loadTelegramWidgetScript();
 
         // Get bot username from server
-        const configResponse = await $fetch<{ botUsername?: string }>(
+        const configResponse = await $fetch<TelegramConfigResponse>(
           "/telegram/config",
           {
             method: "GET",
