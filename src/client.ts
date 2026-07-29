@@ -69,6 +69,32 @@ function loadTelegramWidgetScript(): Promise<void> {
   });
 }
 
+function requireBotUsername(botUsername: string | undefined): string {
+  if (!botUsername) {
+    throw new Error("Telegram plugin: botUsername is required");
+  }
+
+  return botUsername;
+}
+
+function getMiniAppInitData(): string | undefined {
+  const sdkInitData = (window as any).Telegram?.WebApp?.initData;
+  if (sdkInitData) {
+    return sdkInitData;
+  }
+
+  try {
+    const hash = window.location.hash;
+    if (!hash) {
+      return undefined;
+    }
+
+    return new URLSearchParams(hash.slice(1)).get("tgWebAppData") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Client plugin for Telegram authentication
  */
@@ -172,7 +198,7 @@ export const telegramClient = () => {
         await loadTelegramWidgetScript();
 
         // Get bot username from server
-        const configResponse = await $fetch<{ botUsername: string }>(
+        const configResponse = await $fetch<{ botUsername?: string }>(
           "/telegram/config",
           {
             method: "GET",
@@ -184,6 +210,7 @@ export const telegramClient = () => {
         }
 
         const config = configResponse.data;
+        const botUsername = requireBotUsername(config.botUsername);
         const {
           size = "large",
           showUserPhoto = true,
@@ -212,7 +239,7 @@ export const telegramClient = () => {
         const script = document.createElement("script");
         script.src = TELEGRAM_WIDGET_SCRIPT;
         script.async = true;
-        script.setAttribute("data-telegram-login", config.botUsername);
+        script.setAttribute("data-telegram-login", botUsername);
         script.setAttribute("data-size", size);
         script.setAttribute("data-userpic", showUserPhoto.toString());
         script.setAttribute("data-radius", cornerRadius.toString());
@@ -252,7 +279,7 @@ export const telegramClient = () => {
         await loadTelegramWidgetScript();
 
         // Get bot username from server
-        const configResponse = await $fetch<{ botUsername: string }>(
+        const configResponse = await $fetch<{ botUsername?: string }>(
           "/telegram/config",
           {
             method: "GET",
@@ -264,6 +291,7 @@ export const telegramClient = () => {
         }
 
         const config = configResponse.data;
+        const botUsername = requireBotUsername(config.botUsername);
         const {
           size = "large",
           showUserPhoto = true,
@@ -284,7 +312,7 @@ export const telegramClient = () => {
         const script = document.createElement("script");
         script.src = TELEGRAM_WIDGET_SCRIPT;
         script.async = true;
-        script.setAttribute("data-telegram-login", config.botUsername);
+        script.setAttribute("data-telegram-login", botUsername);
         script.setAttribute("data-size", size);
         script.setAttribute("data-userpic", showUserPhoto.toString());
         script.setAttribute("data-radius", cornerRadius.toString());
@@ -377,14 +405,13 @@ export const telegramClient = () => {
           throw new Error("This method can only be called in browser");
         }
 
-        const Telegram = (window as any).Telegram;
-        if (!Telegram?.WebApp?.initData) {
+        const initData = getMiniAppInitData();
+        if (!initData) {
           throw new Error(
             "Not running in Telegram Mini App or initData not available"
           );
         }
 
-        const initData = Telegram.WebApp.initData;
         return await $fetch("/telegram/miniapp/signin", {
           method: "POST",
           body: { initData },

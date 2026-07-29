@@ -4,7 +4,13 @@ import {
   validateAuthorizationCode,
 } from "@better-auth/core/oauth2";
 import { betterFetch } from "@better-fetch/fetch";
-import { decodeJwt, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
+import {
+  decodeJwt,
+  decodeProtectedHeader,
+  importJWK,
+  type JWK,
+  jwtVerify,
+} from "jose";
 import {
   TELEGRAM_OIDC_AUTH_ENDPOINT,
   TELEGRAM_OIDC_ISSUER,
@@ -17,16 +23,11 @@ import type { TelegramOIDCClaims, TelegramOIDCOptions } from "./types";
 /**
  * Fetches a public key from Telegram's JWKS endpoint by key ID
  */
-const getTelegramPublicKey = async (kid: string) => {
+const SUPPORTED_SIGNING_ALGORITHMS = new Set(["RS256", "ES256", "EdDSA"]);
+
+const getTelegramPublicKey = async (kid: string, algorithm: string) => {
   const { data } = await betterFetch<{
-    keys: Array<{
-      kid: string;
-      kty: string;
-      use: string;
-      alg: string;
-      n: string;
-      e: string;
-    }>;
+    keys: JWK[];
   }>(TELEGRAM_OIDC_JWKS_URI);
 
   if (!data?.keys) {
@@ -38,7 +39,13 @@ const getTelegramPublicKey = async (kid: string) => {
     throw new Error(`JWK with kid ${kid} not found`);
   }
 
-  return await importJWK(jwk, jwk.alg);
+  if (jwk.alg !== algorithm) {
+    throw new Error(
+      `JWK algorithm does not match token algorithm ${algorithm}`
+    );
+  }
+
+  return await importJWK(jwk, algorithm);
 };
 
 /**
@@ -86,7 +93,11 @@ export function createTelegramOIDCProvider(
   // Falls back to bot token values for backward compatibility.
   const clientId = options.clientId || botId;
   const clientSecret = options.clientSecret || botToken;
-  if (!options.clientSecret) {
+  if (!(options.clientSecret || botToken)) {
+    console.warn(
+      "[better-auth-telegram] OIDC: clientSecret is required before starting an OIDC login."
+    );
+  } else if (!options.clientSecret) {
     console.warn(
       "[better-auth-telegram] OIDC: no clientSecret provided. Using bot token as fallback.",
       "For OIDC to work, configure Web Login in @BotFather (Bot Settings > Web Login)",
@@ -99,11 +110,26 @@ export function createTelegramOIDCProvider(
     clientSecret,
   };
 
+  const requireOIDCCredentials = () => {
+    if (!clientId) {
+      throw new Error(
+        "[better-auth-telegram] OIDC: clientId is required before starting an OIDC login."
+      );
+    }
+    if (!clientSecret) {
+      throw new Error(
+        "[better-auth-telegram] OIDC: clientSecret is required before starting an OIDC login."
+      );
+    }
+  };
+
   return {
     id: TELEGRAM_OIDC_PROVIDER_ID,
     name: "Telegram",
 
     createAuthorizationURL({ state, codeVerifier, scopes, redirectURI }) {
+      requireOIDCCredentials();
+
       const _scopes = buildScopes(options);
       if (scopes) {
         _scopes.push(...scopes);
@@ -121,6 +147,8 @@ export function createTelegramOIDCProvider(
     },
 
     validateAuthorizationCode({ code, codeVerifier, redirectURI }) {
+      requireOIDCCredentials();
+
       return validateAuthorizationCode({
         code,
         codeVerifier,
@@ -136,8 +164,14 @@ export function createTelegramOIDCProvider(
         if (!(kid && alg)) {
           return false;
         }
+        if (!clientId) {
+          return false;
+        }
+        if (!SUPPORTED_SIGNING_ALGORITHMS.has(alg)) {
+          return false;
+        }
 
-        const publicKey = await getTelegramPublicKey(kid);
+        const publicKey = await getTelegramPublicKey(kid, alg);
         const { payload } = await jwtVerify(token, publicKey, {
           algorithms: [alg],
           issuer: TELEGRAM_OIDC_ISSUER,

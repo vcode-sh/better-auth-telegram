@@ -2,7 +2,15 @@
  * @vitest-environment happy-dom
  */
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "vitest";
 import {
   TELEGRAM_OIDC_AUTH_ENDPOINT,
   TELEGRAM_OIDC_ISSUER,
@@ -36,6 +44,23 @@ const mockedValidateAuthorizationCode = vi.mocked(validateAuthorizationCode);
 
 const BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
 const BOT_ID = "123456789";
+
+describe("TelegramOIDCClaims", () => {
+  it("models Telegram profile and phone verification claims", () => {
+    expectTypeOf<TelegramOIDCClaims["id"]>().toEqualTypeOf<
+      number | undefined
+    >();
+    expectTypeOf<TelegramOIDCClaims["given_name"]>().toEqualTypeOf<
+      string | undefined
+    >();
+    expectTypeOf<TelegramOIDCClaims["family_name"]>().toEqualTypeOf<
+      string | undefined
+    >();
+    expectTypeOf<TelegramOIDCClaims["phone_number_verified"]>().toEqualTypeOf<
+      boolean | undefined
+    >();
+  });
+});
 
 describe("buildScopes", () => {
   it("should include openid by default", () => {
@@ -242,6 +267,36 @@ describe("createTelegramOIDCProvider", () => {
       });
 
       expect(result).toBe(mockUrl);
+    });
+
+    it("should reject authorization when neither botToken nor OIDC credentials are configured", () => {
+      const provider = createTelegramOIDCProvider("", {});
+
+      expect(() =>
+        provider.createAuthorizationURL({
+          state: "state",
+          codeVerifier: "verifier",
+          scopes: [],
+          redirectURI: "https://example.com/callback",
+        })
+      ).toThrow("clientId");
+      expect(mockedCreateAuthorizationURL).not.toHaveBeenCalled();
+    });
+
+    it("should reject authorization when clientSecret is missing", () => {
+      const provider = createTelegramOIDCProvider("", {
+        clientId: "123456789",
+      });
+
+      expect(() =>
+        provider.createAuthorizationURL({
+          state: "state",
+          codeVerifier: "verifier",
+          scopes: [],
+          redirectURI: "https://example.com/callback",
+        })
+      ).toThrow("clientSecret");
+      expect(mockedCreateAuthorizationURL).not.toHaveBeenCalled();
     });
 
     it("should include additional scopes passed directly", async () => {
@@ -595,6 +650,38 @@ describe("createTelegramOIDCProvider", () => {
       expect(mockedBetterFetch).toHaveBeenCalledWith(TELEGRAM_OIDC_JWKS_URI);
     });
 
+    it.each([
+      "ES256",
+      "EdDSA",
+    ] as const)("should verify a valid %s JWT token", async (algorithm) => {
+      const keyPair = await generateKeyPair(algorithm);
+      const exportedJwk = await exportJWK(keyPair.publicKey);
+      mockedBetterFetch.mockResolvedValueOnce({
+        data: {
+          keys: [
+            {
+              ...exportedJwk,
+              kid: "algorithm-test-kid",
+              alg: algorithm,
+              use: "sig",
+            },
+          ],
+        },
+      } as any);
+
+      const token = await new SignJWT({ sub: "12345" })
+        .setProtectedHeader({ alg: algorithm, kid: "algorithm-test-kid" })
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .setIssuer(TELEGRAM_OIDC_ISSUER)
+        .setAudience(BOT_ID)
+        .sign(keyPair.privateKey);
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+
+      await expect(provider.verifyIdToken!(token)).resolves.toBe(true);
+    });
+
     it("should return false when JWT header has no kid", async () => {
       // Create a JWT without kid in header
       const token = new SignJWT({ sub: "12345" })
@@ -608,6 +695,49 @@ describe("createTelegramOIDCProvider", () => {
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
       const result = await provider.verifyIdToken!(signedToken);
+
+      expect(result).toBe(false);
+    });
+
+    it("should reject unsupported signing algorithms before fetching JWKS", async () => {
+      const header = Buffer.from(
+        JSON.stringify({ alg: "HS256", kid: "test-kid-1" })
+      ).toString("base64url");
+      const payload = Buffer.from(
+        JSON.stringify({
+          sub: "12345",
+          iss: TELEGRAM_OIDC_ISSUER,
+          aud: BOT_ID,
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        })
+      ).toString("base64url");
+      const token = `${header}.${payload}.invalid-signature`;
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const result = await provider.verifyIdToken!(token);
+
+      expect(result).toBe(false);
+      expect(mockedBetterFetch).not.toHaveBeenCalled();
+    });
+
+    it("should reject token verification when clientId is missing", async () => {
+      const token = await createSignedJWT({ sub: "12345" });
+      const provider = createTelegramOIDCProvider("", {
+        clientSecret: "oidc-secret",
+      });
+
+      await expect(provider.verifyIdToken!(token)).resolves.toBe(false);
+      expect(mockedBetterFetch).not.toHaveBeenCalled();
+    });
+
+    it("should reject a JWK whose algorithm does not match the token header", async () => {
+      mockedBetterFetch.mockResolvedValueOnce({
+        data: { keys: [{ ...jwk, alg: undefined }] },
+      } as any);
+
+      const token = await createSignedJWT({ sub: "12345" });
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const result = await provider.verifyIdToken!(token);
 
       expect(result).toBe(false);
     });
@@ -1375,32 +1505,6 @@ describe("Adversarial: config endpoint shape with testMode", () => {
     // Verify matchers don't match wrong paths
     expect(plugin.rateLimit[0]!.pathMatcher("/telegram/link")).toBe(false);
     expect(plugin.rateLimit[1]!.pathMatcher("/telegram/signin")).toBe(false);
-  });
-});
-
-describe("Adversarial: plugin constructor error cases", () => {
-  it("should throw when botToken is empty string", async () => {
-    const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: "", botUsername: "test_bot" })).toThrow();
-  });
-
-  it("should throw when botUsername is empty string", async () => {
-    const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: BOT_TOKEN, botUsername: "" })).toThrow();
-  });
-
-  it("should throw the specific BOT_TOKEN_REQUIRED message", async () => {
-    const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: "", botUsername: "test_bot" })).toThrow(
-      "Telegram plugin: botToken is required"
-    );
-  });
-
-  it("should throw the specific BOT_USERNAME_REQUIRED message", async () => {
-    const { telegram } = await import("./index");
-    expect(() => telegram({ botToken: BOT_TOKEN, botUsername: "" })).toThrow(
-      "Telegram plugin: botUsername is required"
-    );
   });
 });
 

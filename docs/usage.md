@@ -195,11 +195,15 @@ Enable on server:
 
 ```typescript
 telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  botUsername: "your_bot_username",
+  loginWidget: false,
   oidc: {
     enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
     requestPhone: true,  // phone numbers -- the Login Widget's biggest regret
+    mapOIDCProfileToUser: (claims) => ({
+      telegramPhoneNumber: claims.phone_number,
+    }),
   },
 });
 ```
@@ -216,15 +220,13 @@ That's it. Better Auth's social login system handles the PKCE, state tokens, JWT
 
 ### OIDC + Phone Numbers
 
-The `phone` scope gives you what the Login Widget never could. When `requestPhone: true`, the user's phone number lands in `telegramPhoneNumber` on the user record after OIDC sign-in.
+The `phone` scope gives you what the Login Widget never could. With `requestPhone: true`, Telegram can return `phone_number` and `phone_number_verified` claims. The plugin exposes them to `mapOIDCProfileToUser`; persist the value in a field defined by your user schema.
 
 ```typescript
-// After OIDC sign-in, your user record has:
+// With telegramPhoneNumber defined in your user schema and mapped above:
 {
   name: "John Doe",
-  telegramId: "123456789",
-  telegramUsername: "johndoe",
-  telegramPhoneNumber: "+1234567890",  // only via OIDC with phone scope
+  telegramPhoneNumber: "+1234567890",
 }
 ```
 

@@ -28,6 +28,13 @@ export function createMiniAppEndpoints(config: TelegramPluginConfig) {
           throw APIError.from("BAD_REQUEST", ERROR_CODES.INIT_DATA_REQUIRED);
         }
 
+        if (!config.botToken) {
+          throw APIError.from(
+            "INTERNAL_SERVER_ERROR",
+            ERROR_CODES.BOT_TOKEN_REQUIRED
+          );
+        }
+
         // Verify initData
         if (
           config.miniAppValidateInitData &&
@@ -182,6 +189,13 @@ export function createMiniAppEndpoints(config: TelegramPluginConfig) {
 
         if (!initData || typeof initData !== "string") {
           throw APIError.from("BAD_REQUEST", ERROR_CODES.INIT_DATA_REQUIRED);
+        }
+
+        if (!config.botToken) {
+          throw APIError.from(
+            "INTERNAL_SERVER_ERROR",
+            ERROR_CODES.BOT_TOKEN_REQUIRED
+          );
         }
 
         const isValid = await verifyMiniAppInitData(

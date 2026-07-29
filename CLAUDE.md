@@ -12,7 +12,7 @@ Two entry points, two export paths:
 Supporting modules:
 
 - **`src/verify.ts`** -- HMAC-SHA256 verification via Web Crypto API. Two paths: Login Widget (`SHA256(botToken)`) and Mini App (`HMAC-SHA256("WebAppData", botToken)`)
-- **`src/oidc.ts`** -- Telegram OIDC provider factory. Creates an `OAuthProvider` for Better Auth's social login system using OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. RS256 JWT verification via JWKS.
+- **`src/oidc.ts`** -- Telegram OIDC provider factory. Creates an `OAuthProvider` for Better Auth's social login system using OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. Allowlisted JWT verification via JWKS.
 - **`src/types.ts`** -- All TypeScript interfaces (`TelegramPluginOptions`, `TelegramAuthData`, Mini App types, `TelegramOIDCOptions`, `TelegramOIDCClaims`)
 - **`src/constants.ts`** -- Error codes, success messages, `PLUGIN_ID`, `DEFAULT_MAX_AUTH_AGE`, OIDC endpoints/issuer constants
 
@@ -62,7 +62,7 @@ Single test file: `npx vitest run src/verify.test.ts`
 
 ## Dependencies
 
-**Runtime (peer):** `better-auth` (^1.4.18)
+**Runtime (peer):** `better-auth` (`>=1.6.22 <1.7.0`)
 
 **Build external:** `better-auth`, `zod` (tsup external)
 

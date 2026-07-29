@@ -10,16 +10,74 @@ const BASE = {
 describe("createPluginConfig", () => {
   // ── Validation ─────────────────────────────────────────────────────
 
-  it("throws when botToken is missing", () => {
-    expect(() =>
-      createPluginConfig({ botToken: "", botUsername: "bot" })
-    ).toThrow(ERROR_CODES.BOT_TOKEN_REQUIRED.message);
+  it("warns instead of throwing when the default Widget flow has no botToken", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(() => createPluginConfig({ botUsername: "bot" })).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(ERROR_CODES.BOT_TOKEN_REQUIRED.message)
+    );
+
+    warnSpy.mockRestore();
   });
 
-  it("throws when botUsername is missing", () => {
-    expect(() =>
-      createPluginConfig({ botToken: "tok:en", botUsername: "" })
-    ).toThrow(ERROR_CODES.BOT_USERNAME_REQUIRED.message);
+  it("warns instead of throwing when the default Widget flow has no botUsername", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(() => createPluginConfig({ botToken: "tok:en" })).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(ERROR_CODES.BOT_USERNAME_REQUIRED.message)
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("allows OIDC-only configuration with explicit OIDC credentials", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const config = createPluginConfig({
+      loginWidget: false,
+      oidc: {
+        enabled: true,
+        clientId: "123456789",
+        clientSecret: "oidc-secret",
+      },
+    });
+
+    expect(config.botToken).toBe("");
+    expect(config.botUsername).toBe("");
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it("warns for each missing credential in an OIDC-only configuration", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    createPluginConfig({
+      loginWidget: false,
+      oidc: { enabled: true },
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy.mock.calls[0]![0]).toContain("clientId is required");
+    expect(warnSpy.mock.calls[1]![0]).toContain("clientSecret is required");
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not require botUsername for a Mini App-only configuration", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    createPluginConfig({
+      botToken: "tok:en",
+      loginWidget: false,
+      miniApp: { enabled: true },
+    });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 
   // ── Defaults ───────────────────────────────────────────────────────

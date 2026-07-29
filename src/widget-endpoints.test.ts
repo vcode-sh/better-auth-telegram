@@ -120,6 +120,17 @@ describe("signInWithTelegram", () => {
     );
   });
 
+  it("rejects use of the Widget flow when botToken is unavailable", async () => {
+    const endpoints = createWidgetEndpoints(makeConfig({ botToken: "" }));
+    const handler = endpoints.signInWithTelegram as any;
+    const ctx = mockCtx(mockAdapter(), TELEGRAM_DATA);
+
+    await expect(handler(ctx)).rejects.toThrow(
+      ERROR_CODES.BOT_TOKEN_REQUIRED.message
+    );
+    expect(mockedVerify).not.toHaveBeenCalled();
+  });
+
   it("rejects failed HMAC verification", async () => {
     mockedVerify.mockResolvedValue(false);
     const endpoints = createWidgetEndpoints(makeConfig());
@@ -341,6 +352,16 @@ describe("linkTelegram", () => {
     await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
       ERROR_CODES.NOT_AUTHENTICATED.message
     );
+  });
+
+  it("rejects use of the link flow when botToken is unavailable", async () => {
+    const endpoints = createWidgetEndpoints(makeConfig({ botToken: "" }));
+    const ctx = mockCtx(mockAdapter(), TELEGRAM_DATA, session);
+
+    await expect((endpoints.linkTelegram as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.BOT_TOKEN_REQUIRED.message
+    );
+    expect(mockedVerify).not.toHaveBeenCalled();
   });
 
   it("rejects invalid auth data", async () => {

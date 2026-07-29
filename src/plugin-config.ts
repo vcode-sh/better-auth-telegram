@@ -38,8 +38,9 @@ export interface TelegramPluginConfig {
 }
 
 /**
- * Parses and validates `TelegramPluginOptions`, applying defaults.
- * Throws if required fields (`botToken`, `botUsername`) are missing.
+ * Parses `TelegramPluginOptions`, applies defaults, and reports credentials
+ * missing from enabled flows. Credential use is guarded at runtime so
+ * build-time environments can resolve secrets later.
  */
 export function createPluginConfig(
   options: TelegramPluginOptions
@@ -57,17 +58,35 @@ export function createPluginConfig(
     testMode = false,
   } = options;
 
-  if (!botToken) {
-    throw new Error(ERROR_CODES.BOT_TOKEN_REQUIRED.message);
-  }
-
-  if (!botUsername) {
-    throw new Error(ERROR_CODES.BOT_USERNAME_REQUIRED.message);
-  }
-
   const widgetEnabled = loginWidget !== false;
   const miniAppEnabled = miniApp?.enabled ?? false;
   const oidcEnabled = oidc?.enabled ?? false;
+  const resolvedBotToken = botToken ?? "";
+  const resolvedBotUsername = botUsername ?? "";
+
+  if ((widgetEnabled || miniAppEnabled) && !resolvedBotToken) {
+    console.warn(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_TOKEN_REQUIRED.message}. The enabled HMAC flow will reject requests until it is configured.`
+    );
+  }
+
+  if (widgetEnabled && !resolvedBotUsername) {
+    console.warn(
+      `[better-auth-telegram] ${ERROR_CODES.BOT_USERNAME_REQUIRED.message}. The Login Widget cannot be rendered until it is configured.`
+    );
+  }
+
+  if (oidcEnabled && !(oidc?.clientId || resolvedBotToken)) {
+    console.warn(
+      "[better-auth-telegram] OIDC: clientId is required. Configure oidc.clientId or botToken before starting an OIDC login."
+    );
+  }
+
+  if (oidcEnabled && !(oidc?.clientSecret || resolvedBotToken)) {
+    console.warn(
+      "[better-auth-telegram] OIDC: clientSecret is required. Configure oidc.clientSecret or botToken before starting an OIDC login."
+    );
+  }
 
   if (testMode && oidcEnabled) {
     console.warn(
@@ -76,8 +95,8 @@ export function createPluginConfig(
   }
 
   return {
-    botToken,
-    botUsername,
+    botToken: resolvedBotToken,
+    botUsername: resolvedBotUsername,
     widgetEnabled,
     miniAppEnabled,
     oidcEnabled,
