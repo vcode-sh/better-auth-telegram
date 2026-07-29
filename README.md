@@ -10,12 +10,12 @@ Telegram authentication plugin for [Better Auth](https://better-auth.com). Login
 
 Built on Web Crypto API — works in Node, Bun, Cloudflare Workers, and whatever edge runtime you're pretending to need. No `node:crypto` tantrums.
 
-261 tests. 100% coverage. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
+344 tests. If it breaks, roast me on [X](https://x.com/vcode_sh). If it works, also roast me. I'm there either way, posting through the pain.
 
 ## Requirements
 
 - Node.js >= 22 (or Bun, or any runtime with Web Crypto API)
-- `better-auth@^1.5.0`
+- `better-auth@>=1.6.22 <1.7.0`
 
 ## Install
 
@@ -70,7 +70,7 @@ model User {
   // ... existing fields
   telegramId          String?
   telegramUsername    String?
-  telegramPhoneNumber String?  // populated via OIDC with phone scope
+  telegramPhoneNumber String?  // persist claims.phone_number via a custom OIDC mapper
 }
 
 model Account {
@@ -162,7 +162,7 @@ const validation = await authClient.validateMiniApp(
 
 ### OIDC (OpenID Connect)
 
-Standard OAuth 2.0 flow via `oauth.telegram.org`. Phone numbers, PKCE, RS256 JWTs — proper grown-up auth instead of widget callbacks. Telegram finally joined the federation.
+Standard OAuth 2.0 flow via `oauth.telegram.org`. Phone numbers, PKCE, and signed JWTs — proper grown-up auth instead of widget callbacks. Telegram now labels the old iframe widget as legacy, so use OIDC for new browser integrations.
 
 #### Prerequisites
 
@@ -189,6 +189,7 @@ telegram({
   botUsername: "your_bot_username",
   oidc: {
     enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!, // from BotFather Web Login
     requestPhone: true, // get phone numbers, finally
   },
@@ -212,11 +213,10 @@ Don't need the Login Widget? Set `loginWidget: false` and skip the widget endpoi
 ```typescript
 // OIDC-only (no widget endpoints, no extra schema fields)
 telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  botUsername: "your_bot_username",
   loginWidget: false,
   oidc: {
     enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
   },
 });
@@ -226,8 +226,8 @@ telegram({
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `botToken` | *required* | From @BotFather |
-| `botUsername` | *required* | Without the @ |
+| `botToken` | — | Required at runtime for Login Widget and Mini App HMAC verification; can provide the OIDC client ID fallback |
+| `botUsername` | — | Required only when rendering the Login Widget; without the @ |
 | `allowUserToLink` | `true` | Let users link Telegram to existing accounts |
 | `autoCreateUser` | `true` | Create user on first sign-in |
 | `maxAuthAge` | `86400` | Auth data TTL in seconds (replay attack prevention) |
@@ -239,6 +239,7 @@ telegram({
 | `miniApp.allowAutoSignin` | `true` | Allow auto sign-in from Mini Apps |
 | `miniApp.mapMiniAppDataToUser` | — | Custom Mini App user mapper |
 | `oidc.enabled` | `false` | Enable Telegram OIDC flow |
+| `oidc.clientId` | — | Client ID from BotFather Web Login; falls back to the bot ID in `botToken` |
 | `oidc.clientSecret` | — | Client Secret from BotFather Web Login (NOT the bot token) |
 | `oidc.scopes` | `["openid", "profile"]` | OIDC scopes to request |
 | `oidc.requestPhone` | `false` | Request phone number (adds `phone` scope) |
@@ -285,7 +286,7 @@ HMAC-SHA-256 verification on all auth data via Web Crypto API (`crypto.subtle`).
 
 Login Widget uses `SHA256(botToken)` as secret key. Mini Apps use `HMAC-SHA256("WebAppData", botToken)`. Different derivation paths, same level of paranoia.
 
-OIDC adds RS256 JWT verification via Telegram's JWKS endpoint, plus PKCE and state tokens for the OAuth flow. Keys are fetched and matched by `kid` — no hardcoded secrets, no trust-me-bro validation.
+OIDC verifies Telegram's documented `RS256`, `ES256`, and `EdDSA` JWT signatures via its JWKS endpoint, plus PKCE and state tokens for the OAuth flow. Keys must match both `kid` and `alg`. `ES256K` is intentionally rejected because the current `jose` runtime does not support it.
 
 Is it bulletproof? No. Is it better than storing passwords in plain text? Significantly.
 
@@ -306,6 +307,12 @@ Is it bulletproof? No. Is it better than storing passwords in plain text? Signif
 See [`examples/nextjs-app/`](./examples/nextjs-app) for a Next.js implementation covering all three auth flows: Login Widget, OIDC, Mini Apps, plus account linking/unlinking. Copy-paste-ready components and server/client setup. There's also a full test playground app in [`test/`](./test) if you want to see everything wired together with a real database.
 
 ## Migrating
+
+### To v2.0.0 (from v1.5.0)
+
+- Upgrade Better Auth to `>=1.6.22 <1.7.0`. Better Auth 1.7 is not supported by this release.
+- `botToken` and `botUsername` are now flow-aware. Missing values log setup warnings; the affected Widget, Mini App, or OIDC operation rejects if the credential is still missing when used.
+- OIDC-only setups can omit both bot fields when `oidc.clientId` and `oidc.clientSecret` are configured explicitly.
 
 ### To v1.5.0 (from v1.4.0)
 

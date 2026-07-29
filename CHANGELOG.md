@@ -5,6 +5,27 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-29
+
+### Added
+
+- **Mini App launch-parameter fallback** ([#26](https://github.com/vcode-sh/better-auth-telegram/issues/26)) — `autoSignInFromMiniApp()` now prefers the Telegram SDK's `initData` and falls back to `tgWebAppData` from the URL fragment when the SDK object is unavailable.
+- **Current Telegram OIDC claim types** — `TelegramOIDCClaims` now includes optional `id`, `given_name`, `family_name`, and `phone_number_verified` claims.
+
+### Fixed
+
+- **Flow-aware credentials** ([#19](https://github.com/vcode-sh/better-auth-telegram/pull/19)) — `botToken` and `botUsername` no longer abort plugin initialization when their flows are disabled or secrets are injected later. Enabled flows warn during setup and reject at the request boundary if a required credential is still missing.
+- **OIDC algorithm validation** — ID-token verification now allows Telegram's documented `RS256`, `ES256`, and `EdDSA` algorithms, rejects unsupported algorithms before fetching JWKS, and requires the selected JWK algorithm to match the token header.
+
+### Changed
+
+- **Dependency security floor** — the Better Auth peer range is now `>=1.6.22 <1.7.0`, and affected development dependencies were updated to patched versions. This is a breaking requirement for projects still using Better Auth 1.5 or older 1.6 releases.
+- Test count: 261 → 344. The new coverage focuses on credential boundaries, Mini App launch data, current OIDC claims, and supported signing algorithms.
+
+### Security
+
+- Placeholder Telegram OIDC emails remain unverified. Telegram does not return an email claim, so the plugin will not mark a generated `{sub}@telegram.oidc` address as verified.
+
 ## [1.5.0] - 2026-03-10
 
 ### Added

@@ -5,7 +5,7 @@ You want Telegram auth in your app. Bold choice. Let's get it done without a twe
 ## Prerequisites
 
 - Node.js >= 22
-- A [Better Auth](https://www.better-auth.com/) project (v1.5.0+)
+- A [Better Auth](https://www.better-auth.com/) project (`>=1.6.22 <1.7.0`)
 - A Telegram account (shocking, I know)
 
 ## Install
@@ -80,7 +80,7 @@ No secret handshakes required. The client fetches bot config from your server au
 
 ## Database Schema
 
-The plugin adds fields to **both** the `user` and `account` tables:
+When Login Widget or Mini App support is enabled, the plugin adds fields to **both** the `user` and `account` tables. OIDC-only setups with `loginWidget: false` do not declare these fields; add any OIDC profile fields you want to persist to your own user schema.
 
 **User table:**
 
@@ -88,7 +88,7 @@ The plugin adds fields to **both** the `user` and `account` tables:
 | --------------------- | -------- | -------- | ----- |
 | `telegramId`          | `string` | Yes      | |
 | `telegramUsername`    | `string` | Yes      | |
-| `telegramPhoneNumber` | `string` | Yes      | Populated via OIDC with `phone` scope |
+| `telegramPhoneNumber` | `string` | Yes      | Available for custom OIDC profile mapping when the `phone` scope is requested |
 
 **Account table:**
 
@@ -106,7 +106,7 @@ model User {
   // ... existing fields
   telegramId          String?
   telegramUsername     String?
-  telegramPhoneNumber  String?  // only needed if using OIDC with phone scope
+  telegramPhoneNumber  String?  // map claims.phone_number here if requested
 }
 
 model Account {

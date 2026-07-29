@@ -19,7 +19,7 @@ Everything you never knew you needed to know about `better-auth-telegram`, laid 
 
 ### `telegram(options)`
 
-The main server plugin function. Returns a `BetterAuthPlugin` object. If you forget `botToken`, it throws immediately -- no silent failures here.
+The main server plugin function. Returns a `BetterAuthPlugin` object. Credentials are checked per enabled flow: missing values warn during setup and the affected request fails closed at runtime.
 
 ```typescript
 import { telegram } from "better-auth-telegram";
@@ -35,8 +35,9 @@ const plugin = telegram({
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `botToken` | `string` | **required** | Bot token from @BotFather. The plugin throws if missing. |
-| `botUsername` | `string` | **required** | Bot username without the `@`. Also throws if missing. |
+| `botToken` | `string` | `undefined` | Required at runtime for enabled Login Widget and Mini App flows. Can provide the OIDC client ID fallback. |
+| `botUsername` | `string` | `undefined` | Required when rendering the Login Widget. Bot username without the `@`. |
+| `loginWidget` | `boolean` | `true` | Enable Login Widget endpoints. Telegram schema fields remain enabled separately when Mini App support is active. |
 | `allowUserToLink` | `boolean` | `true` | Allow authenticated users to link their Telegram account. |
 | `autoCreateUser` | `boolean` | `true` | Auto-create a user when a new Telegram user signs in. |
 | `maxAuthAge` | `number` | `86400` (24 hours) | Maximum age of `auth_date` in seconds. Prevents replay attacks. |
@@ -59,8 +60,10 @@ const plugin = telegram({
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `oidc.enabled` | `boolean` | `false` | Enable Telegram OIDC. Injects `telegram-oidc` social provider via the `init` hook. |
+| `oidc.clientId` | `string` | bot ID from `botToken` | Client ID from BotFather Web Login. Required when `botToken` is omitted. |
+| `oidc.clientSecret` | `string` | `botToken` fallback | Client Secret from BotFather Web Login. Configure this explicitly for Telegram OIDC. |
 | `oidc.scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. |
-| `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. Populates `telegramPhoneNumber` on the user record. |
+| `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. Persist `claims.phone_number` through `mapOIDCProfileToUser` if needed. |
 | `oidc.requestBotAccess` | `boolean` | `false` | Add `telegram:bot_access` scope. |
 | `oidc.mapOIDCProfileToUser` | `(claims: TelegramOIDCClaims) => UserData` | uses `name` + `picture` from claims | Custom mapping from OIDC claims. |
 
@@ -309,7 +312,7 @@ if (result.data?.valid) {
 
 #### `autoSignInFromMiniApp(fetchOptions?)`
 
-The lazy developer's dream. Automatically grabs `initData` from `window.Telegram.WebApp.initData` and signs in. Only works inside a Telegram Mini App -- throws if you try it in a regular browser.
+Automatically grabs `initData` from `window.Telegram.WebApp.initData`, falling back to the `tgWebAppData` URL-fragment launch parameter, and signs in. Throws when neither source is available.
 
 ```typescript
 try {
@@ -377,8 +380,9 @@ Server plugin configuration. See the [Server Plugin](#server-plugin) section for
 interface TelegramPluginOptions {
   allowUserToLink?: boolean;     // default: true
   autoCreateUser?: boolean;      // default: true
-  botToken: string;              // required
-  botUsername: string;            // required
+  botToken?: string;             // Widget/Mini App runtime credential
+  botUsername?: string;          // required when rendering the Widget
+  loginWidget?: boolean;         // default: true
   mapTelegramDataToUser?: (data: TelegramAuthData) => {
     name?: string;
     email?: string;
@@ -408,6 +412,8 @@ Configuration for the OIDC authentication flow.
 
 ```typescript
 interface TelegramOIDCOptions {
+  clientId?: string;             // BotFather Web Login; falls back to bot ID
+  clientSecret?: string;         // BotFather Web Login; configure explicitly
   enabled?: boolean;             // default: false
   scopes?: string[];             // default: ["openid", "profile"]
   requestPhone?: boolean;        // default: false — adds "phone" scope
@@ -427,8 +433,11 @@ JWT ID token claims from Telegram OIDC. What you get back after the OAuth dance.
 
 ```typescript
 interface TelegramOIDCClaims {
-  aud: string;                   // bot ID (client_id)
+  aud: string;                   // configured OIDC client ID
   exp: number;                   // expiration timestamp
+  family_name?: string;
+  given_name?: string;
+  id?: number;                   // Telegram numeric user ID when supplied
   iat: number;                   // issued at timestamp
   iss: string;                   // "https://oauth.telegram.org"
   sub: string;                   // Telegram user ID
@@ -436,6 +445,7 @@ interface TelegramOIDCClaims {
   preferred_username?: string;   // Telegram username
   picture?: string;              // profile photo URL
   phone_number?: string;         // only with "phone" scope
+  phone_number_verified?: boolean;
 }
 ```
 
@@ -717,7 +727,7 @@ Validate Mini App `initData` without creating a session. Only available when `mi
 OIDC doesn't register custom endpoints. It injects a `telegram-oidc` social provider via the `init` hook, and Better Auth's built-in routes handle the rest:
 
 - **`POST /sign-in/social`** with `{ provider: "telegram-oidc", callbackURL: "/dashboard" }` — initiates the OAuth 2.0 Authorization Code flow with PKCE
-- **`GET /callback/telegram-oidc`** — handles the OAuth callback, verifies the RS256 JWT ID token against Telegram's JWKS endpoint, creates/links user, sets session
+- **`GET /callback/telegram-oidc`** — handles the OAuth callback, verifies the JWT ID token against Telegram's JWKS endpoint using `RS256`, `ES256`, or `EdDSA`, creates/links user, sets session
 
 Zero custom endpoints. Delegation at its finest.
 
@@ -794,7 +804,7 @@ The plugin extends Better Auth's database schema with these fields. User fields 
 |---|---|---|---|---|---|
 | `telegramId` | `string` | `false` | `false` | `false` | |
 | `telegramUsername` | `string` | `false` | `false` | `false` | |
-| `telegramPhoneNumber` | `string` | `false` | `false` | `false` | Populated via OIDC with `phone` scope |
+| `telegramPhoneNumber` | `string` | `false` | `false` | `false` | Available for custom OIDC profile mapping when this schema field is enabled |
 
 ### Account Table
 

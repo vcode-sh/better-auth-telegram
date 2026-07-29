@@ -262,7 +262,7 @@ The `telegram-oidc` provider isn't being injected. Check:
 
 The OAuth callback failed. Usual suspects:
 
-1. **Bot token mismatch** — the bot ID (first part of the token, before the `:`) is used as the `client_id`. If the token is wrong, Telegram rejects the token exchange.
+1. **OIDC credentials mismatch** — use the Client ID and Client Secret from BotFather Web Login. The bot ID is only a fallback for `client_id`; the bot token is not a valid OIDC client secret.
 2. **Callback URL not configured** — Better Auth needs to know where your callback lives. Check your `BETTER_AUTH_URL` or `baseURL` configuration.
 3. **JWKS fetch failed** — the plugin fetches public keys from `oauth.telegram.org/.well-known/jwks.json`. If your server can't reach that URL (firewall, DNS, corporate proxy), JWT verification fails silently.
 
@@ -274,10 +274,13 @@ You need `requestPhone: true` in your OIDC config **and** the user needs to cons
 oidc: {
   enabled: true,
   requestPhone: true,  // this one
+  mapOIDCProfileToUser: (claims) => ({
+    telegramPhoneNumber: claims.phone_number,
+  }),
 }
 ```
 
-Also make sure your `user` table has the `telegramPhoneNumber` column. The plugin won't yell at you if it's missing — it'll just silently not store it.
+`requestPhone` exposes `phone_number` to the mapper; it does not persist that claim automatically. Define the destination field in your user schema and return it from `mapOIDCProfileToUser`. The optional `phone_number_verified` claim tells you whether Telegram marked the number as verified.
 
 ## Session Problems
 
@@ -330,8 +333,8 @@ Every error this plugin can throw, mapped to what actually went wrong:
 
 | Error Message | HTTP Status | What It Means |
 |---|---|---|
-| `Telegram plugin: botToken is required` | N/A (thrown at init) | You didn't pass `botToken` to the plugin config. It won't even start. |
-| `Telegram plugin: botUsername is required` | N/A (thrown at init) | You didn't pass `botUsername` to the plugin config. Also won't start. |
+| `Telegram plugin: botToken is required` | 500 | An enabled Login Widget or Mini App request reached the server without a configured `botToken`. Setup also logs a warning. |
+| `Telegram plugin: botUsername is required` | Client error | The client tried to render the Login Widget without a configured username. Setup also logs a warning. |
 | `Invalid Telegram auth data` | 400 | Request body missing required fields (`id`, `first_name`, `auth_date`, `hash`). |
 | `Invalid Telegram authentication` | 401 | HMAC check failed. Wrong token, expired data, or tampered payload. |
 | `User not found and auto-create is disabled` | 404 | `autoCreateUser` is `false` and no existing account matches. |

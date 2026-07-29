@@ -132,6 +132,16 @@ describe("signInWithMiniApp", () => {
     );
   });
 
+  it("rejects use of Mini App sign-in when botToken is unavailable", async () => {
+    const endpoints = createMiniAppEndpoints(makeConfig({ botToken: "" }));
+    const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
+
+    await expect((endpoints.signInWithMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.BOT_TOKEN_REQUIRED.message
+    );
+    expect(mockedVerify).not.toHaveBeenCalled();
+  });
+
   it("rejects when initData is not a string", async () => {
     const endpoints = createMiniAppEndpoints(makeConfig());
     const ctx = mockCtx(mockAdapter(), { initData: 12345 });
@@ -389,6 +399,16 @@ describe("validateMiniApp", () => {
     await expect((endpoints.validateMiniApp as any)(ctx)).rejects.toThrow(
       ERROR_CODES.INIT_DATA_REQUIRED.message
     );
+  });
+
+  it("rejects validation when botToken is unavailable", async () => {
+    const endpoints = createMiniAppEndpoints(makeConfig({ botToken: "" }));
+    const ctx = mockCtx(mockAdapter(), { initData: INIT_DATA });
+
+    await expect((endpoints.validateMiniApp as any)(ctx)).rejects.toThrow(
+      ERROR_CODES.BOT_TOKEN_REQUIRED.message
+    );
+    expect(mockedVerify).not.toHaveBeenCalled();
   });
 
   it("rejects when initData is not a string", async () => {

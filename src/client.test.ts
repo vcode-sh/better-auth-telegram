@@ -22,10 +22,12 @@ describe("telegramClient", () => {
 
     // Clear any global Telegram object
     (window as any).Telegram = undefined;
+    window.location.hash = "";
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe("Plugin structure", () => {
@@ -272,6 +274,16 @@ describe("telegramClient", () => {
       await expect(
         actions.initTelegramWidget("telegram-login", {}, async () => {})
       ).rejects.toThrow("Failed to get Telegram config");
+    });
+
+    it("should reject Widget initialization when botUsername is unavailable", async () => {
+      mockFetch.mockResolvedValueOnce({ data: { botUsername: "" } });
+
+      const actions = client.getActions(mockFetch);
+
+      await expect(
+        actions.initTelegramWidget("telegram-login", {}, async () => {})
+      ).rejects.toThrow("Telegram plugin: botUsername is required");
     });
 
     it("should clear container before adding widget", async () => {
@@ -690,6 +702,66 @@ describe("telegramClient", () => {
         await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
           "Not running in Telegram Mini App or initData not available"
         );
+      });
+
+      it("should use tgWebAppData from the URL fragment when the SDK is unavailable", async () => {
+        const mockInitData =
+          "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
+        (window as any).Telegram = undefined;
+        window.location.hash = `#tgWebAppVersion=9.0&tgWebAppData=${encodeURIComponent(
+          mockInitData
+        )}`;
+        mockFetch.mockResolvedValueOnce({ data: { user: { id: "123" } } });
+
+        const actions = client.getActions(mockFetch);
+        await actions.autoSignInFromMiniApp();
+
+        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
+          method: "POST",
+          body: { initData: mockInitData },
+        });
+      });
+
+      it("should prefer SDK initData over tgWebAppData from the URL fragment", async () => {
+        const sdkInitData = "auth_date=1&hash=sdk";
+        const fragmentInitData = "auth_date=2&hash=fragment";
+        (window as any).Telegram = {
+          WebApp: {
+            initData: sdkInitData,
+          },
+        };
+        window.location.hash = `#tgWebAppData=${encodeURIComponent(
+          fragmentInitData
+        )}`;
+        mockFetch.mockResolvedValueOnce({ data: { user: { id: "123" } } });
+
+        const actions = client.getActions(mockFetch);
+        await actions.autoSignInFromMiniApp();
+
+        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
+          method: "POST",
+          body: { initData: sdkInitData },
+        });
+      });
+
+      it("should reject safely when the URL fragment cannot be parsed", async () => {
+        (window as any).Telegram = undefined;
+        window.location.hash = "#tgWebAppData=broken";
+        vi.stubGlobal(
+          "URLSearchParams",
+          class {
+            constructor() {
+              throw new Error("invalid fragment");
+            }
+          }
+        );
+
+        const actions = client.getActions(mockFetch);
+
+        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
+          "Not running in Telegram Mini App or initData not available"
+        );
+        expect(mockFetch).not.toHaveBeenCalled();
       });
 
       it("should throw if initData not available", async () => {

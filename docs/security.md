@@ -119,21 +119,22 @@ The plugin uses Authorization Code flow with Proof Key for Code Exchange (PKCE).
 
 All of this is handled by Better Auth's social login system. You don't configure any of it.
 
-### RS256 JWT Verification
+### OIDC JWT Verification
 
-ID tokens from Telegram are signed with RS256 (RSA + SHA-256). The plugin verifies them against Telegram's JWKS endpoint (`oauth.telegram.org/.well-known/jwks.json`):
+Telegram currently documents `RS256`, `ES256`, `EdDSA`, and `ES256K` signing algorithms. The plugin accepts `RS256`, `ES256`, and `EdDSA`, which are supported by the current `jose` runtime, and rejects `ES256K`. It verifies accepted tokens against Telegram's JWKS endpoint (`oauth.telegram.org/.well-known/jwks.json`):
 
-1. Decode the JWT header to get the `kid` (Key ID)
-2. Fetch the public key set from Telegram's JWKS endpoint
-3. Match by `kid`, verify the signature
-4. Validate `iss` (issuer), `aud` (audience = your bot ID), and `exp` (expiration)
+1. Decode the JWT header to get `kid` (Key ID) and `alg`
+2. Reject algorithms outside the explicit allowlist
+3. Fetch the public key set from Telegram's JWKS endpoint
+4. Match the key by both `kid` and `alg`, then verify the signature
+5. Validate `iss` (issuer), `aud` (audience = your client ID), and `exp` (expiration)
 
 Keys are fetched per verification — no caching means no stale-key vulnerabilities. The `jose` library handles the heavy lifting.
 
 ### What This Prevents
 
-- **Token forgery** — RS256 signatures require Telegram's private key. Good luck with that.
-- **Token replay** — `exp` claim enforces expiration. `aud` ensures the token was meant for your bot.
+- **Token forgery** — supported signatures require Telegram's private key. Good luck with that.
+- **Token replay** — `exp` claim enforces expiration. `aud` ensures the token was meant for your OIDC client.
 - **Authorization code interception** — PKCE makes stolen auth codes useless without the original `code_verifier`.
 - **CSRF on callback** — state parameter binds the callback to the session that initiated the flow.
 

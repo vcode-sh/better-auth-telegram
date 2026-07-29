@@ -21,6 +21,13 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
         method: "POST",
       },
       async (ctx) => {
+        if (!config.botToken) {
+          throw APIError.from(
+            "INTERNAL_SERVER_ERROR",
+            ERROR_CODES.BOT_TOKEN_REQUIRED
+          );
+        }
+
         const body = await ctx.body;
 
         // Validate auth data structure
@@ -171,6 +178,13 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
 
         if (!session?.user?.id) {
           throw APIError.from("UNAUTHORIZED", ERROR_CODES.NOT_AUTHENTICATED);
+        }
+
+        if (!config.botToken) {
+          throw APIError.from(
+            "INTERNAL_SERVER_ERROR",
+            ERROR_CODES.BOT_TOKEN_REQUIRED
+          );
         }
 
         // Validate auth data

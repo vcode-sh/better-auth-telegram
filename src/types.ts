@@ -59,10 +59,14 @@ export interface TelegramMiniAppData {
 export interface TelegramOIDCClaims {
   aud: string;
   exp: number;
+  family_name?: string;
+  given_name?: string;
   iat: number;
+  id?: number;
   iss: string;
   name?: string;
   phone_number?: string;
+  phone_number_verified?: boolean;
   picture?: string;
   preferred_username?: string;
   sub: string;
@@ -143,13 +147,13 @@ export interface TelegramPluginOptions {
    * Bot token obtained from @BotFather
    * Used for verifying authentication data
    */
-  botToken: string;
+  botToken?: string;
 
   /**
    * Bot username (without @)
    * Used for generating the login widget
    */
-  botUsername: string;
+  botUsername?: string;
 
   /**
    * Enable Login Widget endpoints (signin, link, unlink).

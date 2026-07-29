@@ -2,7 +2,7 @@
 
 Your web app, living inside Telegram. No login popups, no OAuth dances, no "please verify your email." The user opened your Mini App — they're already Telegram. Act accordingly.
 
-Works with `better-auth-telegram` v0.4.0+ and `better-auth@^1.5.0`.
+Requires `better-auth@>=1.6.22 <1.7.0`.
 
 ## Mini Apps vs Login Widget
 
@@ -126,7 +126,7 @@ const result = await authClient.autoSignInFromMiniApp();
 // result.data?.user — your user, authenticated, ready to go
 ```
 
-`autoSignInFromMiniApp()` grabs `window.Telegram.WebApp.initData` automatically, sends it to `/telegram/miniapp/signin`, sets the session cookie, done. If it's not running inside Telegram, it throws.
+`autoSignInFromMiniApp()` prefers `window.Telegram.WebApp.initData` and falls back to the `tgWebAppData` launch parameter in `window.location.hash`. It sends the raw value to `/telegram/miniapp/signin`, where the server verifies it before creating a session. If neither source exists, it throws.
 
 ### 4. Manual Sign-in (More Control)
 

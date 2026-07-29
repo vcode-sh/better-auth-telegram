@@ -4,9 +4,9 @@ Everything you can tweak, nothing you can't. No database adapters, no session ph
 
 ## Server Configuration
 
-### The Bare Minimum
+### Login Widget Minimum
 
-Two strings. That's it. Revolutionary.
+The default enables the Login Widget, so it needs the bot token and username when that flow is used.
 
 ```typescript
 import { betterAuth } from "better-auth";
@@ -29,8 +29,8 @@ Every option, every default, no surprises (for once).
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `botToken` | `string` | **required** | Bot token from @BotFather. The one secret you actually need to keep secret. |
-| `botUsername` | `string` | **required** | Bot username without the `@`. Yes, without it. |
+| `botToken` | `string` | `undefined` | Required at runtime by enabled Login Widget and Mini App flows for HMAC verification. OIDC can use an explicit `oidc.clientId` and `oidc.clientSecret` instead. |
+| `botUsername` | `string` | `undefined` | Required only when the Login Widget is rendered. Bot username without the `@`. |
 | `allowUserToLink` | `boolean` | `true` | Let users link Telegram to an existing account. |
 | `autoCreateUser` | `boolean` | `true` | Auto-create a user on first sign-in. Set to `false` if you enjoy gatekeeping. |
 | `maxAuthAge` | `number` | `86400` | How many seconds old the auth data can be before we reject it. 86400 = 24 hours. Prevents replay attacks from time travellers. |
@@ -84,7 +84,6 @@ For when your app lives inside Telegram itself. Disabled by default.
 ```typescript
 telegram({
   botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
   miniApp: {
     enabled: true,
     validateInitData: true,
@@ -107,20 +106,22 @@ telegram({
 
 ### OIDC Configuration
 
-Standard OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. Phone numbers, RS256 JWT verification, proper grown-up auth. Disabled by default because not everyone needs the full federation experience.
+Standard OAuth 2.0 Authorization Code flow with PKCE via `oauth.telegram.org`. Phone numbers and JWKS-verified JWTs without the legacy Widget callback. Disabled by default.
 
 ```typescript
 telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
+  loginWidget: false,
   oidc: {
     enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
     requestPhone: true,        // get phone numbers via the `phone` scope
     requestBotAccess: false,   // request bot access via `telegram:bot_access` scope
     scopes: ["openid", "profile"],  // default scopes
     mapOIDCProfileToUser: (claims) => ({
       name: `${claims.name}`,
       image: claims.picture,
+      telegramPhoneNumber: claims.phone_number,
     }),
   },
 })
@@ -129,12 +130,16 @@ telegram({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | `boolean` | `false` | Turn on Telegram OIDC. Injects a `telegram-oidc` provider into Better Auth's social login system via the `init` hook. |
+| `clientId` | `string` | bot ID from `botToken` | Client ID from BotFather Web Login. Required when `botToken` is omitted. |
+| `clientSecret` | `string` | `botToken` compatibility fallback | Client Secret from BotFather Web Login. The bot-token fallback is retained for backward compatibility, but Telegram's official OIDC flow requires the Web Login Client Secret. |
 | `scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always included regardless. |
-| `requestPhone` | `boolean` | `false` | Add the `phone` scope. Gets you `telegramPhoneNumber` on the user record. The Login Widget never could. |
+| `requestPhone` | `boolean` | `false` | Add the `phone` scope. Read `claims.phone_number` in `mapOIDCProfileToUser` to persist it. |
 | `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |
-| `mapOIDCProfileToUser` | `function` | uses `name` + `picture` from claims | Custom mapping from `TelegramOIDCClaims` to your user object. Gets `sub`, `name`, `preferred_username`, `picture`, `phone_number`. |
+| `mapOIDCProfileToUser` | `function` | uses `name` + `picture` from claims | Custom mapping from `TelegramOIDCClaims` to your user object. Claims are optional except for the standard token fields; see the API reference. |
 
 OIDC uses Better Auth's built-in social login routes — no custom endpoints. The plugin injects a `telegram-oidc` provider via the `init` hook and Better Auth handles `POST /sign-in/social` and `GET /callback/telegram-oidc` automatically.
+
+Missing flow credentials produce setup warnings instead of aborting application startup. The corresponding request still fails closed if the credential is missing when the flow is used.
 
 ### Test Server Mode
 
