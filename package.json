@@ -69,19 +69,19 @@
     "better-auth": ">=1.6.22 <1.7.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.4",
+    "@biomejs/biome": "2.4.6",
     "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "4.1.10",
     "@vitest/ui": "^4.1.10",
     "better-auth": "1.6.25",
     "happy-dom": "20.11.1",
-    "lint-staged": "16.2.7",
+    "lint-staged": "17.2.0",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "ultracite": "7.2.3",
+    "ultracite": "7.5.9",
     "vitest": "4.1.10"
   },
   "lint-staged": {
