@@ -73,7 +73,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "4.1.10",
     "@vitest/ui": "^4.1.10",
     "better-auth": "1.6.25",
