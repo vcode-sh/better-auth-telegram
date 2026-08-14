@@ -241,6 +241,7 @@ telegram({
 | `oidc.enabled` | `false` | Enable Telegram OIDC flow |
 | `oidc.clientId` | — | Client ID from BotFather Web Login; falls back to the bot ID in `botToken` |
 | `oidc.clientSecret` | — | Client Secret from BotFather Web Login (NOT the bot token) |
+| `oidc.jwksFetchTimeoutMs` | `10000` | Maximum time in milliseconds to wait for Telegram's JWKS endpoint |
 | `oidc.scopes` | `["openid", "profile"]` | OIDC scopes to request |
 | `oidc.requestPhone` | `false` | Request phone number (adds `phone` scope) |
 | `oidc.requestBotAccess` | `false` | Request bot access (adds `telegram:bot_access` scope) |
@@ -286,7 +287,7 @@ HMAC-SHA-256 verification on all auth data via Web Crypto API (`crypto.subtle`).
 
 Login Widget uses `SHA256(botToken)` as secret key. Mini Apps use `HMAC-SHA256("WebAppData", botToken)`. Different derivation paths, same level of paranoia.
 
-OIDC verifies Telegram's documented `RS256`, `ES256`, and `EdDSA` JWT signatures via its JWKS endpoint, plus PKCE and state tokens for the OAuth flow. Keys must match both `kid` and `alg`. `ES256K` is intentionally rejected because the current `jose` runtime does not support it.
+OIDC verifies Telegram's documented `RS256`, `ES256`, and `EdDSA` JWT signatures before mapping profile claims, plus PKCE and state tokens for the OAuth flow. Keys must match both `kid` and `alg`, and JWKS requests time out after 10 seconds by default. `ES256K` is intentionally rejected because the current `jose` runtime does not support it.
 
 Is it bulletproof? No. Is it better than storing passwords in plain text? Significantly.
 

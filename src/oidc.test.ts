@@ -219,6 +219,17 @@ describe("createTelegramOIDCProvider", () => {
       );
       warnSpy.mockRestore();
     });
+
+    it.each([
+      0,
+      -1,
+      Number.POSITIVE_INFINITY,
+      Number.NaN,
+    ])("should reject invalid JWKS fetch timeout %s", (jwksFetchTimeoutMs) => {
+      expect(() =>
+        createTelegramOIDCProvider(BOT_TOKEN, { jwksFetchTimeoutMs })
+      ).toThrow("jwksFetchTimeoutMs must be a positive finite number");
+    });
   });
 
   describe("Bot ID extraction", () => {
@@ -416,25 +427,39 @@ describe("createTelegramOIDCProvider", () => {
   });
 
   describe("getUserInfo", () => {
-    function createTestJWT(claims: Partial<TelegramOIDCClaims>): string {
-      const header = Buffer.from(
-        JSON.stringify({ alg: "RS256", typ: "JWT" })
-      ).toString("base64url");
-      const payload = Buffer.from(
-        JSON.stringify({
-          sub: "12345",
-          name: "John Doe",
-          picture: "https://example.com/photo.jpg",
-          preferred_username: "johndoe",
-          iss: TELEGRAM_OIDC_ISSUER,
-          aud: BOT_ID,
-          iat: Math.floor(Date.now() / 1000),
-          exp: Math.floor(Date.now() / 1000) + 3600,
-          ...claims,
-        })
-      ).toString("base64url");
-      const signature = Buffer.from("fake-signature").toString("base64url");
-      return `${header}.${payload}.${signature}`;
+    let rsaKeyPair: Awaited<ReturnType<typeof generateKeyPair>>;
+    let jwk: any;
+
+    beforeEach(async () => {
+      rsaKeyPair = await generateKeyPair("RS256");
+      const exportedJwk = await exportJWK(rsaKeyPair.publicKey);
+      jwk = {
+        ...exportedJwk,
+        kid: "profile-test-kid",
+        alg: "RS256",
+        use: "sig",
+      };
+      mockedBetterFetch.mockResolvedValue({
+        data: { keys: [jwk] },
+      } as any);
+    });
+
+    async function createTestJWT(
+      claims: Partial<TelegramOIDCClaims>
+    ): Promise<string> {
+      return await new SignJWT({
+        sub: "12345",
+        name: "John Doe",
+        picture: "https://example.com/photo.jpg",
+        preferred_username: "johndoe",
+        iss: TELEGRAM_OIDC_ISSUER,
+        aud: BOT_ID,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        ...claims,
+      })
+        .setProtectedHeader({ alg: "RS256", kid: "profile-test-kid" })
+        .sign(rsaKeyPair.privateKey);
     }
 
     it("should return null when no idToken is provided", async () => {
@@ -446,8 +471,8 @@ describe("createTelegramOIDCProvider", () => {
       expect(result).toBeNull();
     });
 
-    it("should decode JWT and map claims to user info", async () => {
-      const idToken = createTestJWT({
+    it("should verify JWT and map claims to user info", async () => {
+      const idToken = await createTestJWT({
         sub: "99999",
         name: "Alice Smith",
         picture: "https://example.com/alice.jpg",
@@ -463,10 +488,13 @@ describe("createTelegramOIDCProvider", () => {
       expect(result!.user.image).toBe("https://example.com/alice.jpg");
       expect(result!.user.emailVerified).toBe(false);
       expect(result!.user.email).toBe("99999@telegram.oidc");
+      expect(mockedBetterFetch).toHaveBeenCalledWith(TELEGRAM_OIDC_JWKS_URI, {
+        timeout: 10_000,
+      });
     });
 
     it("should return claims as data", async () => {
-      const idToken = createTestJWT({
+      const idToken = await createTestJWT({
         sub: "12345",
         preferred_username: "johndoe",
         phone_number: "+1234567890",
@@ -481,7 +509,7 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should handle missing optional claims", async () => {
-      const idToken = createTestJWT({
+      const idToken = await createTestJWT({
         sub: "12345",
         name: undefined,
         picture: undefined,
@@ -498,7 +526,7 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should always set emailVerified to false", async () => {
-      const idToken = createTestJWT({ sub: "12345" });
+      const idToken = await createTestJWT({ sub: "12345" });
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
       const result = await provider.getUserInfo({ idToken });
@@ -507,7 +535,7 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should generate placeholder email from telegram sub", async () => {
-      const idToken = createTestJWT({ sub: "12345" });
+      const idToken = await createTestJWT({ sub: "12345" });
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
       const result = await provider.getUserInfo({ idToken });
@@ -523,20 +551,10 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should return null when JWT has no sub claim", async () => {
-      const header = Buffer.from(
-        JSON.stringify({ alg: "RS256", typ: "JWT" })
-      ).toString("base64url");
-      const payload = Buffer.from(
-        JSON.stringify({
-          name: "No Sub User",
-          iss: TELEGRAM_OIDC_ISSUER,
-          aud: BOT_ID,
-          iat: Math.floor(Date.now() / 1000),
-          exp: Math.floor(Date.now() / 1000) + 3600,
-        })
-      ).toString("base64url");
-      const signature = Buffer.from("fake-signature").toString("base64url");
-      const idToken = `${header}.${payload}.${signature}`;
+      const idToken = await createTestJWT({
+        sub: undefined,
+        name: "No Sub User",
+      });
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
       const result = await provider.getUserInfo({ idToken });
@@ -545,7 +563,7 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should use mapOIDCProfileToUser when provided", async () => {
-      const idToken = createTestJWT({
+      const idToken = await createTestJWT({
         sub: "12345",
         name: "Original Name",
         preferred_username: "original",
@@ -567,7 +585,7 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should override default fields with mapOIDCProfileToUser result", async () => {
-      const idToken = createTestJWT({
+      const idToken = await createTestJWT({
         sub: "12345",
         name: "Original",
       });
@@ -585,7 +603,7 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should still include standard fields when mapOIDCProfileToUser is provided", async () => {
-      const idToken = createTestJWT({
+      const idToken = await createTestJWT({
         sub: "12345",
         name: "Alice",
         picture: "https://example.com/pic.jpg",
@@ -602,6 +620,21 @@ describe("createTelegramOIDCProvider", () => {
       // mapOIDCProfileToUser overrides spread last
       expect(result!.user.id).toBe("12345");
       expect(result!.user.emailVerified).toBe(false);
+    });
+
+    it("should reject a well-formed token with an invalid signature", async () => {
+      const otherKeyPair = await generateKeyPair("RS256");
+      const idToken = await new SignJWT({ sub: "12345" })
+        .setProtectedHeader({ alg: "RS256", kid: "profile-test-kid" })
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .setIssuer(TELEGRAM_OIDC_ISSUER)
+        .setAudience(BOT_ID)
+        .sign(otherKeyPair.privateKey);
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+
+      await expect(provider.getUserInfo({ idToken })).resolves.toBeNull();
     });
   });
 
@@ -647,7 +680,9 @@ describe("createTelegramOIDCProvider", () => {
       const result = await provider.verifyIdToken!(token);
 
       expect(result).toBe(true);
-      expect(mockedBetterFetch).toHaveBeenCalledWith(TELEGRAM_OIDC_JWKS_URI);
+      expect(mockedBetterFetch).toHaveBeenCalledWith(TELEGRAM_OIDC_JWKS_URI, {
+        timeout: 10_000,
+      });
     });
 
     it.each([
@@ -768,6 +803,22 @@ describe("createTelegramOIDCProvider", () => {
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
       const result = await provider.verifyIdToken!(token);
       expect(result).toBe(false);
+    });
+
+    it("should use a custom JWKS fetch timeout", async () => {
+      mockedBetterFetch.mockResolvedValueOnce({
+        data: { keys: [jwk] },
+      } as any);
+
+      const token = await createSignedJWT({ sub: "12345" });
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        jwksFetchTimeoutMs: 2500,
+      });
+
+      await expect(provider.verifyIdToken!(token)).resolves.toBe(true);
+      expect(mockedBetterFetch).toHaveBeenCalledWith(TELEGRAM_OIDC_JWKS_URI, {
+        timeout: 2500,
+      });
     });
 
     it("should return false when kid is not found in JWKS", async () => {

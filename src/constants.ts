@@ -29,6 +29,7 @@ export const SUCCESS_MESSAGES = {
 export const PLUGIN_ID = "telegram";
 
 export const DEFAULT_MAX_AUTH_AGE = 86400;
+export const DEFAULT_OIDC_JWKS_FETCH_TIMEOUT_MS = 10_000;
 
 export const TELEGRAM_OIDC_PROVIDER_ID = "telegram-oidc";
 export const TELEGRAM_OIDC_ISSUER = "https://oauth.telegram.org";

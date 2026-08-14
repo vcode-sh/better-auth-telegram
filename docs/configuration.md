@@ -115,6 +115,7 @@ telegram({
     enabled: true,
     clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
+    jwksFetchTimeoutMs: 10_000, // bounded JWKS request; this is the default
     requestPhone: true,        // get phone numbers via the `phone` scope
     requestBotAccess: false,   // request bot access via `telegram:bot_access` scope
     scopes: ["openid", "profile"],  // default scopes
@@ -132,6 +133,7 @@ telegram({
 | `enabled` | `boolean` | `false` | Turn on Telegram OIDC. Injects a `telegram-oidc` provider into Better Auth's social login system via the `init` hook. |
 | `clientId` | `string` | bot ID from `botToken` | Client ID from BotFather Web Login. Required when `botToken` is omitted. |
 | `clientSecret` | `string` | `botToken` compatibility fallback | Client Secret from BotFather Web Login. The bot-token fallback is retained for backward compatibility, but Telegram's official OIDC flow requires the Web Login Client Secret. |
+| `jwksFetchTimeoutMs` | `number` | `10000` | Maximum time in milliseconds to wait for Telegram's JWKS endpoint. Must be positive and finite. |
 | `scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always included regardless. |
 | `requestPhone` | `boolean` | `false` | Add the `phone` scope. Read `claims.phone_number` in `mapOIDCProfileToUser` to persist it. |
 | `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |
