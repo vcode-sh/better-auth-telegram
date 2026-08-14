@@ -100,6 +100,13 @@ export interface TelegramOIDCOptions {
   enabled?: boolean;
 
   /**
+   * Maximum time in milliseconds to wait for Telegram's JWKS endpoint.
+   * Must be a positive finite number.
+   * @default 10000
+   */
+  jwksFetchTimeoutMs?: number;
+
+  /**
    * Custom function to map OIDC claims to user object
    */
   mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => {

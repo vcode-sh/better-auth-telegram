@@ -125,9 +125,10 @@ Telegram currently documents `RS256`, `ES256`, `EdDSA`, and `ES256K` signing alg
 
 1. Decode the JWT header to get `kid` (Key ID) and `alg`
 2. Reject algorithms outside the explicit allowlist
-3. Fetch the public key set from Telegram's JWKS endpoint
+3. Fetch the public key set from Telegram's JWKS endpoint with a bounded timeout (`oidc.jwksFetchTimeoutMs`, 10 seconds by default)
 4. Match the key by both `kid` and `alg`, then verify the signature
 5. Validate `iss` (issuer), `aud` (audience = your client ID), and `exp` (expiration)
+6. Map user/profile fields only from the verified payload
 
 Keys are fetched per verification — no caching means no stale-key vulnerabilities. The `jose` library handles the heavy lifting.
 

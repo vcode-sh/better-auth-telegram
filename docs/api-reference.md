@@ -62,6 +62,7 @@ const plugin = telegram({
 | `oidc.enabled` | `boolean` | `false` | Enable Telegram OIDC. Injects `telegram-oidc` social provider via the `init` hook. |
 | `oidc.clientId` | `string` | bot ID from `botToken` | Client ID from BotFather Web Login. Required when `botToken` is omitted. |
 | `oidc.clientSecret` | `string` | `botToken` fallback | Client Secret from BotFather Web Login. Configure this explicitly for Telegram OIDC. |
+| `oidc.jwksFetchTimeoutMs` | `number` | `10000` | Maximum time in milliseconds to wait for Telegram's JWKS endpoint. Must be positive and finite. |
 | `oidc.scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. |
 | `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. Persist `claims.phone_number` through `mapOIDCProfileToUser` if needed. |
 | `oidc.requestBotAccess` | `boolean` | `false` | Add `telegram:bot_access` scope. |
@@ -415,6 +416,7 @@ interface TelegramOIDCOptions {
   clientId?: string;             // BotFather Web Login; falls back to bot ID
   clientSecret?: string;         // BotFather Web Login; configure explicitly
   enabled?: boolean;             // default: false
+  jwksFetchTimeoutMs?: number;   // default: 10000
   scopes?: string[];             // default: ["openid", "profile"]
   requestPhone?: boolean;        // default: false — adds "phone" scope
   requestBotAccess?: boolean;    // default: false — adds "telegram:bot_access" scope
