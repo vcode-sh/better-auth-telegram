@@ -80,7 +80,9 @@ function buildScopes(options: TelegramOIDCOptions): string[] {
 export function createTelegramOIDCProvider(
   botToken: string,
   options: TelegramOIDCOptions = {}
-): OAuthProvider<TelegramOIDCClaims> {
+): OAuthProvider<TelegramOIDCClaims> & {
+  accountSubject: (context: { profile: TelegramOIDCClaims }) => string;
+} {
   const botId = botToken.split(":")[0]!;
 
   // Client ID and secret come from BotFather's Web Login settings (Bot Settings > Web Login).
@@ -120,6 +122,13 @@ export function createTelegramOIDCProvider(
   return {
     id: TELEGRAM_OIDC_PROVIDER_ID,
     name: "Telegram",
+
+    accountSubject({ profile }) {
+      if (typeof profile.sub !== "string" || !profile.sub.trim()) {
+        throw new Error("Telegram OIDC subject is missing");
+      }
+      return profile.sub;
+    },
 
     createAuthorizationURL({ state, codeVerifier, scopes, redirectURI }) {
       requireOIDCCredentials();

@@ -142,6 +142,37 @@ describe("createTelegramOIDCProvider", () => {
     vi.restoreAllMocks();
   });
 
+  describe("Better Auth 1.7 account subject", () => {
+    const profile: TelegramOIDCClaims = {
+      sub: "stable-oidc-subject",
+      id: 987654321,
+      iss: TELEGRAM_OIDC_ISSUER,
+      aud: BOT_ID,
+      exp: 2000000000,
+      iat: 1900000000,
+    };
+
+    it("keeps the OIDC sub as the account identity instead of Telegram id", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      expect(await provider.accountSubject({ profile })).toBe(profile.sub);
+    });
+
+    it.each([
+      undefined,
+      null,
+      "",
+      "   ",
+      123,
+    ])("rejects an invalid OIDC subject: %s", async (sub) => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      await expect(async () =>
+        provider.accountSubject({
+          profile: { ...profile, sub } as TelegramOIDCClaims,
+        })
+      ).rejects.toThrow("Telegram OIDC subject is missing");
+    });
+  });
+
   describe("Provider shape", () => {
     it("should return a valid OAuthProvider object", () => {
       const provider = createTelegramOIDCProvider(BOT_TOKEN);
