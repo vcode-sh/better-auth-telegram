@@ -61,7 +61,6 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 - **`TELEGRAM_ERROR_CODES`** exported from `better-auth-telegram` and `better-auth-telegram/client` (the client copy pulls in no server code), and as the client plugin's `$ERROR_CODES`. Client actions type `error.code` and their response `data` (`TelegramSignInResponse`, `TelegramLinkResponse`).
 - **Widget helpers for components** — `initTelegramWidget` and `initTelegramWidgetRedirect` accept an element as well as an id and return `{ destroy() }`, which removes the widget, the iframe Telegram rendered and the global callback.
 - **Startup diagnostics through Better Auth's logger** (they used `console.warn`): whitespace around `botToken` is trimmed with a warning, a token that isn't `<digits>:<secret>` is reported, a leading `@` in `botUsername` is stripped, the same-bot warning also catches `oidc.clientId` equal to the widget bot's id, and `oidc.requestPhone` without the Telegram columns (OIDC-only) warns that phone numbers won't be stored. `createTelegramOIDCProvider` takes an optional logger (the plugin passes Better Auth's).
-
 - **Telegram identity on OIDC users** ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)) — when the schema has the Telegram columns, OIDC sign-ups, sign-ins and links copy the verified `id`, `preferred_username` and `phone_number` claims to `telegramId`, `telegramUsername` and `telegramPhoneNumber`, so Login Widget and Mini App sign-ins find users that signed up with OIDC. The reverse direction is still open in #25.
 - **Mini App types** — `signature`, `chat_join_request_query_id`, `user.added_to_attachment_menu`.
 - **Login Widget script** `telegram-widget.js?24`.
@@ -73,7 +72,7 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 
 - Tests run against a real Better Auth instance (memory adapter and SQLite with Better Auth's own migrations) and a fake oauth.telegram.org modeled on live behavior; mock-only and existence-only tests were removed. An adapter lane (`npm run test:adapters`, its own CI job) runs the core flows on PostgreSQL and MySQL (Kysely), Drizzle and Prisma on PostgreSQL, and MongoDB. HMAC tests use literal vectors computed independently with openssl, including a real-shaped Mini App payload with `signature`. A compiled consumer type test checks the published declarations.
 - CI uses `npm ci`, runs publint and Are The Types Wrong, and no longer auto-merges Better Auth upgrades. It tests Node 22 and 24, and a non-blocking job runs the suite against `better-auth@beta`.
-- **`engines.node` is `>=22`** (it was `>=24` in this beta); `dist/` uses nothing newer.
+- **`engines.node` is `>=22`** (2.0.1 required `>=24`); `dist/` uses nothing newer.
 - Prereleases publish to the `next` dist-tag.
 
 ## [2.0.1] - 2026-07-29

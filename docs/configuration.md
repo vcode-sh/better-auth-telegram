@@ -1,188 +1,213 @@
 # Configuration
 
-Everything you can tweak, nothing you can't. No database adapters, no session philosophy, no framework tours -- that's [Better Auth's job](https://www.better-auth.com/docs). This page is strictly about what `better-auth-telegram` gives you to misconfigure.
+Every option of the plugin, with its default, plus the Better Auth options that change how the plugin behaves. For setup steps, see [Installation](./installation.md).
 
-## Server Configuration
+## Contents
 
-### Login Widget Minimum
+- [Starting points](#starting-points)
+- [Plugin options](#plugin-options)
+- [Mini App options](#mini-app-options)
+- [OIDC options](#oidc-options)
+- [Custom user data](#custom-user-data)
+- [Better Auth options that affect Telegram sign-in](#better-auth-options-that-affect-telegram-sign-in)
+- [Startup warnings](#startup-warnings)
+- [Client configuration](#client-configuration)
+- [Environment variables](#environment-variables)
 
-The default enables the Login Widget, so it needs the bot token and username when that flow is used.
+## Starting points
 
-```typescript
+Copy the one closest to your setup. Each goes into `plugins: [...]` of `betterAuth()`.
+
+```ts
+import { telegram } from "better-auth-telegram";
+
+// Login Widget only
+export const loginWidgetOnly = telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  botUsername: process.env.TELEGRAM_BOT_USERNAME,
+});
+
+// Mini App only
+export const miniAppOnly = telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  loginWidget: false,
+  miniApp: { enabled: true },
+});
+
+// OIDC only
+export const oidcOnly = telegram({
+  loginWidget: false,
+  oidc: {
+    enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
+  },
+});
+
+// Everything: bot A for the widget and Mini App, bot B for OIDC
+export const everything = telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  botUsername: process.env.TELEGRAM_BOT_USERNAME,
+  miniApp: { enabled: true },
+  oidc: {
+    enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
+  },
+});
+```
+
+Why two bots in the last one: see [the two-bot rule](./telegram-bot-setup.md#using-more-than-one-method).
+
+**Invite-only.** Existing users can sign in with Telegram, but nobody new is created and nobody can link a new Telegram account:
+
+```ts
+import { telegram } from "better-auth-telegram";
+
+export const inviteOnly = telegram({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  botUsername: process.env.TELEGRAM_BOT_USERNAME,
+  autoCreateUser: false, // no new users from the Login Widget or Mini App
+  allowUserToLink: false, // no linking of new Telegram accounts
+  maxAuthAge: 3600, // accept sign-in data for 1 hour instead of 24
+});
+```
+
+For OIDC, the matching switch is `oidc.disableSignUp: true`.
+
+## Plugin options
+
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `botToken` | `string` | none | The bot token from BotFather. Needed for the Login Widget and the Mini App, which use it to check Telegram's signature. Without it, those endpoints answer 500 `BOT_TOKEN_REQUIRED`. Also provides the default OIDC client ID. Spaces and newlines around it are removed (with a warning). |
+| `botUsername` | `string` | none | The bot's username, without `@` (a leading `@` is removed, with a warning). Needed to show the Login Widget. |
+| `loginWidget` | `boolean` | `true` | Turns on the Login Widget endpoints (`/telegram/signin`, `/telegram/link`, `/telegram/unlink`). Set `false` if you don't use the widget. With `false` and no Mini App, the plugin adds no database columns. |
+| `autoCreateUser` | `boolean` | `true` | Create a new user when someone signs in with the Login Widget or Mini App for the first time. With `false`, unknown Telegram users get 404. Doesn't affect OIDC (use `oidc.disableSignUp`). |
+| `allowUserToLink` | `boolean` | `true` | Let signed-in users link a Telegram account with `/telegram/link`. With `false`, linking answers 403 `LINKING_DISABLED`. |
+| `maxAuthAge` | `number` (seconds) | `86400` (24 hours) | How old Login Widget data and Mini App `initData` may be. Older data is refused (401). Shorter is safer, see [Security](./security.md#replay-within-maxauthage). |
+| `mapTelegramDataToUser` | function | none | Changes the data a new Login Widget user is created with. See [Custom user data](#custom-user-data). |
+| `miniApp` | object | off | [Mini App options](#mini-app-options). |
+| `oidc` | object | off | [OIDC options](#oidc-options). |
+| `testMode` | `boolean` | `false` | A label only: `GET /telegram/config` returns it so your client knows it talks to Telegram's test environment. It changes no checks. |
+
+## Mini App options
+
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `miniApp.enabled` | `boolean` | `false` | Turns on `/telegram/miniapp/signin` and `/telegram/miniapp/validate`. |
+| `miniApp.validateInitData` | `boolean` | `true` | Check the signature of `initData` on sign-in. **Keep it `true`.** With `false`, anyone can sign in as any Telegram user; the plugin logs a warning. Only for automated tests. (`/telegram/miniapp/validate` always checks.) |
+| `miniApp.allowAutoSignin` | `boolean` | `true` | Allow Mini App sign-in to create new users. A new user is created only when this **and** `autoCreateUser` are `true`; otherwise the answer is 404 `MINI_APP_AUTO_SIGNIN_DISABLED`. |
+| `miniApp.mapMiniAppDataToUser` | function | none | Changes the data a new Mini App user is created with. See [Custom user data](#custom-user-data). |
+
+## OIDC options
+
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `oidc.enabled` | `boolean` | `false` | Adds the `telegram-oidc` provider to Better Auth's social sign-in. |
+| `oidc.clientId` | `string` | bot ID from `botToken` | The Client ID from BotFather (the OIDC bot's numeric ID). Set it whenever the OIDC bot is not the `botToken` bot, or there is no `botToken`. |
+| `oidc.clientSecret` | `string` | none, **required** | The Client Secret from BotFather (bot > Login Widget). **Not the bot token.** Without it, OIDC sign-in answers 500 `OIDC_CLIENT_SECRET_REQUIRED`. |
+| `oidc.scopes` | `string[]` | `[]` | Extra scopes, added to the defaults `openid` and `profile`. |
+| `oidc.disableDefaultScope` | `boolean` | `false` | Don't request `profile` (`openid` is always sent). The ID token then has no Telegram ID, name or username, so `telegramId` is not stored. |
+| `oidc.requestPhone` | `boolean` | `false` | Adds the `phone` scope. The number is stored in `user.telegramPhoneNumber` when that column exists (Login Widget or Mini App enabled). See [OIDC: phone numbers](./oidc.md#phone-numbers). |
+| `oidc.requestBotAccess` | `boolean` | `false` | Adds the `telegram:bot_access` scope: asks the user to let your bot message them. |
+| `oidc.disableSignUp` | `boolean` | `false` | Only existing users can sign in with OIDC; others are redirected with `error=signup_disabled`. |
+| `oidc.disableIdTokenSignIn` | `boolean` | `false` | Refuse ID tokens sent directly to `/sign-in/social` and `/link-social`, leaving only the redirect flow. See [OIDC: ID tokens](./oidc.md#sign-in-with-an-id-token-you-already-have). |
+| `oidc.mapOIDCProfileToUser` | function | none | Changes the data a new OIDC user is created with. See [Custom user data](#custom-user-data). |
+
+## Custom user data
+
+When a Telegram user signs up, the plugin creates the user with these values:
+
+| Field | Login Widget and Mini App | OIDC |
+|---|---|---|
+| `name` | first name + last name | `name` claim, else given + family name, else username |
+| `image` | Telegram photo URL | `picture` claim |
+| `email` | `<telegram id>@telegram.placeholder.invalid` | `<sub>@telegram-oidc.placeholder.invalid` |
+| `emailVerified` | `false` | `false` |
+
+A mapper lets you change them. It receives Telegram's data and returns only what you want to change; the result is **merged over** the defaults:
+
+```ts
 import { betterAuth } from "better-auth";
 import { telegram } from "better-auth-telegram";
 
 export const auth = betterAuth({
-  database: /* your database config */,
+  user: {
+    // A custom column must be declared here, or Better Auth drops it.
+    additionalFields: {
+      language: { type: "string", required: false },
+    },
+  },
   plugins: [
     telegram({
-      botToken: process.env.TELEGRAM_BOT_TOKEN!,
-      botUsername: process.env.TELEGRAM_BOT_USERNAME!,
+      botToken: process.env.TELEGRAM_BOT_TOKEN,
+      botUsername: process.env.TELEGRAM_BOT_USERNAME,
+      // Login Widget: data has id, first_name, last_name, username, photo_url, auth_date, hash
+      mapTelegramDataToUser: (data) => ({
+        name: data.username ?? data.first_name,
+      }),
+      miniApp: {
+        enabled: true,
+        // Mini App: user has id, first_name, last_name, username, language_code, is_premium, photo_url, ...
+        mapMiniAppDataToUser: (user) => ({
+          language: user.language_code,
+        }),
+      },
     }),
   ],
 });
 ```
 
-### Full Options Reference
+Rules, so there are no surprises:
 
-Every option, every default, no surprises (for once).
+- **Mappers run only when a user is created.** Existing users are not changed when they sign in again (except `telegramUsername`, which the plugin keeps current).
+- **Only known fields are kept.** Mapper output is filtered like a Better Auth OAuth profile: fields that aren't in your user schema, or that users may not set (`input: false`), are dropped. That includes the plugin's own `telegramId`, `telegramUsername` and `telegramPhoneNumber`, which the plugin fills itself.
+- **The Login Widget and Mini App mappers can't set `id` or `emailVerified`.** An email from a mapper is stored as unverified, because Telegram didn't verify it.
+- **The OIDC mapper can't set `id`** (it's ignored). Don't return `emailVerified: true` from it: Better Auth would take it as verified.
+- **An email that another user already has** is refused with 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. The plugin never links the Telegram user to that other user.
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `botToken` | `string` | `undefined` | Required at runtime by enabled Login Widget and Mini App flows for HMAC verification. OIDC can use an explicit `oidc.clientId` and `oidc.clientSecret` instead. |
-| `botUsername` | `string` | `undefined` | Required only when the Login Widget is rendered. Bot username without the `@`. |
-| `allowUserToLink` | `boolean` | `true` | Let users link Telegram to an existing account. |
-| `autoCreateUser` | `boolean` | `true` | Auto-create a user on first sign-in. Set to `false` if you enjoy gatekeeping. |
-| `maxAuthAge` | `number` | `86400` | How many seconds old the auth data can be before we reject it. 86400 = 24 hours. Prevents replay attacks from time travellers. |
-| `loginWidget` | `boolean` | `true` | Register the Login Widget endpoints (`/telegram/signin`, `/telegram/link`, `/telegram/unlink`). With `false` and no Mini App, the Telegram schema fields are omitted too. |
-| `mapTelegramDataToUser` | `function` | see below | Custom mapping from Telegram data to your user object, merged over the defaults. |
-| `miniApp` | `object` | see below | Mini App configuration. Disabled by default because not everyone lives inside Telegram. |
-| `oidc` | `object` | see below | Telegram OIDC configuration. Also disabled by default. |
-| `testMode` | `boolean` | `false` | Informational only: returned by `GET /telegram/config`, changes no verification or widget behavior. See [Test Server Mode](#test-server-mode). |
+## Better Auth options that affect Telegram sign-in
 
-### Default User Mapping
+The plugin follows Better Auth's own settings, so these options apply to Telegram too:
 
-By default, the plugin maps `first_name` + `last_name` to `name`. Not `username` -- actual human names. Radical concept.
+| Better Auth option | Effect on Telegram sign-in |
+|---|---|
+| `trustedOrigins` | `/telegram/signin` and `/telegram/miniapp/signin` refuse browser requests from other origins with 403 `INVALID_ORIGIN`. Add the origin of every page that signs users in, if it differs from `BETTER_AUTH_URL`. |
+| `account.accountLinking.enabled: false` | `/telegram/link` answers 403 `LINKING_DISABLED`, and a sign-in that would link itself to an existing user by `telegramId` answers 401 `ACCOUNT_NOT_LINKED`. |
+| `account.accountLinking.disableImplicitLinking: true` | That automatic linking on sign-in answers 401 `ACCOUNT_NOT_LINKED`. Explicit `/telegram/link` still works. |
+| `account.accountLinking.allowUnlinkingAll: true` | `/telegram/unlink` may remove a user's last sign-in method. |
+| `account.accountLinking.trustedProviders`, `allowDifferentEmails` | Needed to link OIDC with `linkSocial`. See [OIDC: linking](./oidc.md#link-telegram-oidc-to-a-signed-in-user). |
+| `session.freshAge` (default 1 day) | `/telegram/unlink` needs a session younger than this (403 `SESSION_NOT_FRESH`). |
+| `databaseHooks` | Run for users, accounts and sessions created by Telegram sign-in. A hook that refuses a new user gives 403 `USER_CREATION_REJECTED`; one that refuses the session gives 401 `FAILED_TO_CREATE_SESSION`. |
+| `user.validateUserInfo` | Called for every Login Widget and Mini App sign-up, sign-in and link, with `source.method` `"telegram-login-widget"` or `"telegram-mini-app"`. Details in [Security](./security.md#your-hooks-run-for-telegram-users). |
+| `rateLimit` | Turns the plugin's rate limits on or off. Better Auth enables rate limiting in production only, by default. |
+| `advanced.defaultCookieAttributes` | Needed for Mini Apps in Telegram Web. See [Mini Apps: cookies](./miniapps.md#inside-telegram-web-cookies-in-an-iframe). |
 
-```typescript
-// What happens when you don't provide mapTelegramDataToUser
-{
-  name: data.last_name
-    ? `${data.first_name} ${data.last_name}`
-    : data.first_name,
-  image: data.photo_url,
-  email: `${data.id}@telegram.placeholder.invalid`,  // Telegram doesn't do email. Cope.
-  emailVerified: false,
-}
-```
+## Startup warnings
 
-The placeholder exists because Better Auth's `user.email` is required and unique. `.invalid` is reserved by RFC 6761, so nothing is ever delivered there. Mini App users get the same treatment.
+The plugin never stops your server for a configuration problem: secrets are sometimes loaded after startup. Instead it logs a warning through Better Auth's logger (lines start with `[better-auth-telegram]`), and the affected requests fail later with a clear error code.
 
-### Custom User Mapping
+| Warning about | Why it matters |
+|---|---|
+| Whitespace around `botToken` was removed | Often a newline from an env file. The plugin fixed it; fix your env file too. |
+| `botToken` doesn't look like a bot token | Tokens look like `<digits>:<letters>`. A wrong value makes every Login Widget and Mini App sign-in fail with 401. |
+| `botUsername` starts with `@` | The plugin removes the `@`. |
+| `botToken` is missing | Login Widget and Mini App sign-in answer 500 `BOT_TOKEN_REQUIRED` until it's set. |
+| `botUsername` is missing | The Login Widget can't be shown. Using only a Mini App or OIDC? Set `loginWidget: false`. |
+| OIDC `clientId` is missing | No `oidc.clientId` and no `botToken`. OIDC sign-in fails with 500 `OIDC_CLIENT_ID_REQUIRED`. |
+| OIDC `clientSecret` is missing | OIDC sign-in fails with 500 `OIDC_CLIENT_SECRET_REQUIRED`. |
+| `miniApp.validateInitData` is `false` | Anyone can sign in as anyone. Never in production. |
+| Login Widget and OIDC on the same bot | Switching a bot to OIDC disables its Login Widget. Use a second bot (`oidc.clientId`, `oidc.clientSecret`) or `loginWidget: false`. |
+| `requestPhone` without the Telegram columns | OIDC-only mode has no `telegramPhoneNumber` column, so the number is not stored. |
+| `testMode` together with OIDC | Telegram documents no test version of OIDC. |
 
-Customize with `mapTelegramDataToUser`. You get the raw `TelegramAuthData`; whatever you return is merged over the defaults above, so a mapper that only returns `name` keeps the default `image` and placeholder email:
+Two more warnings can appear while running: an OIDC ID token without profile claims (the bot signs with EdDSA or ES256K, or `disableDefaultScope` is set), and an OIDC sign-in whose Telegram ID already belongs to another user (the ID is then not copied).
 
-```typescript
-telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
-  mapTelegramDataToUser: (data) => ({
-    name: data.username || data.first_name,
-    // Throw in whatever custom fields your schema supports
-    authenticatedVia: "telegram",
-  }),
-})
-```
+## Client configuration
 
-The `data` parameter is a `TelegramAuthData` object: `id`, `first_name`, `last_name?`, `username?`, `photo_url?`, `auth_date`, `hash`.
+`telegramClient()` takes no options:
 
-The mapper's result only matters when a user is created (existing users aren't rewritten); the plugin itself sets `telegramId` and `telegramUsername`. Sign-ups go through Better Auth's internal adapter, so `databaseHooks` run (a hook that vetoes the user means 403 `USER_CREATION_REJECTED`). `user.validateUserInfo` sees `source.method` `"telegram-login-widget"` (or `"telegram-mini-app"`) with action `"create-user"` for sign-ups, `"sign-in"` for returning users, and `"link-account"` for links by `telegramId` and `/telegram/link`. A validator that throws fails closed: 403 `validation_failed`.
-
-### Mini App Configuration
-
-For when your app lives inside Telegram itself. Disabled by default.
-
-```typescript
-telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  miniApp: {
-    enabled: true,
-    validateInitData: true,
-    allowAutoSignin: true,
-    mapMiniAppDataToUser: (user) => ({
-      name: user.username || user.first_name,
-    }),
-  },
-})
-```
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | `boolean` | `false` | Turn on Mini App endpoints (`/telegram/miniapp/signin`, `/telegram/miniapp/validate`). |
-| `validateInitData` | `boolean` | `true` | Verify the HMAC signature on `initData`. With `false`, anyone can sign in as any Telegram user; the plugin logs a startup warning. Only for tests, or if you enjoy security incidents. |
-| `allowAutoSignin` | `boolean` | `true` | Auto-create users from Mini App sign-ins. Works in tandem with `autoCreateUser` -- both must be `true` for new users to be created. |
-| `mapMiniAppDataToUser` | `function` | same as login widget | Custom mapping from `TelegramMiniAppUser`, merged over the defaults. Gets `id`, `first_name`, `last_name?`, `username?`, `photo_url?`, `language_code?`, `is_premium?`, `is_bot?`, `allows_write_to_pm?`, `added_to_attachment_menu?`. |
-
-### OIDC Configuration
-
-Standard OAuth 2.0 Authorization Code flow with PKCE and a nonce via `oauth.telegram.org`. Phone numbers and JWKS-verified ID tokens without the legacy Widget callback. Disabled by default.
-
-Get the Client ID and Client Secret from [@BotFather](https://t.me/botfather)'s mini app: **My bots > your bot > Login Widget > Switch to OpenID Connect Login**. That switch permanently disables the bot's legacy Login Widget, so if you also serve the widget, use a second bot for OIDC (the example below goes OIDC-only instead). Full walkthrough: [OIDC prerequisites](../README.md#prerequisites).
-
-```typescript
-telegram({
-  loginWidget: false,
-  oidc: {
-    enabled: true,
-    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
-    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
-    // requestPhone needs the Telegram columns, which OIDC-only mode doesn't
-    // add: enable the Mini App or the Login Widget to store phone numbers.
-    requestBotAccess: false,   // request bot access via `telegram:bot_access` scope
-    scopes: [],                // extra scopes, added to openid + profile
-    mapOIDCProfileToUser: (claims) => ({
-      name: claims.preferred_username ?? claims.name,
-    }),
-  },
-})
-```
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | `boolean` | `false` | Turn on Telegram OIDC. Injects a `telegram-oidc` provider into Better Auth's social login system via the `init` hook. |
-| `clientId` | `string` | bot ID from `botToken` | Client ID from BotFather > your bot > Login Widget (it's the bot's id). Required when `botToken` is omitted, and when the OIDC bot isn't the Login Widget bot. |
-| `clientSecret` | `string` | none (required) | Client Secret from the same page. There is no bot-token fallback any more (Telegram never accepted it): startup warns and OIDC logins throw until it's set. |
-| `disableIdTokenSignIn` | `boolean` | `false` | Reject client-submitted ID tokens (`POST /sign-in/social` or `/link-social` with `idToken`), leaving only the redirect flow. |
-| `disableSignUp` | `boolean` | `false` | Only sign in existing users; never create a user from Telegram OIDC (Better Auth redirects with `error=signup_disabled`). |
-| `scopes` | `string[]` | `[]` | Extra OIDC scopes, added to the defaults (`openid`, `profile`), as with Better Auth's built-in providers. |
-| `disableDefaultScope` | `boolean` | `false` | Don't request `profile` (`openid` is always sent). Without it the ID token has no `id`, name or username, so no `telegramId` is copied. |
-| `requestPhone` | `boolean` | `false` | Add the `phone` scope. When the Telegram columns exist, `phone_number` (digits only, no `+`) is copied to `user.telegramPhoneNumber`. In OIDC-only mode there is no such column; the plugin warns at startup. |
-| `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |
-| `mapOIDCProfileToUser` | `function` | `name` (or given + family name, or username), `picture`, placeholder email | Customize `name`, `email` and `image` from `TelegramOIDCClaims`; merged over the defaults. Any `id` it returns is ignored. Returning `telegramId` / `telegramPhoneNumber` does nothing: they're `input: false` and Better Auth drops them. |
-
-OIDC uses Better Auth's built-in social login routes — no custom endpoints. The plugin injects a `telegram-oidc` provider via the `init` hook and Better Auth handles `POST /sign-in/social` and `GET /callback/telegram-oidc` automatically. HTTP Basic client authentication, the nonce and ID token verification are always on; there's nothing to configure. Client-submitted ID tokens are only accepted together with the `nonce` they were issued for, even though Better Auth itself treats it as optional.
-
-When the Login Widget or Mini App is enabled (so the Telegram columns exist), the plugin copies the verified `id`, `preferred_username` and `phone_number` claims onto `user.telegramId`, `user.telegramUsername` and `user.telegramPhoneNumber` after an OIDC sign-in, sign-up or link, and stores `id` / `preferred_username` on the `telegram-oidc` account row too. Claims only apply to the user who owns the `telegram-oidc` account whose id is the token's `sub`. It never overwrites a different `telegramId` and never copies an id another user already has. When a Telegram account is removed, the plugin re-checks `user.telegramId` and clears (or switches) it if no remaining Telegram account proves it.
-
-New OIDC users get the placeholder email `<sub>@telegram-oidc.placeholder.invalid` (v2 used `<sub>@telegram.oidc`; existing users keep what they have).
-
-Missing flow credentials produce setup warnings instead of aborting application startup. The corresponding request still fails closed if the credential is missing when the flow is used. Two more startup warnings exist for configurations that are legal but probably wrong: `miniApp.validateInitData: false`, and Login Widget plus OIDC without an explicit `oidc.clientId` (one bot can't do both).
-
-### Test Server Mode
-
-Telegram runs a [test environment](https://core.telegram.org/bots/webapps#testing-mini-apps) -- separate bots, separate users, separate existential dread. `testMode: true` is purely informational: `GET /telegram/config` returns it so your client can tell which environment it's talking to. It doesn't touch verification or the widget. HMAC verification only depends on the bot token, so a test-environment token just works, and Telegram documents no test variant of the Login Widget or of OIDC.
-
-```typescript
-telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,   // test env token
-  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
-  testMode: true,
-})
-```
-
-If you enable both `testMode` and `oidc`, the plugin logs a `console.warn`: `oauth.telegram.org` has no documented test variant, so OIDC may not play nicely with test-environment bots. You've been warned.
-
-### Lockdown Mode
-
-For the paranoid (read: responsible):
-
-```typescript
-telegram({
-  botToken: process.env.TELEGRAM_BOT_TOKEN!,
-  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
-  autoCreateUser: false,     // No new users. Invite only vibes.
-  allowUserToLink: false,    // No linking. One identity, one account.
-  maxAuthAge: 3600,          // 1 hour. Paranoia pays off.
-})
-```
-
-## Client Configuration
-
-### Setup
-
-`telegramClient()` takes zero arguments. It just works. A concept lost on most SDKs.
-
-```typescript
+```ts
 import { createAuthClient } from "better-auth/client";
 import { telegramClient } from "better-auth-telegram/client";
 
@@ -191,54 +216,21 @@ export const authClient = createAuthClient({
 });
 ```
 
-### Widget Options
+Widget appearance is set per call: see [Usage: widget options](./usage.md#widget-options).
 
-When you call `initTelegramWidget`, the second argument is `TelegramWidgetOptions`:
+## Environment variables
 
-```typescript
-authClient.initTelegramWidget(
-  "container-id",
-  {
-    size: "large",          // "large" | "medium" | "small"
-    showUserPhoto: true,    // Show the user's profile pic on the button
-    cornerRadius: 20,       // Border radius in pixels (0-20)
-    requestAccess: false,   // Request write access to the user's DMs
-    lang: "en",             // Language code -- "en", "ru", "pl", "es", etc.
-  },
-  async (data) => {
-    await authClient.signInWithTelegram(data);
-  }
-);
-```
+The plugin reads nothing from the environment by itself; you pass values in. The names used throughout these docs:
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `size` | `"large" \| "medium" \| "small"` | `"large"` | Button size. |
-| `showUserPhoto` | `boolean` | `true` | Display the user's profile photo on the button. |
-| `cornerRadius` | `number` | `20` | Border radius in pixels. Range: 0-20. |
-| `requestAccess` | `boolean` | `false` | Request permission to DM the user. |
-| `lang` | `string` | browser default | Widget language code. |
+```bash
+TELEGRAM_BOT_TOKEN="110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+TELEGRAM_BOT_USERNAME="my_app_login_bot"
 
-## Environment Variables
-
-The only env vars this plugin cares about:
-
-```env
-TELEGRAM_BOT_TOKEN="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-TELEGRAM_BOT_USERNAME="your_bot_username"
-
-# Only with OIDC (BotFather > your bot > Login Widget)
+# Only for OIDC (BotFather > your bot > Login Widget)
 TELEGRAM_OIDC_CLIENT_ID="1234567890"
-TELEGRAM_OIDC_CLIENT_SECRET="..."
+TELEGRAM_OIDC_CLIENT_SECRET="the Client Secret from BotFather"
+
+# Better Auth's own
+BETTER_AUTH_SECRET="output of: openssl rand -base64 32"
+BETTER_AUTH_URL="https://example.com"
 ```
-
-Everything else -- `BETTER_AUTH_SECRET`, `DATABASE_URL`, your existential dread -- is between you and Better Auth.
-
-Get the bot token from [@BotFather](https://t.me/BotFather). The username is whatever you named your bot, minus the `@`.
-
-## Next Steps
-
-- [API Reference](./api-reference.md) -- every endpoint, spelled out
-- [Mini Apps Guide](./miniapps.md) -- building inside Telegram
-- [Security](./security.md) -- the part you should actually read
-- [Troubleshooting](./troubleshooting.md) -- when it all goes sideways
