@@ -24,7 +24,7 @@ v3 also fixes real bugs (Login Widget and Mini App sign-up failed on SQL databas
 
 ## Before you start
 
-- **Node.js 22 or newer.** Check with `node --version`. (v2 required Node.js 24, so this can only get easier.)
+- **Node.js 24 or newer.** Check with `node --version`. (The same minimum as v2.)
 - **Read Better Auth's own [1.7 upgrade guide](https://www.better-auth.com/docs/guides/1-7-upgrade-guide).** Moving from Better Auth 1.6 to 1.7 has its own changes, independent of this plugin. Do both upgrades together.
 - **Back up your database.** The plugin's changes are additive (one new index), but Better Auth's 1.7 migration may change more.
 - **Try it outside production first**, with your real database adapter.
@@ -34,7 +34,7 @@ v3 also fixes real bugs (Login Widget and Mini App sign-up failed on SQL databas
 ### 1. Update the packages (everyone)
 
 ```bash
-npm install better-auth-telegram better-auth@1.7
+npm install better-auth-telegram@3 better-auth@1.7
 ```
 
 `better-auth@1.7` installs the newest 1.7.x release. If your `package.json` also lists `@better-auth/core` directly, update it to the same version:
@@ -51,10 +51,14 @@ Follow the [Better Auth 1.7 upgrade guide](https://www.better-auth.com/docs/guid
 
 ### 3. Update the database (everyone)
 
+First check for duplicate `(providerId, accountId)` pairs, as Better Auth's [upgrade guide](https://www.better-auth.com/docs/guides/1-7-upgrade-guide#check-for-duplicate-account-keys) requires. Keep different users separate when resolving them. If you briefly ran Better Auth 1.7.0–1.7.2, also follow its steps for the retired `account.issuer` column before applying migrations.
+
+Use the CLI version matching Better Auth. These examples use the tested 1.7.14 release:
+
 ```bash
-npx auth@latest migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
-npx auth@latest generate       # Prisma or Drizzle; then run your ORM's migration
-npx auth@latest check schema   # must print "Schema check passed against the live database."
+npx auth@1.7.14 migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
+npx auth@1.7.14 generate       # Prisma or Drizzle; then run your ORM's migration
+npx auth@1.7.14 check schema   # must print "Schema check passed against the live database."
 ```
 
 Why: Better Auth 1.7.3 and newer answers **every** request with HTTP 500 until the database matches the schema. v3 adds an index on `user.telegramId` (it makes every Login Widget and Mini App sign-in faster). The five Telegram columns are the same as in v2.
@@ -89,7 +93,7 @@ Prisma users who write the schema by hand add the index:
 
 Get both from BotFather's Mini App: your bot > **Login Widget** (older docs called this page "Web Login"). See [Telegram bot setup: OIDC](./telegram-bot-setup.md#oidc).
 
-**Login Widget and OIDC on the same bot?** That can't work: switching a bot to OpenID Connect permanently turns off its Login Widget. v3 warns at startup. Move OIDC to a second bot (`oidc.clientId` + `oidc.clientSecret` of that bot), or turn the widget off with `loginWidget: false`.
+**Login Widget and OIDC on the same bot?** That can't work: switching a bot to OpenID Connect permanently turns off its Login Widget. v3 warns at startup. If you already have OIDC users, keep their OIDC bot and either turn the widget off (`loginWidget: false`) or create a separate bot for the widget (`botToken` + `botUsername`). Changing the OIDC bot changes every user's `sub` and can create separate accounts. Only move OIDC to a new bot when you have no existing OIDC users or have planned an identity migration.
 
 ### 5. OIDC: the `id` claim is a string (OIDC users with TypeScript code that reads it)
 
@@ -164,6 +168,7 @@ Mapper output is now **merged over the defaults** and filtered like a Better Aut
 In v2, Login Widget and Mini App sign-ups wrote to the database directly, so your hooks never saw them. In v3 they go through Better Auth:
 
 - `databaseHooks` run for Telegram users, accounts and sessions. A `user.create.before` hook that returns `false` now blocks Telegram sign-ups (403 `USER_CREATION_REJECTED`).
+- A refused account creation returns 403 `ACCOUNT_CREATION_REJECTED`; refused unlink or identity updates return `ACCOUNT_UNLINK_REJECTED` / `IDENTITY_UPDATE_REJECTED`. A stale profile Telegram ID alone never grants sign-in. Enable transactions in your adapter if you depend on all writes rolling back together.
 - `user.validateUserInfo` now runs for Login Widget and Mini App sign-ups (`"create-user"`), returning users (`"sign-in"`) and links (`"link-account"`), with `source.method` `"telegram-login-widget"` or `"telegram-mini-app"`. If it throws, the request fails with 403.
 
 Make sure your hooks expect Telegram users, for example users with a placeholder email:
@@ -273,7 +278,7 @@ These still work, but you can remove them:
 ## Check that the upgrade worked
 
 1. `npm ls better-auth-telegram better-auth` shows 3.x and 1.7.12 or newer.
-2. `npx auth@latest check schema` prints `Schema check passed against the live database.`
+2. `npx auth@1.7.14 check schema` prints `Schema check passed against the live database.`
 3. The server starts without `[better-auth-telegram]` warnings ([what they mean](./configuration.md#startup-warnings)).
 4. `GET /api/auth/telegram/config` lists the methods you expect as enabled.
 5. Sign in once with each method you use. A **new** Telegram user gets an email ending in `.placeholder.invalid`; existing users keep theirs.
@@ -315,7 +320,7 @@ Steps 1, 2 and 3, then step 12 if you offer an unlink button.
 In v2 it was never called for Login Widget and Mini App users. Now it is, with `source.method` `"telegram-login-widget"` or `"telegram-mini-app"`. See [step 10](#10-review-your-hooks-if-you-use-databasehooks-or-uservalidateuserinfo).
 
 **A user unlinked Telegram. What happens if they sign in with it again?**
-They get a new user. The old user keeps its placeholder email, so the new one gets another reserved placeholder (`<telegramId>.<random>@telegram.placeholder.invalid`). Unlinking really separates the two.
+With the default email mapping, they get a new user, for the Login Widget, Mini App and OIDC. The old user keeps its placeholder email, so the new one gets another reserved placeholder (`<telegramId>.<random>@telegram.placeholder.invalid`, or `<sub>.<random>@telegram-oidc.placeholder.invalid`). Custom mapper emails follow that flow's account-linking policy. Existing Better Auth sessions remain active until you revoke them separately.
 
 **Is anything faster or simpler now?**
 Yes: `useSession()` updates by itself after Telegram sign-in, link and unlink; error codes are typed and exported; the widget helpers return `destroy()`; `session.user.telegramId` is typed on the server and client; and the plugin reports configuration mistakes at startup through Better Auth's logger.

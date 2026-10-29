@@ -56,11 +56,11 @@ What this prevents: forged tokens (only Telegram has the private key), tokens is
 
 ## Account safety rules
 
-**One Telegram identity per user, one user per Telegram identity.** Linking a Telegram account that belongs to someone else answers 409 `TELEGRAM_ALREADY_LINKED_OTHER`, also when another user only has that Telegram ID on their profile (for example from OIDC). Linking a second, different Telegram account to a user answers 409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`.
+**The Login Widget link route accepts one Telegram identity per user.** `/telegram/link` refuses an identity belonging to someone else (409 `TELEGRAM_ALREADY_LINKED_OTHER`), including a Telegram ID already on another user's profile. A second, different identity gives 409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`. Better Auth's separate OIDC linking route can attach another OIDC identity; it does not overwrite the user's existing `telegramId`. These checks do not create a database-wide uniqueness constraint.
 
 **Telegram fields can't be edited by users.** `user.telegramId`, `telegramUsername` and `telegramPhoneNumber` are marked `input: false`, so Better Auth's update endpoints ignore them. Only the plugin sets them, from verified Telegram data.
 
-**Unlinking really revokes.** Whenever a `telegram` or `telegram-oidc` account is removed, by `/telegram/unlink`, Better Auth's `/unlink-account` or any other route, a database hook re-checks the user. `user.telegramId` stays only if a remaining Telegram account proves it; otherwise it switches to one that does, or is cleared along with `telegramUsername` and `telegramPhoneNumber`. Without this, an unlinked Telegram account could still sign in through the Login Widget or Mini App, which find users by `telegramId`. (Only removals through Better Auth trigger the hook. If you delete account rows with SQL, clear `user.telegramId` yourself.)
+**Unlinking revokes the account's sign-in access.** Whenever a `telegram` or `telegram-oidc` account is removed through Better Auth, a database hook re-checks the user. `user.telegramId` stays only if a remaining Telegram account proves it; otherwise it switches to one that does, or is cleared along with `telegramUsername` and `telegramPhoneNumber`. Sign-in independently checks that a linked account proves the profile's Telegram ID, so a stale field left by a vetoed update cannot restore access. Direct SQL deletion does not run hooks; clear the profile fields yourself to keep displayed data accurate. Existing Better Auth sessions remain active; revoke those separately when your policy requires it.
 
 **Unlinking needs a recent sign-in, and never strands the user.** `/telegram/unlink` requires a session younger than `session.freshAge` (403 `SESSION_NOT_FRESH`), so an old stolen session can't remove the owner's Telegram login. It refuses to remove the last sign-in method (400 `CANNOT_UNLINK_LAST_ACCOUNT`) unless you set `account.accountLinking.allowUnlinkingAll: true`.
 
@@ -74,7 +74,7 @@ What this prevents: forged tokens (only Telegram has the private key), tokens is
 
 The plugin creates users, accounts and sessions through Better Auth's internal adapter, so your Better Auth hooks see them:
 
-- **`databaseHooks`** run for user, account and session changes. A hook that refuses a new user (returns `false` from `user.create.before`) gives 403 `USER_CREATION_REJECTED`. A hook that refuses the session gives 401 `FAILED_TO_CREATE_SESSION`. A new user and their Telegram account are written in one transaction, as are links.
+- **`databaseHooks`** run for user, account and session changes. A refused new user gives 403 `USER_CREATION_REJECTED`; a refused account creation gives 403 `ACCOUNT_CREATION_REJECTED`; a refused session gives 401 `FAILED_TO_CREATE_SESSION`. Required identity updates and account removals also fail explicitly (`IDENTITY_UPDATE_REJECTED`, `ACCOUNT_UNLINK_REJECTED`). The plugin uses transactions for sign-up, link and unlink; rollback requires transaction support in your adapter (enable `transaction: true` for Drizzle or Prisma). On a nontransactional adapter, a refused later write can leave earlier writes in place. Inspect the error and stored accounts before retrying.
 - **`user.validateUserInfo`** is called for every Login Widget and Mini App step, with `source.method` set to `"telegram-login-widget"` or `"telegram-mini-app"` and `source.action` set to:
   - `"create-user"` for a new user,
   - `"sign-in"` for a returning user,
@@ -110,13 +110,13 @@ Login Widget data and Mini App `initData` contain no one-time value. Telegram's 
 
 ID-token sign-in (`/sign-in/social` with `idToken`) requires the token's nonce, but the nonce travels with the token, so a captured token works until it expires: 30 seconds plus 30 seconds of clock tolerance. The redirect flow is not affected. If you don't use ID-token sign-in, set `oidc.disableIdTokenSignIn: true`. Details: [OIDC](./oidc.md#sign-in-with-an-id-token-you-already-have).
 
-### A new bot token logs everyone out of the Login Widget and Mini App
+### A new bot token invalidates old Telegram sign-in data
 
-The bot token is the signing key. BotFather creates a new token by revoking the old one, so there is no overlap: once you deploy the new token, data signed with the old one is refused (401). Users sign in again, and Mini Apps opened before the switch must be reopened. Plan a short window. See [Changing the bot token](./telegram-bot-setup.md#changing-the-bot-token-later).
+The bot token is the signing key. BotFather creates a new token by revoking the old one, so there is no overlap: once you deploy the new token, data signed with the old one is refused (401). Existing Better Auth sessions remain valid. Users attempting a new sign-in need fresh Telegram data; a Mini App opened before the switch must be reopened. Plan a short window. See [Changing the bot token](./telegram-bot-setup.md#changing-the-bot-token-later).
 
 ### Simultaneous first sign-ins on several servers
 
-If the same new Telegram user signs in twice at the same moment (a double click, React running an effect twice), one server handles the two requests one after the other and creates one user. Across several servers, the database decides. With the built-in Kysely adapter (PostgreSQL, MySQL, SQLite) this is safe: the user and account are written in one transaction, and `user.email` is unique. On MongoDB, and on Drizzle or Prisma without `transaction: true`, two servers can still create a duplicate user or account if they sign in the same new user within milliseconds.
+Login Widget and Mini App requests for the same Telegram ID are serialized within one Better Auth instance; explicit links are also serialized by target user. Across instances, this is not a distributed lock. With the built-in Kysely adapter, the normal first sign-up benefits from a transaction and a unique, deterministic placeholder email. That protection does not cover every case: after unlinking, replacement placeholders differ between requests; mapper emails can differ too. OIDC uses Better Auth's own concurrency handling. Multiple servers can still create duplicate Telegram accounts, and nontransactional adapters can leave partial writes. Do not treat the profile index as a uniqueness constraint; check this boundary in your deployment if simultaneous requests can reach different instances.
 
 ### Telegram signing-key rotation
 
@@ -127,7 +127,7 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 - Two-factor authentication is skipped for Telegram sign-ins ([above](#two-factor-authentication)).
 - Third-party Ed25519 validation of Mini App `initData` is not implemented ([above](#mini-app)).
 - OIDC sign-in doesn't find an existing Login Widget or Mini App user yet ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)).
-- A user who unlinked Telegram keeps their placeholder email. If that same Telegram account signs up again, it becomes a new user with another reserved placeholder (`<telegramId>.<random>@telegram.placeholder.invalid`); the old user isn't touched.
+- A user who unlinked Telegram keeps their placeholder email. A later sign-in with the default email mapping creates a new user with another reserved placeholder, for the Login Widget, Mini App and OIDC. Custom mapper emails follow the documented rules for that flow.
 
 ## Keeping secrets safe
 
@@ -139,7 +139,7 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 ## Production checklist
 
 - [ ] Better Auth is 1.7.12 or newer (`npm ls better-auth`).
-- [ ] `npx auth@latest check schema` passes against the production database.
+- [ ] `npx auth@1.7.14 check schema` passes against the production database.
 - [ ] The server starts without `[better-auth-telegram]` warnings.
 - [ ] Secrets are in environment variables, not in code or git.
 - [ ] Your site uses HTTPS, and Better Auth's cookies are secure (the default in production).

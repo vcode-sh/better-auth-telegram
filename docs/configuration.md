@@ -160,11 +160,11 @@ export const auth = betterAuth({
 
 Rules, so there are no surprises:
 
-- **Mappers run only when a user is created.** Existing users are not changed when they sign in again (except `telegramUsername`, which the plugin keeps current).
+- **Mappers run on every sign-in attempt.** Keep them safe to call again. Their mapped profile values are stored when a user is created; returning users keep their name, image and email. Verified Telegram identity fields are refreshed separately.
 - **Only known fields are kept.** Mapper output is filtered like a Better Auth OAuth profile: fields that aren't in your user schema, or that users may not set (`input: false`), are dropped. That includes the plugin's own `telegramId`, `telegramUsername` and `telegramPhoneNumber`, which the plugin fills itself.
 - **The Login Widget and Mini App mappers can't set `id` or `emailVerified`.** An email from a mapper is stored as unverified, because Telegram didn't verify it.
 - **The OIDC mapper can't set `id` or `emailVerified`** (both are ignored). Telegram verifies no email, and Better Auth links a sign-in to an existing user when the email is marked verified, so a mapper must not be able to vouch for one.
-- **An email that another user already has** is refused with 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. The plugin never links the Telegram user to that other user.
+- **A Login Widget or Mini App mapper email that another user already has** is refused with 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. OIDC follows Better Auth's OAuth linking rules: by default an email collision gives `account_not_linked`; deliberately trusting a provider for email linking changes that policy. Keep the default placeholder unless you have independently established who owns an email.
 
 ## Better Auth options that affect Telegram sign-in
 

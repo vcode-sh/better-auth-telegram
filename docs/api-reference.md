@@ -424,6 +424,7 @@ Each step calls `user.validateUserInfo` with `source.method: "telegram-login-wid
 | 403 | `INVALID_ORIGIN` | Browser request from an untrusted origin |
 | 403 | your code / `validation_failed` | `user.validateUserInfo` refused / threw |
 | 403 | `USER_CREATION_REJECTED` | A database hook refused the new user |
+| 403 | `ACCOUNT_CREATION_REJECTED` | A database hook refused the Telegram account |
 | 404 | `USER_CREATION_DISABLED` | No such user and `autoCreateUser: false` |
 | 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | The email your mapper returned belongs to another user |
 | 500 | `BOT_TOKEN_REQUIRED` | No `botToken` |
@@ -441,6 +442,7 @@ Links Login Widget data to the signed-in user (`sessionMiddleware`). Calls `user
 | 401 | `INVALID_AUTHENTICATION` | As for sign-in |
 | 401 | `UNAUTHORIZED` | No session |
 | 403 | `LINKING_DISABLED` | `allowUserToLink: false`, or `account.accountLinking.enabled: false` |
+| 403 | `ACCOUNT_CREATION_REJECTED` / `IDENTITY_UPDATE_REJECTED` | A hook refused the account or required profile update |
 | 403 | your code / `validation_failed` | `user.validateUserInfo` refused / threw |
 | 409 | `TELEGRAM_ALREADY_LINKED_OTHER` | Another user has this Telegram account, or this `telegramId` on their profile |
 | 409 | `TELEGRAM_ALREADY_LINKED_SELF` | Already linked to this user |
@@ -458,6 +460,7 @@ Removes the user's `telegram` account. Needs a fresh session (`freshSessionMiddl
 | 400 | `CANNOT_UNLINK_LAST_ACCOUNT` | It's the user's only account and `account.accountLinking.allowUnlinkingAll` isn't `true` |
 | 401 | `UNAUTHORIZED` | No session |
 | 403 | `SESSION_NOT_FRESH` | Session older than `session.freshAge` (default 1 day) |
+| 403 | `ACCOUNT_UNLINK_REJECTED` / `IDENTITY_UPDATE_REJECTED` | Account removal or identity reconciliation was vetoed |
 | 404 | `NOT_LINKED` | The user has no `telegram` account |
 
 ### `GET /telegram/config`
@@ -485,6 +488,7 @@ Signs in, or creates, a user from Mini App `initData`. Sets the session cookie. 
 | 403 | `INVALID_ORIGIN` | Browser request from an untrusted origin |
 | 403 | your code / `validation_failed` | `user.validateUserInfo` refused / threw |
 | 403 | `USER_CREATION_REJECTED` | A database hook refused the new user |
+| 403 | `ACCOUNT_CREATION_REJECTED` | A database hook refused the Telegram account |
 | 404 | `MINI_APP_AUTO_SIGNIN_DISABLED` | No such user, and `autoCreateUser` or `miniApp.allowAutoSignin` is `false` |
 | 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | As for `/telegram/signin` |
 | 500 | `BOT_TOKEN_REQUIRED` | No `botToken` (and `validateInitData` is on) |

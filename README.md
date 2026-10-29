@@ -10,8 +10,8 @@
 
 `better-auth-telegram` is a plugin for [Better Auth](https://www.better-auth.com), the TypeScript authentication library. You add it to your Better Auth setup, and your users can sign in with Telegram in any of three ways. The plugin checks that every sign-in really comes from Telegram, creates the user in your database, and starts a normal Better Auth session.
 
-- Works in Node.js, Bun, Deno, Cloudflare Workers and other edge runtimes (it uses the standard Web Crypto API).
-- Works with every Better Auth database adapter.
+- Uses the standard Web Crypto API; release tests run on Node.js and Bun.
+- Tested with SQLite, PostgreSQL, MySQL, Drizzle, Prisma and MongoDB. Other Better Auth adapters need their own deployment checks.
 - Fully typed: `session.user.telegramId` is known to TypeScript on the server and in the browser.
 
 > **Upgrading from v2?** Read the [v2 to v3 migration guide](docs/migration-v2-to-v3.md). v3 requires Better Auth 1.7, which fixes a critical security issue.
@@ -50,7 +50,7 @@ New words? The [glossary](docs/README.md#glossary) explains bots, BotFather, OID
 
 ## Requirements
 
-- **Node.js 22 or newer** (Bun works too).
+- **Node.js 24 or newer** (Bun works too).
 - **Better Auth 1.7.12 or newer, below 1.8**: `better-auth` and `@better-auth/core` `>=1.7.12 <1.8.0`. Better Auth 1.6 is not supported, because it has a critical security issue with no 1.6 fix ([details](docs/migration-v2-to-v3.md#why-upgrade)).
 - **A Telegram account**, to create a bot.
 - **A public HTTPS address** for your app. Telegram does not work with `localhost`. During development, a tunnel such as [ngrok](https://ngrok.com) gives your local server a public HTTPS address.
@@ -99,7 +99,7 @@ BETTER_AUTH_URL="https://abc123.ngrok-free.app"                     # your tunne
 
 ### 4. Set up the server
 
-Create `auth.ts`. This uses the SQLite database built into Node.js (`node:sqlite`, available without flags from Node.js 22.13), so there is nothing else to install. For PostgreSQL, MySQL, Prisma, Drizzle or MongoDB, change the `database` line as shown in [Better Auth's database docs](https://www.better-auth.com/docs/concepts/database).
+Create `auth.ts`. This uses the SQLite database built into Node.js (`node:sqlite`), so there is nothing else to install. For PostgreSQL, MySQL, Prisma, Drizzle or MongoDB, change the `database` line as shown in [Better Auth's database docs](https://www.better-auth.com/docs/concepts/database).
 
 ```ts
 // auth.ts
@@ -135,11 +135,11 @@ Using something else? Better Auth has a page for [each framework](https://www.be
 ### 6. Create the database tables
 
 ```bash
-npx auth@latest migrate
-npx auth@latest check schema
+npx auth@1.7.14 migrate
+npx auth@1.7.14 check schema
 ```
 
-The first command creates Better Auth's tables plus the plugin's Telegram columns. The second should print `Schema check passed against the live database.` Using Prisma or Drizzle? Run `npx auth@latest generate` instead of `migrate`, then your ORM's own migration ([details](docs/installation.md#3-update-your-database)).
+The first command creates Better Auth's tables plus the plugin's Telegram columns. The second should print `Schema check passed against the live database.` Using Prisma or Drizzle? Run `npx auth@1.7.14 generate` instead of `migrate`, then your ORM's own migration ([details](docs/installation.md#3-update-your-database)).
 
 > **Don't skip this step.** Better Auth refuses to answer any auth request (HTTP 500, "schema mismatch") until the database has every column it expects.
 

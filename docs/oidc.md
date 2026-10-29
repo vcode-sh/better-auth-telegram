@@ -92,7 +92,7 @@ All OIDC options are in [Configuration: OIDC](./configuration.md#oidc-options).
 
 ### 3. Update the database
 
-Run `npx auth@latest migrate` (or `generate` for Prisma and Drizzle), then `npx auth@latest check schema`, as in [Installation](./installation.md#3-update-your-database). An OIDC-only setup adds no columns of its own, but Better Auth's own tables must exist.
+Run `npx auth@1.7.14 migrate` (or `generate` for Prisma and Drizzle), then `npx auth@1.7.14 check schema`, as in [Installation](./installation.md#3-update-your-database). An OIDC-only setup adds no columns of its own, but Better Auth's own tables must exist.
 
 ## Add the sign-in button
 
@@ -170,7 +170,9 @@ export const telegramPlugin = telegram({
 });
 ```
 
-The result is merged over the defaults above, and any `id` it returns is ignored. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself. Don't return `emailVerified: true`: Telegram never verifies an email address, and Better Auth would trust it, for example when deciding whether to link the sign-in to an existing user with the same email.
+The mapper runs on every sign-in attempt; its profile values are stored for new users. The result is merged over the defaults above. Both `id` and `emailVerified` are ignored, and a mapper email stays unverified: Telegram verifies no email address. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself.
+
+If an OIDC account was unlinked, the old user keeps their email. A later sign-in uses a new reserved placeholder (`<sub>.<random>@telegram-oidc.placeholder.invalid`) for a new user, so the old email neither blocks sign-in nor reconnects the detached account. A custom mapper email still follows your Better Auth account-linking policy.
 
 ## Phone numbers
 

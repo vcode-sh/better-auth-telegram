@@ -6,7 +6,7 @@ import { telegram } from "better-auth-telegram";
 import { Pool } from "pg";
 
 export const auth = betterAuth({
-  // Better Auth's built-in Kysely adapter; run `npx auth@latest migrate`.
+  // Better Auth's built-in Kysely adapter; run `npx auth@1.7.14 migrate`.
   database: new Pool({ connectionString: process.env.DATABASE_URL }),
 
   plugins: [

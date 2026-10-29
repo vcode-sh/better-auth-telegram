@@ -4,7 +4,7 @@ This page sets up the plugin step by step: packages, server, database and client
 
 **What you need first**
 
-- Node.js 22 or newer (or Bun).
+- Node.js 24 or newer (or Bun).
 - A Better Auth app, or a new one. New to Better Auth? Its [installation guide](https://www.better-auth.com/docs/installation) explains the database and route handler in detail; the steps below cover the minimum.
 - A Telegram bot. [Telegram bot setup](./telegram-bot-setup.md) shows how to create one in a few minutes.
 - A public HTTPS address. During development, a [tunnel](#local-development-with-a-tunnel).
@@ -52,7 +52,7 @@ export const auth = betterAuth({
 
 This turns on the Login Widget with sensible defaults: new Telegram users are created automatically (`autoCreateUser: true`), signed-in users may link Telegram (`allowUserToLink: true`), and sign-in data older than 24 hours is refused (`maxAuthAge: 86400`). Every option is explained in [Configuration](./configuration.md).
 
-**The database.** `node:sqlite` is SQLite built into Node.js (no flag needed from Node.js 22.13). For a real app, use your own database: a PostgreSQL or MySQL connection pool, or the Prisma, Drizzle or MongoDB adapter. [Better Auth's database docs](https://www.better-auth.com/docs/concepts/database) show each one.
+**The database.** `node:sqlite` is SQLite built into the supported Node.js versions. For a real app, use your own database: a PostgreSQL or MySQL connection pool, or the Prisma, Drizzle or MongoDB adapter. [Better Auth's database docs](https://www.better-auth.com/docs/concepts/database) show each one.
 
 **Route handler.** Better Auth needs to receive requests under `/api/auth`. In Next.js (App Router):
 
@@ -86,13 +86,13 @@ Let Better Auth's CLI do the work. Which command depends on how you connect to t
 
 ```bash
 # Built-in Kysely adapter (a pg/mysql2 pool, SQLite): applies the changes directly
-npx auth@latest migrate
+npx auth@1.7.14 migrate
 
 # Prisma or Drizzle: writes the schema file, then run your ORM's migration
-npx auth@latest generate
+npx auth@1.7.14 generate
 
 # Everyone: confirm the database matches
-npx auth@latest check schema
+npx auth@1.7.14 check schema
 ```
 
 `check schema` should print `Schema check passed against the live database.`
@@ -175,7 +175,7 @@ Free ngrok addresses change every time ngrok restarts. When that happens, repeat
 
 ## Check that it works
 
-1. `npx auth@latest check schema` passes.
+1. `npx auth@1.7.14 check schema` passes.
 2. The server starts without `[better-auth-telegram]` warnings.
 3. `https://<your domain>/api/auth/telegram/config` returns your bot's username, for example `{"botUsername":"my_app_login_bot","loginWidgetEnabled":true,...}`.
 4. Your sign-in button appears and signing in creates a user with a `telegramId`.

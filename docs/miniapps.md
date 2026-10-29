@@ -41,7 +41,7 @@ export const auth = betterAuth({
 });
 ```
 
-Then update the database: `npx auth@latest migrate` (or `generate` for Prisma and Drizzle) and `npx auth@latest check schema`. The Mini App needs the [five Telegram columns](./installation.md#3-update-your-database).
+Then update the database: `npx auth@1.7.14 migrate` (or `generate` for Prisma and Drizzle) and `npx auth@1.7.14 check schema`. The Mini App needs the [five Telegram columns](./installation.md#3-update-your-database).
 
 Mini App options (all optional):
 

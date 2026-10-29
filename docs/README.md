@@ -58,7 +58,7 @@ Welcome. This page tells you where to find each answer, and explains the words t
 
 **Tunnel.** A tool such as [ngrok](https://ngrok.com) that gives your local development server a public HTTPS address. Telegram doesn't accept `localhost`, so you need one during development.
 
-**Migration (database).** Changing your database tables to match what your code expects. Better Auth's CLI does this for you: `npx auth@latest migrate` or `npx auth@latest generate`.
+**Migration (database).** Changing your database tables to match what your code expects. Better Auth's CLI does this for you: `npx auth@1.7.14 migrate` or `npx auth@1.7.14 generate`.
 
 ## Links
 

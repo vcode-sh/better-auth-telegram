@@ -112,7 +112,7 @@ The plugin logs a warning at startup when the Login Widget and OIDC are both ena
 If your bot token leaks, get a new one from BotFather right away. Plan for these effects:
 
 - **BotFather creates the new token by revoking the old one**, so there is no period when both work. Update `TELEGRAM_BOT_TOKEN` and redeploy as soon as you have it.
-- The token is also the key Telegram signs Login Widget and Mini App data with. Data signed with the old token is rejected (401). Users sign in again, and a Mini App opened before the switch must be closed and reopened.
+- The token is also the key Telegram signs Login Widget and Mini App data with. Data signed with the old token is rejected (401). Existing Better Auth sessions remain valid. For a new sign-in, get fresh Telegram data; a Mini App opened before the switch must be closed and reopened.
 - OIDC doesn't use the bot token, so OIDC sign-ins are not affected.
 
 ## Telegram's test environment

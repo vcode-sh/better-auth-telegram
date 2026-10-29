@@ -45,9 +45,9 @@ Find what you see, then follow the fix. Each entry is: **what you see**, why it 
 **Fix:**
 
 ```bash
-npx auth@latest migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
-npx auth@latest generate       # Prisma or Drizzle; then run your ORM's migration
-npx auth@latest check schema   # should print "Schema check passed against the live database."
+npx auth@1.7.14 migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
+npx auth@1.7.14 generate       # Prisma or Drizzle; then run your ORM's migration
+npx auth@1.7.14 check schema   # should print "Schema check passed against the live database."
 ```
 
 Upgrading from v2? Run it anyway: v3 adds an index on `user.telegramId`. In OIDC-only mode the plugin adds no columns, so a mismatch there comes from Better Auth's own tables. More: [Installation: database](./installation.md#3-update-your-database).
@@ -108,7 +108,7 @@ Check these in order:
 **Why:** the signature check failed or the data is too old. Common causes:
 
 1. **Wrong bot token.** `TELEGRAM_BOT_TOKEN` belongs to a different bot than the button (`botUsername`). They must be the same bot.
-2. **The token changed.** Data signed with an old token is refused. Users sign in again.
+2. **The token changed.** Data signed with an old token is refused. Start a fresh Telegram sign-in or reopen the Mini App. Existing Better Auth sessions are unaffected.
 3. **The data was changed on the way.** You added, removed or changed a field (for example an empty `last_name`), or the hash isn't 64 lowercase hex characters, or a field contains a line break.
 4. **The data is too old.** `auth_date` is older than `maxAuthAge` (24 hours by default). Common with a cached redirect page; sign in again.
 5. **The server clock is wrong.** Data dated more than 60 seconds in the future is refused. Check the server's time (`date`), and enable time sync.
