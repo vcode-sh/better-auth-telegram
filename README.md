@@ -283,6 +283,7 @@ telegram({
 | `oidc.clientSecret` | — | **Required.** Client Secret from the same page (NOT the bot token; there's no fallback). Startup warns and login throws until it's set |
 | `oidc.disableIdTokenSignIn` | `false` | Reject client-submitted ID tokens on `/sign-in/social` and `/link-social` |
 | `oidc.disableSignUp` | `false` | Only sign in existing users; never create one from OIDC |
+| `oidc.overrideUserInfoOnSignIn` | `false` | Refresh name and photo from Telegram on every OIDC sign-in |
 | `oidc.scopes` | `["openid", "profile"]` | OIDC scopes to request (`openid` is always added) |
 | `oidc.requestPhone` | `false` | Request phone number (adds `phone` scope) |
 | `oidc.requestBotAccess` | `false` | Request bot access (adds `telegram:bot_access` scope) |
@@ -315,7 +316,7 @@ One Telegram user per account: `/telegram/link` with a different Telegram id tha
 
 `/telegram/unlink` uses Better Auth's `freshSessionMiddleware`, like `/unlink-account`: a session older than `session.freshAge` (default 1 day) gets 403 `SESSION_NOT_FRESH`. It also won't remove a user's only account (400 `CANNOT_UNLINK_LAST_ACCOUNT`) unless Better Auth's `account.accountLinking.allowUnlinkingAll` is `true`. Locking people out of their own account is a feature you have to opt into.
 
-The `<id>@telegram.placeholder.invalid` and `<sub>@telegram-oidc.placeholder.invalid` addresses belong to the plugin. Database hooks refuse to create a user with one unless it's the Telegram flow for that exact Telegram id (or the OIDC flow for that `sub`), and refuse to change anyone's email to one. Nobody gets to register `42@telegram.placeholder.invalid` with a password and squat on a Telegram user's account.
+The `<id>@telegram.placeholder.invalid` and `<sub>@telegram-oidc.placeholder.invalid` addresses belong to the plugin. Database hooks refuse to create a user with one unless it's the Telegram flow for that exact Telegram id (or the OIDC flow for that `sub`), and refuse to change anyone's email to one (400 `PLACEHOLDER_EMAIL_RESERVED`). Nobody gets to register `42@telegram.placeholder.invalid` with a password and squat on a Telegram user's account.
 
 All endpoints are rate-limited. Signin/miniapp: 10 req/60s. Link/unlink: 5 req/60s. Validate: 20 req/60s. Brute-forcing was never a strategy, now it's also a throttled one.
 

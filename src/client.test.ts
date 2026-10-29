@@ -1,1187 +1,284 @@
 /**
  * @vitest-environment happy-dom
+ *
+ * Browser-side behavior of the client plugin: the Telegram widget embed and
+ * Mini App initData discovery. Server round trips are covered against a real
+ * Better Auth instance in client.integration.test.ts; here `$fetch` only
+ * supplies the bot configuration the widget needs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { telegramClient } from "./client";
 import type { TelegramAuthData } from "./types";
 
-describe("telegramClient", () => {
-  let mockFetch: any;
-  let client: ReturnType<typeof telegramClient>;
+const WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?24";
 
-  beforeEach(() => {
-    // Create mock fetch function
-    mockFetch = vi.fn();
+const ann: TelegramAuthData = {
+  id: 42,
+  first_name: "Ann",
+  auth_date: 1_761_730_000,
+  hash: "0".repeat(64),
+};
+const bob: TelegramAuthData = { ...ann, id: 43, first_name: "Bob" };
 
-    // Get client instance
-    client = telegramClient();
+let $fetch: ReturnType<typeof vi.fn>;
 
-    // Reset DOM
-    document.body.innerHTML = "";
-    document.head.innerHTML = "";
+function actions() {
+  return telegramClient().getActions($fetch as any);
+}
 
-    // Clear any global Telegram object
+function addContainer(id: string) {
+  const container = document.createElement("div");
+  container.id = id;
+  document.body.appendChild(container);
+  return container;
+}
+
+function widgetScript(containerId = "telegram-login") {
+  return document.getElementById(containerId)!.querySelector("script")!;
+}
+
+/** What Telegram's widget does on login: calls `data-onauth` with `user`. */
+function telegramLogsIn(containerId: string, user: TelegramAuthData) {
+  const onauth = widgetScript(containerId).getAttribute("data-onauth")!;
+  const name = onauth.replace(/\(user\)$/u, "");
+  (window as any)[name](user);
+}
+
+beforeEach(() => {
+  $fetch = vi.fn().mockResolvedValue({ data: { botUsername: "test_bot" } });
+  document.body.innerHTML = "";
+  document.head.innerHTML = "";
+  // The widget script is already on the page unless a test removes it.
+  (window as any).Telegram = { Login: {} };
+  window.location.hash = "";
+  addContainer("telegram-login");
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  (window as any).happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
+});
+
+describe("initTelegramWidget", () => {
+  it("rejects instead of rendering a widget for an empty bot username", async () => {
+    $fetch.mockResolvedValueOnce({ data: { botUsername: "" } });
+
+    await expect(
+      actions().initTelegramWidget("telegram-login", {}, () => {})
+    ).rejects.toThrow("Telegram plugin: botUsername is required");
+    expect(document.querySelector("script")).toBeNull();
+  });
+
+  it("replaces previous content, so a re-render does not stack two widgets", async () => {
+    const container = document.getElementById("telegram-login")!;
+    container.innerHTML = "<div>Old content</div>";
+
+    await actions().initTelegramWidget("telegram-login", {}, () => {});
+    await actions().initTelegramWidget("telegram-login", {}, () => {});
+
+    expect(container.querySelector("div")).toBeNull();
+    expect(container.querySelectorAll("script")).toHaveLength(1);
+  });
+
+  it("embeds Telegram's widget script with the documented data attributes", async () => {
+    await actions().initTelegramWidget(
+      "telegram-login",
+      { size: "medium", showUserPhoto: false, cornerRadius: 10, lang: "en" },
+      () => {}
+    );
+
+    const script = widgetScript();
+    expect(script.getAttribute("src")).toBe(WIDGET_SCRIPT);
+    expect(script.getAttribute("data-telegram-login")).toBe("test_bot");
+    expect(script.getAttribute("data-size")).toBe("medium");
+    expect(script.getAttribute("data-userpic")).toBe("false");
+    expect(script.getAttribute("data-radius")).toBe("10");
+    expect(script.getAttribute("data-lang")).toBe("en");
+    expect(script.getAttribute("data-onauth")).toMatch(/^\w+\(user\)$/u);
+  });
+
+  it("uses the documented defaults: large, with photo, radius 20, no write access", async () => {
+    await actions().initTelegramWidget("telegram-login", {}, () => {});
+
+    const script = widgetScript();
+    expect(script.getAttribute("data-size")).toBe("large");
+    expect(script.getAttribute("data-userpic")).toBe("true");
+    expect(script.getAttribute("data-radius")).toBe("20");
+    expect(script.hasAttribute("data-request-access")).toBe(false);
+  });
+
+  it("asks Telegram for write access with requestAccess", async () => {
+    await actions().initTelegramWidget(
+      "telegram-login",
+      { requestAccess: true },
+      () => {}
+    );
+
+    expect(widgetScript().getAttribute("data-request-access")).toBe("write");
+  });
+
+  it("passes the user Telegram returns to onAuth", async () => {
+    const onAuth = vi.fn();
+    await actions().initTelegramWidget("telegram-login", {}, onAuth);
+
+    telegramLogsIn("telegram-login", ann);
+
+    expect(onAuth).toHaveBeenCalledExactlyOnceWith(ann);
+  });
+
+  it("routes each widget's login to its own onAuth, even when created in the same millisecond", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_761_730_000_000);
+    addContainer("widget-b");
+    const onAuthA = vi.fn();
+    const onAuthB = vi.fn();
+    await actions().initTelegramWidget("telegram-login", {}, onAuthA);
+    await actions().initTelegramWidget("widget-b", {}, onAuthB);
+
+    telegramLogsIn("telegram-login", ann);
+    telegramLogsIn("widget-b", bob);
+
+    expect(onAuthA).toHaveBeenCalledExactlyOnceWith(ann);
+    expect(onAuthB).toHaveBeenCalledExactlyOnceWith(bob);
+  });
+
+  it("still reaches onAuth on a second login from the same page", async () => {
+    const onAuth = vi.fn();
+    await actions().initTelegramWidget("telegram-login", {}, onAuth);
+
+    telegramLogsIn("telegram-login", ann);
+    telegramLogsIn("telegram-login", bob);
+
+    expect(onAuth.mock.calls).toEqual([[ann], [bob]]);
+  });
+
+  it("reports a failing onAuth with console.error instead of an unhandled rejection", async () => {
+    const failure = new Error("sign-in failed");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      await actions().initTelegramWidget("telegram-login", {}, () =>
+        Promise.reject(failure)
+      );
+
+      telegramLogsIn("telegram-login", ann);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining("onAuth"),
+        failure
+      );
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+});
+
+describe("initTelegramWidgetRedirect", () => {
+  it("sends the login to data-auth-url and not to a callback", async () => {
+    await actions().initTelegramWidgetRedirect(
+      "telegram-login",
+      "/auth/callback",
+      {}
+    );
+
+    const script = widgetScript();
+    expect(script.getAttribute("src")).toBe(WIDGET_SCRIPT);
+    expect(script.getAttribute("data-telegram-login")).toBe("test_bot");
+    expect(script.getAttribute("data-auth-url")).toBe("/auth/callback");
+    expect(script.hasAttribute("data-onauth")).toBe(false);
+  });
+
+  it("uses the documented defaults: large, with photo, radius 20", async () => {
+    await actions().initTelegramWidgetRedirect("telegram-login", "/cb", {});
+
+    const script = widgetScript();
+    expect(script.getAttribute("data-size")).toBe("large");
+    expect(script.getAttribute("data-userpic")).toBe("true");
+    expect(script.getAttribute("data-radius")).toBe("20");
+    expect(script.hasAttribute("data-request-access")).toBe(false);
+  });
+
+  it("applies every widget option", async () => {
+    await actions().initTelegramWidgetRedirect("telegram-login", "/cb", {
+      size: "small",
+      showUserPhoto: false,
+      cornerRadius: 5,
+      requestAccess: true,
+      lang: "pl",
+    });
+
+    const script = widgetScript();
+    expect(script.getAttribute("data-size")).toBe("small");
+    expect(script.getAttribute("data-userpic")).toBe("false");
+    expect(script.getAttribute("data-radius")).toBe("5");
+    expect(script.getAttribute("data-request-access")).toBe("write");
+    expect(script.getAttribute("data-lang")).toBe("pl");
+  });
+
+  it("replaces previous content, so a re-render does not stack two widgets", async () => {
+    const container = document.getElementById("telegram-login")!;
+    container.innerHTML = "<p>Old content</p>";
+
+    await actions().initTelegramWidgetRedirect("telegram-login", "/cb", {});
+
+    expect(container.querySelector("p")).toBeNull();
+    expect(container.querySelectorAll("script")).toHaveLength(1);
+  });
+});
+
+describe("loading Telegram's widget script", () => {
+  it("loads the script into <head> once when it is not on the page yet", async () => {
     (window as any).Telegram = undefined;
-    window.location.hash = "";
+
+    await actions().initTelegramWidget("telegram-login", {}, () => {});
+
+    const loaded = document.head.querySelectorAll("script");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]!.getAttribute("src")).toBe(WIDGET_SCRIPT);
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-    vi.unstubAllGlobals();
+  it("rejects without rendering a widget when the script fails to load", async () => {
+    (window as any).Telegram = undefined;
+    // happy-dom then logs a DOMException for the refused load; that is expected.
+    (window as any).happyDOM.settings.handleDisabledFileLoadingAsSuccess =
+      false;
+
+    await expect(
+      actions().initTelegramWidget("telegram-login", {}, () => {})
+    ).rejects.toThrow("Failed to load Telegram widget script");
+    expect(
+      document.getElementById("telegram-login")!.querySelector("script")
+    ).toBeNull();
   });
+});
 
-  describe("Plugin structure", () => {
-    it("should have correct plugin id", () => {
-      expect(client.id).toBe("telegram");
-    });
+describe("autoSignInFromMiniApp", () => {
+  it("reads tgWebAppData from the URL fragment once decoded when the SDK is absent", async () => {
+    // Telegram's launch parameters: initData is URL-encoded inside the fragment.
+    const initData = "user=%7B%22id%22%3A7%7D&auth_date=1761730000&hash=abc123";
+    (window as any).Telegram = undefined;
+    window.location.hash = `#tgWebAppVersion=9.0&tgWebAppData=${encodeURIComponent(initData)}&tgWebAppPlatform=ios`;
 
-    it("should export required actions", () => {
-      const actions = client.getActions(mockFetch);
+    await actions().autoSignInFromMiniApp();
 
-      expect(actions).toHaveProperty("signInWithTelegram");
-      expect(actions).toHaveProperty("linkTelegram");
-      expect(actions).toHaveProperty("unlinkTelegram");
-      expect(actions).toHaveProperty("getTelegramConfig");
-      expect(actions).toHaveProperty("initTelegramWidget");
-      expect(actions).toHaveProperty("initTelegramWidgetRedirect");
-    });
-
-    it("should have all actions as functions", () => {
-      const actions = client.getActions(mockFetch);
-
-      expect(typeof actions.signInWithTelegram).toBe("function");
-      expect(typeof actions.linkTelegram).toBe("function");
-      expect(typeof actions.unlinkTelegram).toBe("function");
-      expect(typeof actions.getTelegramConfig).toBe("function");
-      expect(typeof actions.initTelegramWidget).toBe("function");
-      expect(typeof actions.initTelegramWidgetRedirect).toBe("function");
-    });
-  });
-
-  describe("signInWithTelegram", () => {
-    it("should call fetch with correct endpoint and method", async () => {
-      const authData: TelegramAuthData = {
-        id: 123456789,
-        first_name: "John",
-        last_name: "Doe",
-        username: "johndoe",
-        auth_date: 1234567890,
-        hash: "abc123",
-      };
-
-      mockFetch.mockResolvedValueOnce({ data: { user: {}, session: {} } });
-
-      const actions = client.getActions(mockFetch);
-      await actions.signInWithTelegram(authData);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/signin", {
-        method: "POST",
-        body: authData,
-      });
-    });
-
-    it("should return response from fetch", async () => {
-      const authData: TelegramAuthData = {
-        id: 123456789,
-        first_name: "John",
-        auth_date: 1234567890,
-        hash: "abc123",
-      };
-
-      const expectedResponse = {
-        data: {
-          user: { id: "user_123", name: "John" },
-          session: { id: "session_456" },
-        },
-      };
-
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.signInWithTelegram(authData);
-
-      expect(result).toEqual(expectedResponse);
-    });
-
-    it("should handle minimal auth data", async () => {
-      const minimalAuthData: TelegramAuthData = {
-        id: 123,
-        first_name: "User",
-        auth_date: 123456,
-        hash: "hash",
-      };
-
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.signInWithTelegram(minimalAuthData);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/signin", {
-        method: "POST",
-        body: minimalAuthData,
-      });
+    expect($fetch).toHaveBeenCalledExactlyOnceWith("/telegram/miniapp/signin", {
+      method: "POST",
+      body: { initData },
     });
   });
 
-  describe("linkTelegram", () => {
-    it("should call fetch with correct endpoint and method", async () => {
-      const authData: TelegramAuthData = {
-        id: 123456789,
-        first_name: "John",
-        auth_date: 1234567890,
-        hash: "abc123",
-      };
-
-      mockFetch.mockResolvedValueOnce({ data: { success: true } });
-
-      const actions = client.getActions(mockFetch);
-      await actions.linkTelegram(authData);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/link", {
-        method: "POST",
-        body: authData,
-      });
-    });
-
-    it("should return response from fetch", async () => {
-      const authData: TelegramAuthData = {
-        id: 123456789,
-        first_name: "John",
-        auth_date: 1234567890,
-        hash: "abc123",
-      };
-
-      const expectedResponse = { data: { success: true, message: "Linked" } };
-
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.linkTelegram(authData);
-
-      expect(result).toEqual(expectedResponse);
-    });
-  });
-
-  describe("unlinkTelegram", () => {
-    it("should call fetch with correct endpoint and method", async () => {
-      mockFetch.mockResolvedValueOnce({ data: { success: true } });
-
-      const actions = client.getActions(mockFetch);
-      await actions.unlinkTelegram();
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/unlink", {
-        method: "POST",
-      });
-    });
-
-    it("should not send any body", async () => {
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.unlinkTelegram();
-
-      const [callArgs] = mockFetch.mock.calls;
-      expect(callArgs[1]).not.toHaveProperty("body");
-    });
-
-    it("should return response from fetch", async () => {
-      const expectedResponse = { data: { success: true } };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.unlinkTelegram();
-
-      expect(result).toEqual(expectedResponse);
-    });
-  });
-
-  describe("getTelegramConfig", () => {
-    it("should call fetch with correct endpoint and method", async () => {
-      mockFetch.mockResolvedValueOnce({
-        data: { botUsername: "test_bot" },
-      });
-
-      const actions = client.getActions(mockFetch);
-      await actions.getTelegramConfig();
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
-        method: "GET",
-      });
-    });
-
-    it("should return bot configuration", async () => {
-      const expectedResponse = { data: { botUsername: "my_auth_bot" } };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.getTelegramConfig();
-
-      expect(result).toEqual(expectedResponse);
-    });
-
-    it("should return testMode in config response", async () => {
-      const expectedResponse = {
-        data: { botUsername: "test_bot", testMode: true },
-      };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.getTelegramConfig();
-
-      expect(result.data?.testMode).toBe(true);
-    });
-  });
-
-  describe("initTelegramWidget", () => {
-    beforeEach(() => {
-      // Create container element
-      const container = document.createElement("div");
-      container.id = "telegram-login";
-      document.body.appendChild(container);
-
-      // Mock Telegram object (script already loaded)
-      (window as any).Telegram = { Login: {} };
-
-      // Mock bot config response
-      mockFetch.mockResolvedValue({
-        data: { botUsername: "test_bot" },
-      });
-    });
-
-    it("should throw error if container doesn't exist", async () => {
-      const actions = client.getActions(mockFetch);
-
-      await expect(
-        actions.initTelegramWidget("nonexistent-container", {}, async () => {})
-      ).rejects.toThrow('Container with id "nonexistent-container" not found');
-    });
-
-    it("should fetch bot configuration", async () => {
-      const actions = client.getActions(mockFetch);
-
-      await actions.initTelegramWidget("telegram-login", {}, async () => {});
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
-        method: "GET",
-      });
-    });
-
-    it("should throw error if config fetch fails", async () => {
-      mockFetch.mockResolvedValueOnce({ data: null });
-
-      const actions = client.getActions(mockFetch);
-
-      await expect(
-        actions.initTelegramWidget("telegram-login", {}, async () => {})
-      ).rejects.toThrow("Failed to get Telegram config");
-    });
-
-    it("should reject Widget initialization when botUsername is unavailable", async () => {
-      mockFetch.mockResolvedValueOnce({ data: { botUsername: "" } });
-
-      const actions = client.getActions(mockFetch);
-
-      await expect(
-        actions.initTelegramWidget("telegram-login", {}, async () => {})
-      ).rejects.toThrow("Telegram plugin: botUsername is required");
-    });
-
-    it("should clear container before adding widget", async () => {
-      const container = document.querySelector("#telegram-login")!;
-      container.innerHTML = "<div>Old content</div>";
-
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget("telegram-login", {}, async () => {});
-
-      // After init, old content should be gone
-      expect(container.querySelector("div")).toBeNull();
-    });
-
-    it("should create script element with correct attributes", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget(
-        "telegram-login",
-        {
-          size: "medium",
-          showUserPhoto: false,
-          cornerRadius: 10,
-          lang: "en",
-        },
-        async () => {}
-      );
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script).toBeTruthy();
-      expect(script?.getAttribute("data-telegram-login")).toBe("test_bot");
-      expect(script?.getAttribute("data-size")).toBe("medium");
-      expect(script?.getAttribute("data-userpic")).toBe("false");
-      expect(script?.getAttribute("data-radius")).toBe("10");
-      expect(script?.getAttribute("data-lang")).toBe("en");
-    });
-
-    it("should use default options when not provided", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget("telegram-login", {}, async () => {});
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.getAttribute("data-size")).toBe("large");
-      expect(script?.getAttribute("data-userpic")).toBe("true");
-      expect(script?.getAttribute("data-radius")).toBe("20");
-    });
-
-    it("should not set request-access by default", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget("telegram-login", {}, async () => {});
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.hasAttribute("data-request-access")).toBe(false);
-    });
-
-    it("should set request-access when enabled", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget(
-        "telegram-login",
-        { requestAccess: true },
-        async () => {}
-      );
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.getAttribute("data-request-access")).toBe("write");
-    });
-
-    it("should create global callback function", async () => {
-      const callback = vi.fn();
-      const actions = client.getActions(mockFetch);
-
-      await actions.initTelegramWidget("telegram-login", {}, callback);
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-      const onAuthAttr = script?.getAttribute("data-onauth");
-
-      expect(onAuthAttr).toMatch(/telegramCallback_\d+\(user\)/u);
-
-      // Extract callback name
-      const callbackName = onAuthAttr?.replace("(user)", "");
-      expect((window as any)[callbackName!]).toBeDefined();
-      expect(typeof (window as any)[callbackName!]).toBe("function");
-    });
-
-    it("should call onAuth callback when telegram returns data", async () => {
-      const callback = vi.fn();
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget("telegram-login", {}, callback);
-
-      // Find the callback function
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-      const onAuthAttr = script?.getAttribute("data-onauth");
-      const callbackName = onAuthAttr?.replace("(user)", "");
-
-      // Simulate Telegram calling the callback
-      (window as any)[callbackName!](authData);
-
-      expect(callback).toHaveBeenCalledWith(authData);
-    });
-
-    it("should clean up callback function after execution", async () => {
-      const callback = vi.fn();
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget("telegram-login", {}, callback);
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-      const onAuthAttr = script?.getAttribute("data-onauth");
-      const callbackName = onAuthAttr?.replace("(user)", "");
-
-      // Call the callback
-      (window as any)[callbackName!](authData);
-
-      // Callback should be cleaned up
-      expect((window as any)[callbackName!]).toBeUndefined();
-    });
-  });
-
-  describe("initTelegramWidgetRedirect", () => {
-    beforeEach(() => {
-      const container = document.createElement("div");
-      container.id = "telegram-login";
-      document.body.appendChild(container);
-
-      (window as any).Telegram = { Login: {} };
-
-      mockFetch.mockResolvedValue({
-        data: { botUsername: "test_bot" },
-      });
-    });
-
-    it("should throw error if container doesn't exist", async () => {
-      const actions = client.getActions(mockFetch);
-
-      await expect(
-        actions.initTelegramWidgetRedirect(
-          "nonexistent-container",
-          "/callback",
-          {}
-        )
-      ).rejects.toThrow('Container with id "nonexistent-container" not found');
-    });
-
-    it("should create script with redirect URL", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidgetRedirect(
-        "telegram-login",
-        "/auth/callback",
-        {}
-      );
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.getAttribute("data-auth-url")).toBe("/auth/callback");
-    });
-
-    it("should not have onauth attribute in redirect mode", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidgetRedirect(
-        "telegram-login",
-        "/callback",
-        {}
-      );
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.hasAttribute("data-onauth")).toBe(false);
-    });
-
-    it("should use default options", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidgetRedirect(
-        "telegram-login",
-        "/callback",
-        {}
-      );
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.getAttribute("data-size")).toBe("large");
-      expect(script?.getAttribute("data-userpic")).toBe("true");
-      expect(script?.getAttribute("data-radius")).toBe("20");
-    });
-
-    it("should respect custom options", async () => {
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidgetRedirect("telegram-login", "/callback", {
-        size: "small",
-        showUserPhoto: false,
-        cornerRadius: 5,
-        requestAccess: true,
-        lang: "pl",
-      });
-
-      const container = document.querySelector("#telegram-login")!;
-      const script = container.querySelector("script");
-
-      expect(script?.getAttribute("data-size")).toBe("small");
-      expect(script?.getAttribute("data-userpic")).toBe("false");
-      expect(script?.getAttribute("data-radius")).toBe("5");
-      expect(script?.getAttribute("data-request-access")).toBe("write");
-      expect(script?.getAttribute("data-lang")).toBe("pl");
-    });
-
-    it("should clear container before adding widget", async () => {
-      const container = document.querySelector("#telegram-login")!;
-      container.innerHTML = "<p>Old content</p>";
-
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidgetRedirect(
-        "telegram-login",
-        "/callback",
-        {}
-      );
-
-      expect(container.querySelector("p")).toBeNull();
-      expect(container.querySelector("script")).toBeTruthy();
-    });
-  });
-
-  describe("Error handling", () => {
-    it("should handle fetch errors in signInWithTelegram", async () => {
-      const error = new Error("Network error");
-      mockFetch.mockRejectedValueOnce(error);
-
-      const actions = client.getActions(mockFetch);
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-
-      await expect(actions.signInWithTelegram(authData)).rejects.toThrow(
-        "Network error"
-      );
-    });
-
-    it("should handle fetch errors in linkTelegram", async () => {
-      const error = new Error("Unauthorized");
-      mockFetch.mockRejectedValueOnce(error);
-
-      const actions = client.getActions(mockFetch);
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-
-      await expect(actions.linkTelegram(authData)).rejects.toThrow(
-        "Unauthorized"
-      );
-    });
-
-    it("should handle fetch errors in unlinkTelegram", async () => {
-      const error = new Error("Server error");
-      mockFetch.mockRejectedValueOnce(error);
-
-      const actions = client.getActions(mockFetch);
-
-      await expect(actions.unlinkTelegram()).rejects.toThrow("Server error");
-    });
-
-    it("should handle fetch errors in getTelegramConfig", async () => {
-      const error = new Error("Not found");
-      mockFetch.mockRejectedValueOnce(error);
-
-      const actions = client.getActions(mockFetch);
-
-      await expect(actions.getTelegramConfig()).rejects.toThrow("Not found");
-    });
-  });
-
-  describe("Mini Apps methods", () => {
-    describe("signInWithMiniApp", () => {
-      it("should call correct endpoint with initData", async () => {
-        const mockResponse = {
-          data: {
-            user: { id: "123", name: "Test User" },
-            session: { token: "session-token" },
-          },
-        };
-        mockFetch.mockResolvedValueOnce(mockResponse);
-
-        const actions = client.getActions(mockFetch);
-        const initData =
-          "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
-
-        const result = await actions.signInWithMiniApp(initData);
-
-        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
-          method: "POST",
-          body: { initData },
-        });
-        expect(result).toEqual(mockResponse);
-      });
-
-      it("should handle errors", async () => {
-        const error = new Error("Invalid initData");
-        mockFetch.mockRejectedValueOnce(error);
-
-        const actions = client.getActions(mockFetch);
-        const initData = "invalid-data";
-
-        await expect(actions.signInWithMiniApp(initData)).rejects.toThrow(
-          "Invalid initData"
-        );
-      });
-    });
-
-    describe("validateMiniApp", () => {
-      it("should call validate endpoint with initData", async () => {
-        const mockResponse = {
-          data: {
-            valid: true,
-            data: {
-              user: { id: 123, first_name: "Test" },
-              auth_date: 1234567890,
-              hash: "abc123",
-            },
-          },
-        };
-        mockFetch.mockResolvedValueOnce(mockResponse);
-
-        const actions = client.getActions(mockFetch);
-        const initData =
-          "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
-
-        const result = await actions.validateMiniApp(initData);
-
-        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/validate", {
-          method: "POST",
-          body: { initData },
-        });
-        expect(result).toEqual(mockResponse);
-      });
-
-      it("should return invalid for bad initData", async () => {
-        const mockResponse = {
-          data: {
-            valid: false,
-            data: null,
-          },
-        };
-        mockFetch.mockResolvedValueOnce(mockResponse);
-
-        const actions = client.getActions(mockFetch);
-        const initData = "invalid-data";
-
-        const result = await actions.validateMiniApp(initData);
-
-        expect(result.data?.valid).toBe(false);
-        expect(result.data?.data).toBeNull();
-      });
-
-      it("should handle errors", async () => {
-        const error = new Error("Server error");
-        mockFetch.mockRejectedValueOnce(error);
-
-        const actions = client.getActions(mockFetch);
-
-        await expect(actions.validateMiniApp("some-data")).rejects.toThrow(
-          "Server error"
-        );
-      });
-    });
-
-    describe("autoSignInFromMiniApp", () => {
-      it("should throw if not in browser", async () => {
-        // Mock window as undefined
-        const originalWindow = global.window;
-        (global as any).window = undefined;
-
-        const actions = client.getActions(mockFetch);
-
-        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
-          "This method can only be called in browser"
-        );
-
-        // Restore window
-        (global as any).window = originalWindow;
-      });
-
-      it("should throw if Telegram.WebApp not available", async () => {
-        // Mock window without Telegram
-        (window as any).Telegram = undefined;
-
-        const actions = client.getActions(mockFetch);
-
-        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
-          "Not running in Telegram Mini App or initData not available"
-        );
-      });
-
-      it("should use tgWebAppData from the URL fragment when the SDK is unavailable", async () => {
-        const mockInitData =
-          "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
-        (window as any).Telegram = undefined;
-        window.location.hash = `#tgWebAppVersion=9.0&tgWebAppData=${encodeURIComponent(
-          mockInitData
-        )}`;
-        mockFetch.mockResolvedValueOnce({ data: { user: { id: "123" } } });
-
-        const actions = client.getActions(mockFetch);
-        await actions.autoSignInFromMiniApp();
-
-        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
-          method: "POST",
-          body: { initData: mockInitData },
-        });
-      });
-
-      it("should prefer SDK initData over tgWebAppData from the URL fragment", async () => {
-        const sdkInitData = "auth_date=1&hash=sdk";
-        const fragmentInitData = "auth_date=2&hash=fragment";
-        (window as any).Telegram = {
-          WebApp: {
-            initData: sdkInitData,
-          },
-        };
-        window.location.hash = `#tgWebAppData=${encodeURIComponent(
-          fragmentInitData
-        )}`;
-        mockFetch.mockResolvedValueOnce({ data: { user: { id: "123" } } });
-
-        const actions = client.getActions(mockFetch);
-        await actions.autoSignInFromMiniApp();
-
-        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
-          method: "POST",
-          body: { initData: sdkInitData },
-        });
-      });
-
-      it("should reject safely when the URL fragment cannot be parsed", async () => {
-        (window as any).Telegram = undefined;
-        window.location.hash = "#tgWebAppData=broken";
-        vi.stubGlobal(
-          "URLSearchParams",
-          class {
-            constructor() {
-              throw new Error("invalid fragment");
-            }
-          }
-        );
-
-        const actions = client.getActions(mockFetch);
-
-        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
-          "Not running in Telegram Mini App or initData not available"
-        );
-        expect(mockFetch).not.toHaveBeenCalled();
-      });
-
-      it("should throw if initData not available", async () => {
-        // Mock Telegram without initData
-        (window as any).Telegram = {
-          WebApp: {
-            initData: "",
-          },
-        };
-
-        const actions = client.getActions(mockFetch);
-
-        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
-          "Not running in Telegram Mini App or initData not available"
-        );
-      });
-
-      it("should sign in with Telegram.WebApp.initData", async () => {
-        const mockInitData =
-          "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
-        (window as any).Telegram = {
-          WebApp: {
-            initData: mockInitData,
-          },
-        };
-
-        const mockResponse = {
-          data: {
-            user: { id: "123", name: "Test User" },
-            session: { token: "session-token" },
-          },
-        };
-        mockFetch.mockResolvedValueOnce(mockResponse);
-
-        const actions = client.getActions(mockFetch);
-        const result = await actions.autoSignInFromMiniApp();
-
-        expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
-          method: "POST",
-          body: { initData: mockInitData },
-        });
-        expect(result).toEqual(mockResponse);
-      });
-
-      it("should handle errors from API", async () => {
-        const mockInitData =
-          "user=%7B%22id%22%3A123%7D&auth_date=1234567890&hash=abc123";
-        (window as any).Telegram = {
-          WebApp: {
-            initData: mockInitData,
-          },
-        };
-
-        const error = new Error("Authentication failed");
-        mockFetch.mockRejectedValueOnce(error);
-
-        const actions = client.getActions(mockFetch);
-
-        await expect(actions.autoSignInFromMiniApp()).rejects.toThrow(
-          "Authentication failed"
-        );
-      });
-    });
-  });
-
-  describe("Widget loading and error cases", () => {
-    beforeEach(() => {
-      // Clear any existing Telegram object
-      (window as any).Telegram = undefined;
-      // Create container
-      const container = document.createElement("div");
-      container.id = "telegram-widget-test";
-      document.body.appendChild(container);
-    });
-
-    afterEach(() => {
-      const container = document.querySelector("#telegram-widget-test");
-      if (container) {
-        document.body.removeChild(container);
-      }
-    });
-
-    it("should load script when Telegram.Login is not available", async () => {
-      // Pre-load Telegram to avoid script loading
-      (window as any).Telegram = { Login: {} };
-
-      mockFetch.mockResolvedValueOnce({
-        data: { botUsername: "test_bot" },
-      });
-
-      const actions = client.getActions(mockFetch);
-
-      // Since Telegram.Login exists, script loading will be skipped
-      await actions.initTelegramWidget("telegram-widget-test", {}, () => {});
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
-        method: "GET",
-      });
-
-      // Clean up
-      delete (window as any).Telegram;
-    });
-
-    it("should handle script load error", async () => {
-      // Don't set Telegram.Login to force script loading
-      delete (window as any).Telegram;
-
-      // Intercept createElement to prevent happy-dom from auto-loading
-      const originalCreateElement = document.createElement.bind(document);
-      let capturedScript: HTMLScriptElement | null = null;
-
-      document.createElement = ((tagName: string) => {
-        const element = originalCreateElement(tagName);
-        if (tagName === "script") {
-          capturedScript = element as HTMLScriptElement;
-          // Override appendChild to prevent automatic loading
-          const originalAppendChild = document.head.appendChild.bind(
-            document.head
-          );
-          document.head.appendChild = ((node: Node) => {
-            if (node === element) {
-              // Don't actually append, just trigger onerror manually
-              setTimeout(() => {
-                if (capturedScript?.onerror) {
-                  capturedScript.onerror(new Event("error"));
-                }
-              }, 0);
-              return node;
-            }
-            return originalAppendChild(node);
-          }) as any;
-        }
-        return element;
-      }) as any;
-
-      const actions = client.getActions(mockFetch);
-
-      // Should reject with our error message
-      await expect(
-        actions.initTelegramWidget("telegram-widget-test", {}, () => {})
-      ).rejects.toThrow("Failed to load Telegram widget script");
-
-      // Restore
-      document.createElement = originalCreateElement;
-    });
-
-    it("should resolve via script.onload when Telegram.Login is not pre-loaded", async () => {
-      // Don't set Telegram.Login — force script loading path
-      delete (window as any).Telegram;
-
-      const originalCreateElement = document.createElement.bind(document);
-
-      document.createElement = ((tagName: string) => {
-        const element = originalCreateElement(tagName);
-        if (tagName === "script") {
-          const originalAppendChild = document.head.appendChild.bind(
-            document.head
-          );
-          document.head.appendChild = ((node: Node) => {
-            if (node === element) {
-              // Trigger onload instead of actually loading
-              setTimeout(() => {
-                if ((element as HTMLScriptElement).onload) {
-                  (element as HTMLScriptElement).onload!(new Event("load"));
-                }
-              }, 0);
-              return node;
-            }
-            return originalAppendChild(node);
-          }) as any;
-        }
-        return element;
-      }) as any;
-
-      mockFetch.mockResolvedValueOnce({
-        data: { botUsername: "test_bot" },
-      });
-
-      const actions = client.getActions(mockFetch);
-      await actions.initTelegramWidget("telegram-widget-test", {}, () => {});
-
-      // If we got here without throwing, onload resolved the promise
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
-        method: "GET",
-      });
-
-      // Restore
-      document.createElement = originalCreateElement;
-    });
-
-    it("should handle missing config data in initTelegramWidget", async () => {
-      (window as any).Telegram = { Login: {} };
-
-      mockFetch.mockResolvedValueOnce({
-        data: null, // No data returned
-      });
-
-      const actions = client.getActions(mockFetch);
-
-      await expect(
-        actions.initTelegramWidget("telegram-widget-test", {}, () => {})
-      ).rejects.toThrow("Failed to get Telegram config");
-    });
-
-    it("should handle missing config data in initTelegramWidgetRedirect", async () => {
-      (window as any).Telegram = { Login: {} };
-
-      mockFetch.mockResolvedValueOnce({
-        data: null, // No data returned
-      });
-
-      const actions = client.getActions(mockFetch);
-
-      await expect(
-        actions.initTelegramWidgetRedirect(
-          "telegram-widget-test",
-          "/callback",
-          {}
-        )
-      ).rejects.toThrow("Failed to get Telegram config");
-    });
-  });
-
-  describe("Adversarial: getTelegramConfig testMode shape", () => {
-    it("should type the config response to include testMode as boolean", async () => {
-      const expectedResponse = {
-        data: { botUsername: "test_bot", testMode: false },
-      };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.getTelegramConfig();
-
-      expect(result.data).toHaveProperty("testMode");
-      expect(typeof result.data?.testMode).toBe("boolean");
-    });
-
-    it("should return testMode: false when server has no testMode set", async () => {
-      const expectedResponse = {
-        data: { botUsername: "test_bot", testMode: false },
-      };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.getTelegramConfig();
-
-      expect(result.data?.testMode).toBe(false);
-    });
-
-    it("should return testMode: true when server has testMode enabled", async () => {
-      const expectedResponse = {
-        data: { botUsername: "test_bot", testMode: true },
-      };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.getTelegramConfig();
-
-      expect(result.data?.testMode).toBe(true);
-    });
-
-    it("should return exactly the shape { botUsername, testMode } from config", async () => {
-      const expectedResponse = {
-        data: {
-          botUsername: "production_bot",
-          testMode: false,
-        },
-      };
-      mockFetch.mockResolvedValueOnce(expectedResponse);
-
-      const actions = client.getActions(mockFetch);
-      const result = await actions.getTelegramConfig();
-
-      // Verify the exact keys we expect
-      expect(Object.keys(result.data!)).toContain("botUsername");
-      expect(Object.keys(result.data!)).toContain("testMode");
-    });
-  });
-
-  describe("Adversarial: client plugin structure", () => {
-    it("should have $InferServerPlugin property", () => {
-      expect(client).toHaveProperty("$InferServerPlugin");
-    });
-
-    it("should include signInWithMiniApp action", () => {
-      const actions = client.getActions(mockFetch);
-      expect(actions).toHaveProperty("signInWithMiniApp");
-      expect(typeof actions.signInWithMiniApp).toBe("function");
-    });
-
-    it("should include validateMiniApp action", () => {
-      const actions = client.getActions(mockFetch);
-      expect(actions).toHaveProperty("validateMiniApp");
-      expect(typeof actions.validateMiniApp).toBe("function");
-    });
-
-    it("should include autoSignInFromMiniApp action", () => {
-      const actions = client.getActions(mockFetch);
-      expect(actions).toHaveProperty("autoSignInFromMiniApp");
-      expect(typeof actions.autoSignInFromMiniApp).toBe("function");
-    });
-
-    it("should include signInWithTelegramOIDC action", () => {
-      const actions = client.getActions(mockFetch);
-      expect(actions).toHaveProperty("signInWithTelegramOIDC");
-      expect(typeof actions.signInWithTelegramOIDC).toBe("function");
-    });
-  });
-
-  describe("fetchOptions support", () => {
-    it("should pass fetchOptions to signInWithTelegram", async () => {
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-      const fetchOpts = { headers: { "X-Custom": "value" } };
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.signInWithTelegram(authData, fetchOpts);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/signin", {
-        method: "POST",
-        body: authData,
-        headers: { "X-Custom": "value" },
-      });
-    });
-
-    it("should pass fetchOptions to linkTelegram", async () => {
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-      const fetchOpts = { headers: { "X-Custom": "value" } };
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.linkTelegram(authData, fetchOpts);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/link", {
-        method: "POST",
-        body: authData,
-        headers: { "X-Custom": "value" },
-      });
-    });
-
-    it("should pass fetchOptions to unlinkTelegram", async () => {
-      const fetchOpts = { headers: { Authorization: "Bearer token" } };
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.unlinkTelegram(fetchOpts);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/unlink", {
-        method: "POST",
-        headers: { Authorization: "Bearer token" },
-      });
-    });
-
-    it("should pass fetchOptions to getTelegramConfig", async () => {
-      const fetchOpts = { cache: "no-store" as const };
-      mockFetch.mockResolvedValueOnce({ data: { botUsername: "bot" } });
-
-      const actions = client.getActions(mockFetch);
-      await actions.getTelegramConfig(fetchOpts);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/config", {
-        method: "GET",
-        cache: "no-store",
-      });
-    });
-
-    it("should pass fetchOptions to signInWithMiniApp", async () => {
-      const fetchOpts = { headers: { "X-Custom": "value" } };
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.signInWithMiniApp("initData", fetchOpts);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/signin", {
-        method: "POST",
-        body: { initData: "initData" },
-        headers: { "X-Custom": "value" },
-      });
-    });
-
-    it("should pass fetchOptions to validateMiniApp", async () => {
-      const fetchOpts = { headers: { "X-Custom": "value" } };
-      mockFetch.mockResolvedValueOnce({ data: { valid: true, data: null } });
-
-      const actions = client.getActions(mockFetch);
-      await actions.validateMiniApp("initData", fetchOpts);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/miniapp/validate", {
-        method: "POST",
-        body: { initData: "initData" },
-        headers: { "X-Custom": "value" },
-      });
-    });
-
-    it("should work without fetchOptions (backward compatible)", async () => {
-      const authData: TelegramAuthData = {
-        id: 123,
-        first_name: "Test",
-        auth_date: 123456,
-        hash: "hash",
-      };
-      mockFetch.mockResolvedValueOnce({ data: {} });
-
-      const actions = client.getActions(mockFetch);
-      await actions.signInWithTelegram(authData);
-
-      expect(mockFetch).toHaveBeenCalledWith("/telegram/signin", {
-        method: "POST",
-        body: authData,
-      });
-    });
+  it("refuses to call the server when the SDK is loaded outside Telegram (empty initData)", async () => {
+    (window as any).Telegram = { WebApp: { initData: "" } };
+
+    await expect(actions().autoSignInFromMiniApp()).rejects.toThrow(
+      "Not running in Telegram Mini App or initData not available"
+    );
+    expect($fetch).not.toHaveBeenCalled();
   });
 });

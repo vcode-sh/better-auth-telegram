@@ -35,5 +35,7 @@ const client = createAuthClient({ plugins: [telegramClient()] });
 typed(client.signInWithTelegram);
 typed(client.signInWithTelegramOIDC);
 
-// Telegram sends the user id as a string.
+// Telegram sends the user id as a string (a number would lose precision).
 export const id: TelegramOIDCClaims["id"] = "8306595751";
+// @ts-expect-error the id claim is a string, never a number
+export const numericId: TelegramOIDCClaims["id"] = 8306595751;

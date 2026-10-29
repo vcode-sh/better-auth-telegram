@@ -39,7 +39,8 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 - **Client-submitted ID tokens** (`POST /sign-in/social` with `idToken`) are verified like the redirect flow and only accepted with their nonce; `oidc.disableIdTokenSignIn` turns this path off. ES256K stays unsupported because Web Crypto cannot verify it.
 - **Unlinking revokes Telegram sign-in** — `user.telegramId` (which the Login Widget and Mini App sign users in by) is re-checked whenever a `telegram` or `telegram-oidc` account is removed, by any route, and cleared or switched when no remaining account proves it.
 - **Verified OIDC claims stay with their user** — they are applied only to the user who owns the OIDC account for that `sub`.
-- **Placeholder emails are reserved** — other sign-up methods can no longer register (or switch to) `@telegram.placeholder.invalid` / `@telegram-oidc.placeholder.invalid` addresses to block or pre-claim a Telegram user.
+- **Placeholder emails are reserved** — other sign-up methods can no longer register (or switch to) `@telegram.placeholder.invalid` / `@telegram-oidc.placeholder.invalid` addresses to block or pre-claim a Telegram user. Changing an email to one now fails with 400 `PLACEHOLDER_EMAIL_RESERVED` instead of reporting success for a change that never happened.
+- **Login Widget callbacks** — two widgets set up in the same millisecond no longer share one callback (a login on one ran the other's `onAuth`); a second login on the same page works; errors thrown by `onAuth` are logged instead of surfacing as unhandled rejections.
 - **HMAC checks** compare in constant time, require a 64-character lowercase hex hash, reject `auth_date` values that are not integers or lie more than 60 seconds in the future, and reject Login Widget fields containing line breaks.
 - **Startup warnings** for `miniApp.validateInitData: false` and for enabling the legacy Login Widget and OIDC on the same bot (switching a bot to OIDC in @BotFather permanently disables its legacy widget).
 
@@ -49,12 +50,12 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 - **Mini App types** — `signature`, `chat_join_request_query_id`, `user.added_to_attachment_menu`.
 - **Login Widget script** `telegram-widget.js?24`.
 - **Warning** when an OIDC ID token lacks profile claims (Telegram drops them for bots that sign with EdDSA or ES256K).
-- **`oidc.disableIdTokenSignIn` and `oidc.disableSignUp`** options.
-- **Error codes** `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`, `CANNOT_UNLINK_LAST_ACCOUNT`, `USER_CREATION_REJECTED`, `ORPHANED_ACCOUNT`.
+- **`oidc.disableIdTokenSignIn`, `oidc.disableSignUp` and `oidc.overrideUserInfoOnSignIn`** options.
+- **Error codes** `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`, `CANNOT_UNLINK_LAST_ACCOUNT`, `USER_CREATION_REJECTED`, `ORPHANED_ACCOUNT`, `PLACEHOLDER_EMAIL_RESERVED`.
 
 ### Changed
 
-- Tests run against a real Better Auth instance (memory adapter and SQLite with Better Auth's own migrations) and a fake oauth.telegram.org modeled on live behavior; mock-only endpoint tests were replaced. A compiled consumer type test checks the published declarations. Coverage: 99.6% lines, 95.7% branches.
+- Tests run against a real Better Auth instance (memory adapter and SQLite with Better Auth's own migrations) and a fake oauth.telegram.org modeled on live behavior; mock-only and existence-only tests were removed. HMAC tests use literal vectors computed independently with openssl, including a real-shaped Mini App payload with `signature`. A compiled consumer type test checks the published declarations.
 - CI uses `npm ci`, runs publint and Are The Types Wrong, and no longer auto-merges Better Auth upgrades.
 - Prereleases publish to the `next` dist-tag.
 

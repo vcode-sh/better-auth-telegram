@@ -77,6 +77,18 @@ function loadTelegramWidgetScript(): Promise<void> {
   });
 }
 
+let widgetCount = 0;
+
+/** A global name for a widget's `data-onauth` callback that no widget uses yet. */
+function nextCallbackName(): string {
+  let name: string;
+  do {
+    widgetCount += 1;
+    name = `telegramCallback_${widgetCount}`;
+  } while (name in window);
+  return name;
+}
+
 function requireBotUsername(botUsername: string | undefined): string {
   if (!botUsername) {
     throw new Error("Telegram plugin: botUsername is required");
@@ -234,12 +246,18 @@ export const telegramClient = () => {
         // Clear container
         container.innerHTML = "";
 
-        // Create callback function
-        const callbackName = `telegramCallback_${Date.now()}`;
-        (window as any)[callbackName] = (authData: TelegramAuthData) => {
-          onAuth(authData);
-          // Clean up
-          delete (window as any)[callbackName];
+        // A global per widget, kept for the life of the page: the user can
+        // log in again without a reload.
+        const callbackName = nextCallbackName();
+        (window as any)[callbackName] = async (authData: TelegramAuthData) => {
+          try {
+            await onAuth(authData);
+          } catch (error) {
+            console.error(
+              "[better-auth-telegram] Telegram widget onAuth failed:",
+              error
+            );
+          }
         };
 
         // Create widget script

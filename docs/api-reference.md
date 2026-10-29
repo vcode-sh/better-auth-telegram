@@ -64,6 +64,7 @@ const plugin = telegram({
 | `oidc.clientSecret` | `string` | none (required) | Client Secret from the same page. No bot-token fallback: startup warns and OIDC logins throw until it's set. |
 | `oidc.disableIdTokenSignIn` | `boolean` | `false` | Reject client-submitted ID tokens on `POST /sign-in/social` and `/link-social`. |
 | `oidc.disableSignUp` | `boolean` | `false` | Only sign in existing users; never create one from OIDC. |
+| `oidc.overrideUserInfoOnSignIn` | `boolean` | `false` | Refresh the user's name and photo from the ID token on every sign-in. |
 | `oidc.scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always added; `profile` only when you don't pass a list. |
 | `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. With the Telegram columns present, `phone_number` is copied to `user.telegramPhoneNumber`. |
 | `oidc.requestBotAccess` | `boolean` | `false` | Add `telegram:bot_access` scope. |
@@ -423,6 +424,7 @@ interface TelegramOIDCOptions {
   clientSecret?: string;         // same page; NOT the bot token. Required
   disableIdTokenSignIn?: boolean; // default: false — reject client-submitted ID tokens
   disableSignUp?: boolean;       // default: false — existing users only
+  overrideUserInfoOnSignIn?: boolean; // default: false — refresh name/photo on sign-in
   enabled?: boolean;             // default: false
   scopes?: string[];             // default: ["openid", "profile"]
   requestPhone?: boolean;        // default: false — adds "phone" scope
@@ -807,6 +809,7 @@ The `$ERROR_CODES` object exposed by the plugin. Since v1.1.0, each code is a `R
 | `CANNOT_UNLINK_LAST_ACCOUNT` | Cannot unlink Telegram: it is the only way to sign in to this account |
 | `USER_CREATION_REJECTED` | User creation was rejected |
 | `ORPHANED_ACCOUNT` | Telegram account references a user that does not exist |
+| `PLACEHOLDER_EMAIL_RESERVED` | Telegram placeholder email addresses are reserved for Telegram sign-in |
 | `INIT_DATA_REQUIRED` | initData is required and must be a string |
 | `INVALID_MINI_APP_INIT_DATA` | Invalid Mini App initData |
 | `INVALID_MINI_APP_DATA_STRUCTURE` | Invalid Mini App data structure |

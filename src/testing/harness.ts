@@ -18,11 +18,6 @@ import {
   SignJWT,
 } from "jose";
 import { vi } from "vitest";
-import {
-  TELEGRAM_OIDC_ISSUER,
-  TELEGRAM_OIDC_JWKS_URI,
-  TELEGRAM_OIDC_TOKEN_ENDPOINT,
-} from "../constants";
 import { telegram } from "../index";
 import type { TelegramPluginOptions } from "../types";
 
@@ -30,6 +25,17 @@ export const BOT_TOKEN = "123456789:AAtesttokentesttokentesttokentest";
 export const BOT_ID = "123456789";
 export const BASE_URL = "http://localhost:3000";
 const AUTH_BASE = `${BASE_URL}/api/auth`;
+
+// From https://oauth.telegram.org/.well-known/openid-configuration, typed
+// here rather than imported from src so a wrong URL in src cannot be mirrored.
+const TELEGRAM_ISSUER = "https://oauth.telegram.org";
+const TELEGRAM_AUTHORIZATION_ENDPOINT = "https://oauth.telegram.org/auth";
+const TELEGRAM_TOKEN_ENDPOINT = "https://oauth.telegram.org/token";
+const TELEGRAM_JWKS_URI = "https://oauth.telegram.org/.well-known/jwks.json";
+
+/** A Mini App `signature` field (Ed25519, base64url) as Telegram sends it. */
+export const MINI_APP_SIGNATURE =
+  "kXz3oVbV0wL3n0rZt7x1Qq9oX2y4m6n8p0r2t4v6x8z0B2D4F6H8J0L2N4P6R8T0V2X4Z6b8d0f2h4j6l8n0pA";
 
 type AuthOptions = Parameters<typeof betterAuth>[0];
 
@@ -231,7 +237,10 @@ export async function signInitParams(
   return params.toString();
 }
 
-/** Mini App initData for `user`, signed exactly like Telegram signs it. */
+/**
+ * Mini App initData for `user`, shaped and signed like Telegram's: the user
+ * JSON escapes `/` as `\/`, and `signature` is part of the signed fields.
+ */
 export function signInitData(
   user: Record<string, unknown> & { id: number },
   extra: Record<string, string> = {},
@@ -239,9 +248,13 @@ export function signInitData(
 ) {
   return signInitParams(
     {
-      auth_date: String(Math.floor(Date.now() / 1000)),
       query_id: "AAHdF6IQAAAAAN0XohDhrOrc",
-      user: JSON.stringify({ first_name: "Ann", ...user }),
+      user: JSON.stringify({ first_name: "Ann", ...user }).replaceAll(
+        "/",
+        "\\/"
+      ),
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      signature: MINI_APP_SIGNATURE,
       ...extra,
     },
     botToken
@@ -253,6 +266,7 @@ interface PendingAuthorization {
   codeChallenge: string | null;
   forge: boolean;
   nonce: string | null;
+  omitIdToken: boolean;
   redirectURI: string;
 }
 
@@ -261,6 +275,8 @@ export interface AuthorizeOptions {
   forge?: boolean;
   /** Replace the nonce Telegram would echo (null drops it). */
   nonce?: string | null;
+  /** Answer the token request without an `id_token`. */
+  omitIdToken?: boolean;
 }
 
 /**
@@ -295,11 +311,11 @@ export async function mockTelegramOIDC(
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input, init) => {
       const { url } = new Request(input as RequestInfo);
-      if (url.startsWith(TELEGRAM_OIDC_JWKS_URI)) {
+      if (url.startsWith(TELEGRAM_JWKS_URI)) {
         jwksRequests += 1;
         return Response.json({ keys: [jwk] });
       }
-      if (url.startsWith(TELEGRAM_OIDC_TOKEN_ENDPOINT)) {
+      if (url.startsWith(TELEGRAM_TOKEN_ENDPOINT)) {
         const request = new Request(input as RequestInfo, init);
         const body = new URLSearchParams(await request.text());
         const authorization = request.headers.get("authorization");
@@ -309,6 +325,7 @@ export async function mockTelegramOIDC(
       return realFetch(input as RequestInfo, init);
     });
 
+  /** Signs an ID token; `iss` / `aud` in `claims` override Telegram's. */
   async function sign(
     claims: JWTPayload,
     key: KeyObject | CryptoKey = privateKey
@@ -316,8 +333,8 @@ export async function mockTelegramOIDC(
     const now = Math.floor(Date.now() / 1000);
     return await new SignJWT({ ...claims })
       .setProtectedHeader({ alg, kid, typ: "JWT" })
-      .setIssuer(TELEGRAM_OIDC_ISSUER)
-      .setAudience(clientId)
+      .setIssuer(claims.iss ?? TELEGRAM_ISSUER)
+      .setAudience(claims.aud ?? clientId)
       .setIssuedAt(now)
       .setExpirationTime(now + 30)
       .sign(key);
@@ -357,7 +374,7 @@ export async function mockTelegramOIDC(
     );
     return {
       access_token: "AAAAAAAAAAAAAAAAAAAAAAAA",
-      id_token: idToken,
+      ...(authz.omitIdToken ? {} : { id_token: idToken }),
       token_type: "Bearer",
       expires_in: 30,
       scope: "openid profile",
@@ -366,7 +383,8 @@ export async function mockTelegramOIDC(
 
   /**
    * Simulates the user approving the login in Telegram: returns the callback
-   * URL Telegram would redirect the browser to.
+   * URL Telegram would redirect the browser to. Throws where Telegram would
+   * refuse to show the login page.
    */
   function authorize(
     authorizationURL: string,
@@ -374,6 +392,19 @@ export async function mockTelegramOIDC(
     authorizeOptions: AuthorizeOptions = {}
   ) {
     const url = new URL(authorizationURL);
+    const scopes = (url.searchParams.get("scope") ?? "").split(" ");
+    if (
+      `${url.origin}${url.pathname}` !== TELEGRAM_AUTHORIZATION_ENDPOINT ||
+      url.searchParams.get("response_type") !== "code" ||
+      url.searchParams.get("client_id") !== clientId ||
+      !scopes.includes("openid") ||
+      !url.searchParams.get("redirect_uri") ||
+      !url.searchParams.get("state")
+    ) {
+      throw new Error(
+        `Telegram would reject this authorization request: ${url}`
+      );
+    }
     codeCounter += 1;
     const code = `code-${codeCounter}`;
     const redirectURI = url.searchParams.get("redirect_uri")!;
@@ -385,6 +416,7 @@ export async function mockTelegramOIDC(
         authorizeOptions.nonce === undefined
           ? url.searchParams.get("nonce")
           : authorizeOptions.nonce,
+      omitIdToken: authorizeOptions.omitIdToken ?? false,
       redirectURI,
     });
     const callback = new URL(redirectURI);

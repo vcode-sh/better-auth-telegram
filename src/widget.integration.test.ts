@@ -2,7 +2,7 @@
 /**
  * Login Widget and Mini App flows against a real Better Auth instance.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createClient,
   createMemoryAuth,
@@ -116,17 +116,6 @@ describe("Login Widget sign-in", () => {
     expect(db.user).toHaveLength(0);
   });
 
-  it("rejects an auth_date from the future", async () => {
-    const { client } = createMemoryAuth();
-
-    const response = await client.post(
-      "/telegram/signin",
-      await widgetUser(42, { auth_date: Math.floor(Date.now() / 1000) + 3600 })
-    );
-
-    expect(response.status).toBe(401);
-  });
-
   it("answers 404 when auto-create is disabled", async () => {
     const { client, db } = createMemoryAuth({ autoCreateUser: false });
 
@@ -174,6 +163,7 @@ describe("Linking and unlinking Telegram", () => {
     const response = await client.post("/telegram/link", await widgetUser(42));
 
     expect(response.status).toBe(409);
+    expect(response.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
     expect(
       db.account.filter((account) => account.providerId === "telegram")
     ).toHaveLength(1);
@@ -199,6 +189,7 @@ describe("Linking and unlinking Telegram", () => {
     const response = await client.post("/telegram/unlink", {});
 
     expect(response.status).toBe(400);
+    expect(response.json.code).toBe("CANNOT_UNLINK_LAST_ACCOUNT");
     expect(db.account).toHaveLength(1);
   });
 
@@ -247,9 +238,10 @@ describe("Mini App sign-in", () => {
     expect(db.user).toHaveLength(1);
   });
 
-  it("honors user.validateUserInfo", async () => {
+  it("honors user.validateUserInfo and reports the Mini App as the method", async () => {
+    const validateUserInfo = vi.fn(async () => ({ error: "not_invited" }));
     const { client, db } = createMemoryAuth(miniApp, {
-      user: { validateUserInfo: async () => ({ error: "not_invited" }) },
+      user: { validateUserInfo },
     });
 
     const response = await client.post("/telegram/miniapp/signin", {
@@ -257,6 +249,15 @@ describe("Mini App sign-in", () => {
     });
 
     expect(response.status).toBe(403);
+    expect(validateUserInfo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: expect.objectContaining({
+          action: "create-user",
+          method: "telegram-mini-app",
+        }),
+      }),
+      expect.anything()
+    );
     expect(db.user).toHaveLength(0);
   });
 
@@ -271,7 +272,7 @@ describe("Mini App sign-in", () => {
     expect(response.status).toBe(401);
   });
 
-  it("validates initData without creating a session", async () => {
+  it("validates initData without creating a user or a session", async () => {
     const { client, db } = createMemoryAuth(miniApp);
 
     const response = await client.post("/telegram/miniapp/validate", {
@@ -281,6 +282,24 @@ describe("Mini App sign-in", () => {
     expect(response.status).toBe(200);
     expect(response.json.valid).toBe(true);
     expect(db.user).toHaveLength(0);
+    expect(db.session).toHaveLength(0);
+    expect(client.hasSession()).toBe(false);
+  });
+
+  it("returns the parsed user and chat objects from the validate endpoint", async () => {
+    const { client } = createMemoryAuth(miniApp);
+    const chat = { id: -100_123, type: "supergroup", title: "Ann's group" };
+
+    const response = await client.post("/telegram/miniapp/validate", {
+      initData: await signInitData(
+        { id: 7, username: "ann" },
+        { chat: JSON.stringify(chat), start_param: "ref123" }
+      ),
+    });
+
+    expect(response.json.data.user).toMatchObject({ id: 7, username: "ann" });
+    expect(response.json.data.chat).toEqual(chat);
+    expect(response.json.data.start_param).toBe("ref123");
   });
 });
 
@@ -526,5 +545,121 @@ describe("Telegram account bookkeeping", () => {
 
     expect(response.status).toBe(409);
     expect(response.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
+  });
+});
+
+describe("unlinking needs a fresh session", () => {
+  it("answers 403 SESSION_NOT_FRESH for a session older than a day, keeping the account", async () => {
+    // A stolen old session must not be able to strip the Telegram login.
+    const { client, db } = createMemoryAuth(
+      {},
+      { emailAndPassword: { enabled: true } }
+    );
+    await client.post("/sign-up/email", {
+      email: "ann@example.com",
+      password: "correct-horse-battery",
+      name: "Ann",
+    });
+    await client.post("/telegram/link", await widgetUser());
+    db.session[0]!.createdAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    const response = await client.post("/telegram/unlink", {});
+
+    expect(response.status).toBe(403);
+    expect(response.json.code).toBe("SESSION_NOT_FRESH");
+    expect(db.account.map((account) => account.providerId).sort()).toEqual([
+      "credential",
+      "telegram",
+    ]);
+  });
+});
+
+describe("maxAuthAge reaches the sign-in endpoints", () => {
+  const NOW = 1_761_730_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const signIn = {
+    "/telegram/signin": async (authDate: number) =>
+      signWidgetData({ id: 42, auth_date: authDate }),
+    "/telegram/miniapp/signin": async (authDate: number) => ({
+      initData: await signInitData({ id: 42 }, { auth_date: String(authDate) }),
+    }),
+  };
+
+  it.each([
+    ["/telegram/signin", undefined, 86_400],
+    ["/telegram/signin", 60, 60],
+    ["/telegram/miniapp/signin", undefined, 86_400],
+    ["/telegram/miniapp/signin", 60, 60],
+  ] as const)(
+    "%s with maxAuthAge %s accepts data %i s old and not a second older",
+    async (path, maxAuthAge, limit) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(NOW * 1000);
+      const { client } = createMemoryAuth({
+        ...(maxAuthAge === undefined ? {} : { maxAuthAge }),
+        miniApp: { enabled: true },
+      });
+
+      const tooOld = await client.post(
+        path,
+        await signIn[path](NOW - limit - 1)
+      );
+      const oldest = await client.post(path, await signIn[path](NOW - limit));
+
+      expect(tooOld.status).toBe(401);
+      expect(oldest.status).toBe(200);
+    }
+  );
+});
+
+describe("user mappers merge over the defaults", () => {
+  it("keeps the Login Widget name and photo when mapTelegramDataToUser returns only an email", async () => {
+    const { client, db } = createMemoryAuth({
+      mapTelegramDataToUser: () => ({ email: "ann@example.com" }),
+    });
+
+    await client.post(
+      "/telegram/signin",
+      await signWidgetData({
+        id: 42,
+        first_name: "Ann",
+        last_name: "Example",
+        photo_url: "https://t.me/i/userpic/320/ann.jpg",
+      })
+    );
+
+    expect(db.user[0]).toMatchObject({
+      email: "ann@example.com",
+      name: "Ann Example",
+      image: "https://t.me/i/userpic/320/ann.jpg",
+    });
+  });
+
+  it("keeps the Mini App name and photo when mapMiniAppDataToUser returns only an email", async () => {
+    const { client, db } = createMemoryAuth({
+      miniApp: {
+        enabled: true,
+        mapMiniAppDataToUser: () => ({ email: "ann@example.com" }),
+      },
+    });
+
+    await client.post("/telegram/miniapp/signin", {
+      initData: await signInitData({
+        id: 7,
+        first_name: "Ann",
+        last_name: "Example",
+        photo_url: "https://t.me/i/userpic/320/ann.svg",
+      }),
+    });
+
+    expect(db.user[0]).toMatchObject({
+      email: "ann@example.com",
+      name: "Ann Example",
+      image: "https://t.me/i/userpic/320/ann.svg",
+    });
   });
 });

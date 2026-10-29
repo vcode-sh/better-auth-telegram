@@ -1,7 +1,9 @@
 import type { AuthContext, BetterAuthOptions } from "@better-auth/core";
 import { defineRequestState, hasRequestState } from "@better-auth/core/context";
 import type { Account, User } from "better-auth";
+import { APIError } from "better-auth/api";
 import {
+  ERROR_CODES,
   PLACEHOLDER_EMAIL_DOMAINS,
   PLUGIN_ID,
   TELEGRAM_OIDC_PROVIDER_ID,
@@ -223,14 +225,18 @@ export function telegramIdentityHooks(
         },
       },
       update: {
-        before(data) {
-          if (placeholderIdentifier(data.email)) {
-            ctx.logger.warn(
-              "[better-auth-telegram] Refused to change a user's email to a Telegram placeholder."
+        // Same rule as creation, so an OIDC sign-in that writes the profile
+        // back (`overrideUserInfoOnSignIn`) may keep the user's own
+        // placeholder. Thrown rather than vetoed (`false`): a veto lets
+        // endpoints such as /change-email report success for a change that
+        // never happened.
+        async before(data) {
+          if (!(await isAllowedPlaceholder(data))) {
+            throw APIError.from(
+              "BAD_REQUEST",
+              ERROR_CODES.PLACEHOLDER_EMAIL_RESERVED
             );
-            return Promise.resolve(false);
           }
-          return Promise.resolve();
         },
       },
     },

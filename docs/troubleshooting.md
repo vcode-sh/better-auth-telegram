@@ -286,7 +286,7 @@ Code `USER_CREATION_REJECTED`. A database hook (`databaseHooks.user.create.befor
 
 ### Can't Sign Up With an `@telegram.placeholder.invalid` Email
 
-By design. Only the Telegram flow for that exact Telegram id may create a user with `<id>@telegram.placeholder.invalid` (and only the OIDC flow for that `sub` with `@telegram-oidc.placeholder.invalid`), and no user's email can be changed to one. Otherwise anyone could register a Telegram user's placeholder with a password and block or pre-claim their account.
+By design. Only the Telegram flow for that exact Telegram id may create a user with `<id>@telegram.placeholder.invalid` (and only the OIDC flow for that `sub` with `@telegram-oidc.placeholder.invalid`), and no user's email can be changed to one (400 `PLACEHOLDER_EMAIL_RESERVED`, e.g. from `/change-email`). Otherwise anyone could register a Telegram user's placeholder with a password and block or pre-claim their account.
 
 ## Mini App Errors
 

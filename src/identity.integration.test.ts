@@ -298,6 +298,36 @@ describe("validateUserInfo beyond sign-up", () => {
   });
 });
 
+describe("validateUserInfo for an implicit link by telegramId", () => {
+  it("sees a Mini App sign-in into an OIDC user as link-account by telegram-mini-app", async () => {
+    const validateUserInfo = vi.fn(
+      async ({ source }: { source: { action: string } }) =>
+        source.action === "link-account" ? { error: "no_linking" } : undefined
+    );
+    const { client, db } = createMemoryAuth(options(), {
+      user: { validateUserInfo },
+    });
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    const response = await client.post("/telegram/miniapp/signin", {
+      initData: await signInitData({ id: TELEGRAM_ID }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.json.code).toBe("no_linking");
+    expect(validateUserInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: { action: "link-account", method: "telegram-mini-app" },
+      }),
+      expect.anything()
+    );
+    expect(
+      db.account.filter((account) => account.providerId === "telegram")
+    ).toHaveLength(0);
+  });
+});
+
 describe("failing closed", () => {
   it("rejects a sign-in when validateUserInfo throws", async () => {
     const { client } = createMemoryAuth(
@@ -341,54 +371,57 @@ describe("failing closed", () => {
 });
 
 describe("placeholder emails cannot be claimed by other sign-up methods", () => {
-  it("rejects an email/password sign-up with a Telegram placeholder email", async () => {
-    const { client, rows } = await createSqliteAuth({}, authOptions);
+  // Otherwise anyone could pre-register a Telegram user's placeholder address
+  // with a password and block (or take over) that user's Telegram sign-up.
+  it.each([
+    ["Login Widget / Mini App", "42@telegram.placeholder.invalid"],
+    ["OIDC", "12224742808376279442@telegram-oidc.placeholder.invalid"],
+    // Better Auth lowercases before the hook runs; this pins the end result.
+    ["Login Widget / Mini App, uppercase", "42@TELEGRAM.PLACEHOLDER.INVALID"],
+  ])(
+    "rejects an email/password sign-up with a %s placeholder",
+    async (_namespace, email) => {
+      const { client, rows } = await createSqliteAuth({}, authOptions);
 
-    const response = await client.post("/sign-up/email", {
-      email: "42@telegram.placeholder.invalid",
-      password: "correct-horse-battery",
-      name: "Squatter",
-    });
+      const response = await client.post("/sign-up/email", {
+        email,
+        password: "correct-horse-battery",
+        name: "Squatter",
+      });
 
-    expect(response.status).not.toBe(200);
-    expect(rows("user")).toHaveLength(0);
-  });
+      expect(response.status).toBe(400);
+      expect(response.json.code).toBe("FAILED_TO_CREATE_USER");
+      expect(rows("user")).toHaveLength(0);
+    }
+  );
 
-  it("still lets the real Telegram user sign up after a squatting attempt", async () => {
-    const { client, rows } = await createSqliteAuth({}, authOptions);
-    await client.post("/sign-up/email", {
-      email: "42@telegram.placeholder.invalid",
-      password: "correct-horse-battery",
-      name: "Squatter",
-    });
+  it.each([
+    "42@telegram.placeholder.invalid",
+    "12224742808376279442@telegram-oidc.placeholder.invalid",
+  ])(
+    "answers 400 instead of a silent success when changing an email to %s",
+    async (newEmail) => {
+      const { client, db } = createMemoryAuth(
+        {},
+        {
+          ...authOptions,
+          user: {
+            changeEmail: {
+              enabled: true,
+              updateEmailWithoutVerification: true,
+            },
+          },
+        }
+      );
+      await signUp(client);
 
-    const response = await client.post(
-      "/telegram/signin",
-      await signWidgetData({ id: 42 })
-    );
+      const response = await client.post("/change-email", { newEmail });
 
-    expect(response.status).toBe(200);
-    expect(rows("user")).toHaveLength(1);
-  });
-
-  it("rejects changing an existing user's email to a Telegram placeholder", async () => {
-    const { client, db } = createMemoryAuth(
-      {},
-      {
-        ...authOptions,
-        user: {
-          changeEmail: { enabled: true, updateEmailWithoutVerification: true },
-        },
-      }
-    );
-    await signUp(client);
-
-    await client.post("/change-email", {
-      newEmail: "42@telegram.placeholder.invalid",
-    });
-
-    expect(db.user[0]!.email).toBe("ann@example.com");
-  });
+      expect(response.status).toBe(400);
+      expect(response.json.code).toBe("PLACEHOLDER_EMAIL_RESERVED");
+      expect(db.user[0]!.email).toBe("ann@example.com");
+    }
+  );
 });
 
 describe("tolerating data written by older versions", () => {

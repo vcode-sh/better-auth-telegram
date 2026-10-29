@@ -25,6 +25,8 @@ export const ERROR_CODES = defineErrorCodes({
   NO_USER_IN_INIT_DATA: "No user data in initData",
   MINI_APP_AUTO_SIGNIN_DISABLED:
     "User not found and auto-signin is disabled for Mini Apps",
+  PLACEHOLDER_EMAIL_RESERVED:
+    "Telegram placeholder email addresses are reserved for Telegram sign-in",
 });
 
 export const SUCCESS_MESSAGES = {

@@ -94,6 +94,7 @@ export function createTelegramOIDCProvider(
     clientSecret,
     disableIdTokenSignIn: options.disableIdTokenSignIn,
     disableSignUp: options.disableSignUp,
+    overrideUserInfoOnSignIn: options.overrideUserInfoOnSignIn,
   };
 
   const requireOIDCCredentials = () => {
@@ -265,5 +266,3 @@ export function createTelegramOIDCProvider(
     options: providerOptions,
   };
 }
-
-export { buildScopes };

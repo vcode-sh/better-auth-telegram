@@ -133,6 +133,7 @@ telegram({
 | `clientSecret` | `string` | none (required) | Client Secret from the same page. There is no bot-token fallback any more (Telegram never accepted it): startup warns and OIDC logins throw until it's set. |
 | `disableIdTokenSignIn` | `boolean` | `false` | Reject client-submitted ID tokens (`POST /sign-in/social` or `/link-social` with `idToken`), leaving only the redirect flow. |
 | `disableSignUp` | `boolean` | `false` | Only sign in existing users; never create a user from Telegram OIDC (Better Auth redirects with `error=signup_disabled`). |
+| `overrideUserInfoOnSignIn` | `boolean` | `false` | Update the user's name and photo from the ID token on every sign-in, so Telegram profile changes show up. Leave it off if users can edit those fields in your app. |
 | `scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always included regardless; `profile` only when you don't pass your own list. |
 | `requestPhone` | `boolean` | `false` | Add the `phone` scope. When the Telegram columns exist, `phone_number` (digits only, no `+`) is copied to `user.telegramPhoneNumber`. |
 | `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |

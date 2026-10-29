@@ -145,6 +145,14 @@ export interface TelegramOIDCOptions {
   };
 
   /**
+   * Update the user's name and photo from the ID token on every sign-in
+   * (Better Auth's `overrideUserInfoOnSignIn`), so Telegram profile changes
+   * show up. Off by default: an app may let users edit those fields.
+   * @default false
+   */
+  overrideUserInfoOnSignIn?: boolean;
+
+  /**
    * Request bot access (adds "telegram:bot_access" scope)
    * @default false
    */
