@@ -164,9 +164,9 @@ export const auth = betterAuth({
 
 ### 422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL
 
-**Why:** the new user would get an email that another user already has. Either your mapper returned an email that's taken, or this Telegram account was unlinked from an old user who still has its placeholder email (a known limitation, planned for a later 3.x release).
+**Why:** your mapper returned an email that another user already has. The plugin never links the Telegram user to that other user.
 
-**Fix:** for mappers, return emails that are unique, or none. For the unlinked case, change the old user's email or delete the old user.
+**Fix:** return emails that are unique, or none (then the plugin uses a placeholder).
 
 ### 401 FAILED_TO_CREATE_SESSION
 

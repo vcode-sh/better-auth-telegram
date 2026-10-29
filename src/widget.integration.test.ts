@@ -183,6 +183,32 @@ describe("Linking and unlinking Telegram", () => {
     expect(db.user[0]!.telegramId).toBeNull();
   });
 
+  // Catches: unlink removing only the first row while a duplicate (left by
+  // v2, or by a cross-server race) keeps proving telegramId, so the
+  // "unlinked" Telegram user can still sign in.
+  it("removes every Telegram row on unlink, including duplicates", async () => {
+    const { client, db } = await signedUpClient();
+    await client.post("/telegram/link", await widgetUser());
+    const original = db.account.find(
+      (account) => account.providerId === "telegram"
+    )!;
+    db.account.push({ ...original, id: "duplicate-telegram-row" });
+
+    const response = await client.post("/telegram/unlink", {});
+    const userId = db.user[0]!.id;
+    client.clearCookies();
+    const again = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(200);
+    expect(
+      db.account
+        .filter((account) => account.providerId === "telegram")
+        .map((account) => account.userId)
+    ).not.toContain(userId);
+    expect(db.user.find((user) => user.id === userId)!.telegramId).toBeNull();
+    expect(again.json.user.id).not.toBe(userId);
+  });
+
   it("refuses to unlink the user's only account", async () => {
     const { client, db } = createMemoryAuth();
     await client.post("/telegram/signin", await widgetUser());
@@ -781,22 +807,43 @@ describe("what user mappers can set", () => {
     });
   });
 
-  // The user who unlinked keeps the placeholder email (unique), so a new
-  // user can't take it.
-  it("answers 422 when the Telegram user's placeholder belongs to a user who unlinked them", async () => {
+  // Catches: a permanent dead end. The user who unlinked keeps the
+  // placeholder email (unique), so the Telegram user could never sign up
+  // again; they get a new user with another reserved placeholder instead.
+  it("lets a Telegram user sign up again after unlinking from a user that kept the placeholder", async () => {
     const { client, rows } = await createSqliteAuth(
       {},
       { account: { accountLinking: { allowUnlinkingAll: true } } }
     );
-    await client.post("/telegram/signin", await widgetUser());
+    const first = await client.post("/telegram/signin", await widgetUser());
     await client.post("/telegram/unlink", {});
     client.clearCookies();
 
     const response = await client.post("/telegram/signin", await widgetUser());
 
-    expect(response.status).toBe(422);
-    expect(response.json.code).toBe("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL");
-    expect(rows("user")).toHaveLength(1);
+    expect(response.status).toBe(200);
+    expect(response.json.user.id).not.toBe(first.json.user.id);
+    expect(response.json.user.telegramId).toBe("42");
+    expect(response.json.user.email).toMatch(
+      /^42\.[a-z0-9]+@telegram\.placeholder\.invalid$/u
+    );
+    expect(rows("user")).toHaveLength(2);
+  });
+
+  // A placeholder variant is still reserved for that Telegram user.
+  it("refuses an email sign-up with another user's placeholder variant", async () => {
+    const { client } = await createSqliteAuth(
+      {},
+      { emailAndPassword: { enabled: true } }
+    );
+
+    const response = await client.post("/sign-up/email", {
+      email: "42.abc@telegram.placeholder.invalid",
+      password: "correct-horse-battery",
+      name: "Squatter",
+    });
+
+    expect(response.status).not.toBe(200);
   });
 
   // Better Auth's /sign-up/email answers 422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL.

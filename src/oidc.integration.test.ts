@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BOT_ID,
+  createClient,
   createMemoryAuth,
   createSqliteAuth,
   mockTelegramOIDC,
@@ -279,6 +280,36 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
       });
     }
   );
+
+  // Catches: mapOIDCProfileToUser vouching for an email Telegram never
+  // verified. Better Auth links implicitly on emailVerified, so the
+  // Telegram user would take over the existing account.
+  it("does not let mapOIDCProfileToUser mark an email verified", async () => {
+    const { auth, db } = createMemoryAuth(
+      {
+        loginWidget: false,
+        oidc: {
+          ...oidc().oidc,
+          mapOIDCProfileToUser: () => ({
+            email: "ann@example.com",
+            emailVerified: true,
+          }),
+        },
+      },
+      { emailAndPassword: { enabled: true } }
+    );
+    const victim = createClient(auth);
+    await signUp(victim);
+    db.user[0]!.emailVerified = true;
+    const attacker = createClient(auth);
+
+    const { location } = await signInWithTelegramOIDC(attacker, telegramMock);
+
+    expect(location).not.toBe("/dashboard");
+    expect(
+      db.account.filter((account) => account.providerId === "telegram-oidc")
+    ).toHaveLength(0);
+  });
 
   it("signs in with an ID token that has only sub (EdDSA / ES256K bots drop profile claims)", async () => {
     const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });

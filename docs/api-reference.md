@@ -425,7 +425,7 @@ Each step calls `user.validateUserInfo` with `source.method: "telegram-login-wid
 | 403 | your code / `validation_failed` | `user.validateUserInfo` refused / threw |
 | 403 | `USER_CREATION_REJECTED` | A database hook refused the new user |
 | 404 | `USER_CREATION_DISABLED` | No such user and `autoCreateUser: false` |
-| 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | The new user's email (from a mapper, or a placeholder kept by a user who unlinked Telegram) is taken |
+| 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | The email your mapper returned belongs to another user |
 | 500 | `BOT_TOKEN_REQUIRED` | No `botToken` |
 | 500 | `ORPHANED_ACCOUNT` | The `telegram` account points to a deleted user |
 

@@ -255,8 +255,13 @@ export function createTelegramOIDCProvider(
 
       await rememberVerifiedClaims(claims);
 
-      const { id: _ignored, ...mapped } =
-        options.mapOIDCProfileToUser?.(claims) ?? {};
+      // Telegram verifies no email, so a mapper can't vouch for one:
+      // Better Auth links to an existing user on emailVerified.
+      const {
+        id: _id,
+        emailVerified: _emailVerified,
+        ...mapped
+      } = options.mapOIDCProfileToUser?.(claims) ?? {};
 
       return {
         user: {
@@ -267,8 +272,8 @@ export function createTelegramOIDCProvider(
             identifier: claims.sub,
             namespace: TELEGRAM_OIDC_PROVIDER_ID,
           }),
-          emailVerified: false,
           ...mapped,
+          emailVerified: false,
         },
         data: claims,
       };

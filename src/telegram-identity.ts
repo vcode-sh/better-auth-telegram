@@ -71,7 +71,13 @@ async function isAllowedPlaceholder(user: Record<string, unknown>) {
     return true;
   }
   if (placeholder.namespace === PLUGIN_ID) {
-    return placeholder.identifier === String(user.telegramId ?? "");
+    // `<id>` or, after the user holding `<id>` unlinked Telegram, `<id>.<suffix>`.
+    const telegramId = String(user.telegramId ?? "");
+    return (
+      telegramId !== "" &&
+      (placeholder.identifier === telegramId ||
+        placeholder.identifier.startsWith(`${telegramId}.`))
+    );
   }
   const claims = await currentClaims();
   return claims !== null && placeholder.identifier === claims.sub.toLowerCase();

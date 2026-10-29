@@ -314,8 +314,8 @@ Steps 1, 2 and 3, then step 12 if you offer an unlink button.
 **Why did my `validateUserInfo` start rejecting Telegram users?**
 In v2 it was never called for Login Widget and Mini App users. Now it is, with `source.method` `"telegram-login-widget"` or `"telegram-mini-app"`. See [step 10](#10-review-your-hooks-if-you-use-databasehooks-or-uservalidateuserinfo).
 
-**A user unlinked Telegram and now can't sign up again with it (422).**
-Known limitation: the old user keeps the placeholder email, and a new user for the same Telegram account would need the same address. Change or delete the old user's email. A fix is planned for a later 3.x release.
+**A user unlinked Telegram. What happens if they sign in with it again?**
+They get a new user. The old user keeps its placeholder email, so the new one gets another reserved placeholder (`<telegramId>.<random>@telegram.placeholder.invalid`). Unlinking really separates the two.
 
 **Is anything faster or simpler now?**
 Yes: `useSession()` updates by itself after Telegram sign-in, link and unlink; error codes are typed and exported; the widget helpers return `destroy()`; `session.user.telegramId` is typed on the server and client; and the plugin reports configuration mistakes at startup through Better Auth's logger.

@@ -6,8 +6,8 @@ I only patch what's current. If you're running something older, you're on your o
 
 | Version | Supported          |
 |---------|--------------------|
-| 0.4.x   | Yes                |
-| < 0.4   | No (upgrade, mate) |
+| 3.x     | Yes                |
+| < 3.0   | No (2.x needs a Better Auth with GHSA-965c-763c-88jm) |
 
 ## Found a Vulnerability?
 
@@ -27,10 +27,10 @@ I'll acknowledge your report within 48 hours. Critical issues get patched within
 This plugin was built by someone who's read enough CVEs to develop a nervous twitch. Here's what's baked in:
 
 - **HMAC-SHA-256 via Web Crypto API** -- all verification runs through `crypto.subtle`, no synchronous fallbacks, no `node:crypto` imports. Works everywhere, trusts nothing
-- **Replay attack prevention** -- `auth_date` is validated against a configurable `maxAuthAge` (default 24h). Yesterday's auth data stays yesterday
+- **Bounded replay window** -- `auth_date` must be younger than `maxAuthAge` (default 24h) and at most 60 s in the future. Inside that window signed data can be replayed; lower `maxAuthAge` if that matters to you
 - **Different secret derivation paths** -- Login Widget uses `SHA256(botToken)`, Mini Apps use `HMAC-SHA256("WebAppData", botToken)`. Two doors, two keys
 - **Bot token stays server-side** -- never exposed to the client, never in responses, never in error messages. It's a secret, not a talking point
-- **Per-endpoint rate limiting** -- signin, link, unlink, validate -- all throttled. Brute-forcing was never a strategy, now it's also a slow one
+- **Per-endpoint rate limiting** -- signin, link, unlink, validate -- all throttled when Better Auth's rate limiter is on (by default only in production)
 - **Input validation** -- all endpoints validate data shape before touching crypto. Garbage in, `400 BAD_REQUEST` out
 - **`input: false` on user schema fields** -- `telegramId` and `telegramUsername` can't be written to directly during signup. No creative users setting their own Telegram ID
 - **`APIError` throws** -- consistent error handling through Better Auth's pipeline. No raw JSON leaking internal state

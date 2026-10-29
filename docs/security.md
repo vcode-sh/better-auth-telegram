@@ -127,7 +127,7 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 - Two-factor authentication is skipped for Telegram sign-ins ([above](#two-factor-authentication)).
 - Third-party Ed25519 validation of Mini App `initData` is not implemented ([above](#mini-app)).
 - OIDC sign-in doesn't find an existing Login Widget or Mini App user yet ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)).
-- A user who unlinked Telegram keeps their placeholder email. If that same Telegram account later signs up again, the new user would need the same address, so sign-up fails with 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. This is planned for a later 3.x release.
+- A user who unlinked Telegram keeps their placeholder email. If that same Telegram account signs up again, it becomes a new user with another reserved placeholder (`<telegramId>.<random>@telegram.placeholder.invalid`); the old user isn't touched.
 
 ## Keeping secrets safe
 

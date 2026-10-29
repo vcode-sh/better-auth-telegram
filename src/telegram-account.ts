@@ -268,19 +268,27 @@ async function findOrCreate(
     throw APIError.from("NOT_FOUND", options.notFound);
   }
 
-  const email = signUpEmail(options.userData, identity);
+  let email = signUpEmail(options.userData, identity);
   if (await internalAdapter.findUserByEmail(email)) {
     // Either another server just created this Telegram user (sign in as
-    // them), or a mapper returned someone else's email: refuse it like
-    // Better Auth's /sign-up/email does.
+    // them), the placeholder stayed with a user who unlinked this Telegram
+    // account (sign up with another reserved placeholder), or a mapper
+    // returned someone else's email: refuse it like Better Auth's
+    // /sign-up/email does.
     const created = await findTelegramAccount(ctx, identity.telegramId);
     if (created) {
       return await signInWithAccount(ctx, created, identity, method);
     }
-    throw APIError.from(
-      "UNPROCESSABLE_ENTITY",
-      BASE_ERROR_CODES.USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL
-    );
+    if ((options.userData.email ?? null) !== null) {
+      throw APIError.from(
+        "UNPROCESSABLE_ENTITY",
+        BASE_ERROR_CODES.USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL
+      );
+    }
+    email = createPlaceholderEmail({
+      identifier: `${identity.telegramId}.${randomSuffix()}`,
+      namespace: PLUGIN_ID,
+    });
   }
 
   try {
@@ -296,6 +304,12 @@ async function findOrCreate(
     }
     return await signInWithAccount(ctx, created, identity, method);
   }
+}
+
+/** Eight lowercase base-36 characters. */
+function randomSuffix(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return Array.from(bytes, (byte) => (byte % 36).toString(36)).join("");
 }
 
 /** A mapper's email, or the placeholder (Better Auth's user.email is required). */
@@ -467,20 +481,24 @@ export async function unlinkTelegramAccount(
 ) {
   const { internalAdapter } = ctx.context;
   const accounts = await internalAdapter.findAccounts(userId);
-  const telegramAccount = accounts.find(
+  // Every row: a duplicate (left by v2 or a cross-server race) would keep
+  // proving user.telegramId, and the unlinked user could still sign in.
+  const telegramAccounts = accounts.filter(
     (account) => account.providerId === PLUGIN_ID
   );
-  if (!telegramAccount) {
+  if (telegramAccounts.length === 0) {
     throw APIError.from("NOT_FOUND", ERROR_CODES.NOT_LINKED);
   }
 
   const allowUnlinkingAll =
     ctx.context.options.account?.accountLinking?.allowUnlinkingAll === true;
-  if (accounts.length === 1 && !allowUnlinkingAll) {
+  if (accounts.length === telegramAccounts.length && !allowUnlinkingAll) {
     throw APIError.from("BAD_REQUEST", ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT);
   }
 
-  await internalAdapter.deleteAccount(telegramAccount.id);
+  await Promise.all(
+    telegramAccounts.map((account) => internalAdapter.deleteAccount(account.id))
+  );
   // The hook also runs this; calling it here keeps the response consistent
   // even when the delete hook is deferred until after a transaction.
   await reconcileTelegramIdentity(ctx.context, userId);
