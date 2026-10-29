@@ -85,8 +85,10 @@ export function telegramLoginButtonEffect() {
     if (!container.current) {
       return;
     }
+    const host = document.createElement("div");
+    container.current.appendChild(host);
     const widget = authClient.initTelegramWidget(
-      container.current,
+      host,
       { size: "large" },
       async (telegramData) => {
         const result = await authClient.signInWithTelegram(telegramData);
@@ -97,8 +99,13 @@ export function telegramLoginButtonEffect() {
         window.location.href = "/dashboard";
       }
     );
-    widget.catch(() => setError("Could not load the Telegram button"));
+    widget.catch(() => {
+      if (host.isConnected) {
+        setError("Could not load the Telegram button");
+      }
+    });
     return () => {
+      host.remove();
       widget.then((w) => w.destroy()).catch(() => undefined);
     };
   }, []);

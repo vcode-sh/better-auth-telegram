@@ -65,7 +65,7 @@ What `initTelegramWidget` does: it loads Telegram's widget script (`https://tele
 
 ## React component
 
-In React, create the widget in an effect and remove it in the cleanup. This also keeps the button correct in development, where React runs effects twice.
+In React, create the widget in an effect and remove it in the cleanup. Each effect owns its own inner element, so a slow, cancelled initialization cannot remove the next button when React runs effects twice in development.
 
 ```tsx
 // TelegramLoginButton.tsx
@@ -82,8 +82,10 @@ export function TelegramLoginButton() {
     if (!container.current) {
       return;
     }
+    const host = document.createElement("div");
+    container.current.appendChild(host);
     const widget = authClient.initTelegramWidget(
-      container.current,
+      host,
       { size: "large" },
       async (telegramData) => {
         const result = await authClient.signInWithTelegram(telegramData);
@@ -94,8 +96,11 @@ export function TelegramLoginButton() {
         window.location.href = "/dashboard";
       }
     );
-    widget.catch(() => setError("Could not load the Telegram button"));
+    widget.catch(() => {
+      if (host.isConnected) setError("Could not load the Telegram button");
+    });
     return () => {
+      host.remove();
       widget.then((w) => w.destroy()).catch(() => undefined);
     };
   }, []);

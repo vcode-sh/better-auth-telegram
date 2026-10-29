@@ -150,6 +150,8 @@ This is what lets someone who signed up with OIDC later sign in with the Login W
 
 Safety rules: the details only go to the user who owns the `telegram-oidc` account for that token's `sub`. The plugin never overwrites a different `telegramId` already on the user, and never copies a Telegram ID that another user already has (it logs a warning instead).
 
+A hook that refuses an identity update stops sign-in with `IDENTITY_UPDATE_REJECTED`, before a new session is created. Identity-field writes use one transaction when your adapter supports it. Better Auth may already have created the base user and OIDC account before this step; fix the rejecting hook and retry instead of deleting user data.
+
 In OIDC-only mode there are no Telegram columns, so nothing is copied.
 
 **Changing the stored values.** `mapOIDCProfileToUser` receives the verified claims and can change `name`, `image` and `email` for new users:

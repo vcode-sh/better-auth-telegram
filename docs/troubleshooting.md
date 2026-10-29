@@ -359,6 +359,10 @@ Returning `telegramPhoneNumber` from `mapOIDCProfileToUser` does nothing; the pl
 
 Known limitation: Telegram's tokens expire after 30 seconds and can't be refreshed. Read `telegramId`, `telegramUsername` and `telegramPhoneNumber` from the user instead.
 
+### OIDC reports `internal_server_error` with duplicate account identities
+
+Check the server log. If Better Auth reports multiple accounts for one `(providerId, accountId)`, resolve those duplicate rows using the [upgrade checklist](./migration-v2-to-v3.md#3-update-the-database-everyone). Keep different users separate. The plugin does not choose an owner from ambiguous OIDC rows; it rejects sign-in without issuing a session.
+
 ## Getting help
 
 If nothing here helps, [open an issue](https://github.com/vcode-sh/better-auth-telegram/issues) with:

@@ -1,5 +1,10 @@
 import type { AuthContext, BetterAuthOptions } from "@better-auth/core";
-import { defineRequestState, hasRequestState } from "@better-auth/core/context";
+import {
+  defineRequestState,
+  getCurrentAdapter,
+  hasRequestState,
+  runWithTransaction,
+} from "@better-auth/core/context";
 import type { Account, User } from "better-auth";
 import { APIError } from "better-auth/api";
 import {
@@ -107,58 +112,70 @@ async function syncTelegramIdentity(
   if (claims.id === undefined) {
     return;
   }
-  const telegramId = String(claims.id);
-  const username = claims.preferred_username ?? null;
+  await runWithTransaction(ctx.adapter, async () => {
+    const telegramId = String(claims.id);
+    const username = claims.preferred_username ?? null;
 
-  if (
-    account.telegramId !== telegramId ||
-    (account.telegramUsername ?? null) !== username
-  ) {
-    await ctx.internalAdapter.updateAccount(account.id, {
-      telegramId,
-      telegramUsername: username,
-    } as Partial<Account>);
-  }
+    if (
+      account.telegramId !== telegramId ||
+      (account.telegramUsername ?? null) !== username
+    ) {
+      const updated = await ctx.internalAdapter.updateAccount(account.id, {
+        telegramId,
+        telegramUsername: username,
+      } as Partial<Account>);
+      if (!updated) {
+        throw APIError.from("FORBIDDEN", ERROR_CODES.IDENTITY_UPDATE_REJECTED);
+      }
+    }
 
-  const user = (await ctx.internalAdapter.findUserById(
-    userId
-  )) as TelegramUser | null;
-  if (!user) {
-    return;
-  }
-  if (user.telegramId && user.telegramId !== telegramId) {
-    // The user is linked to a different Telegram account; leave it alone.
-    return;
-  }
-  if (!user.telegramId) {
-    const owner = await ctx.adapter.findOne<TelegramUser>({
-      model: "user",
-      where: [{ field: "telegramId", value: telegramId }],
-    });
-    if (owner && owner.id !== userId) {
-      ctx.logger.warn(
-        "[better-auth-telegram] OIDC: another user already has this Telegram id; not copying it.",
-        { userId, otherUserId: owner.id }
-      );
+    const user = (await ctx.internalAdapter.findUserById(
+      userId
+    )) as TelegramUser | null;
+    if (!user) {
       return;
     }
-  }
+    if (user.telegramId && user.telegramId !== telegramId) {
+      // The user is linked to a different Telegram account; leave it alone.
+      return;
+    }
+    if (!user.telegramId) {
+      const adapter = await getCurrentAdapter(ctx.adapter);
+      const owner = await adapter.findOne<TelegramUser>({
+        model: "user",
+        where: [{ field: "telegramId", value: telegramId }],
+      });
+      if (owner && owner.id !== userId) {
+        ctx.logger.warn(
+          "[better-auth-telegram] OIDC: another user already has this Telegram id; not copying it.",
+          { userId, otherUserId: owner.id }
+        );
+        return;
+      }
+    }
 
-  const update: Partial<TelegramUser> = {};
-  if (user.telegramId !== telegramId) {
-    update.telegramId = telegramId;
-  }
-  // `id` is present, so the profile claims are: no `preferred_username`
-  // means the Telegram user has no username now.
-  if ((user.telegramUsername ?? null) !== username) {
-    update.telegramUsername = username;
-  }
-  if (claims.phone_number && user.telegramPhoneNumber !== claims.phone_number) {
-    update.telegramPhoneNumber = claims.phone_number;
-  }
-  if (Object.keys(update).length > 0) {
-    await ctx.internalAdapter.updateUser(userId, update);
-  }
+    const update: Partial<TelegramUser> = {};
+    if (user.telegramId !== telegramId) {
+      update.telegramId = telegramId;
+    }
+    // `id` is present, so the profile claims are: no `preferred_username`
+    // means the Telegram user has no username now.
+    if ((user.telegramUsername ?? null) !== username) {
+      update.telegramUsername = username;
+    }
+    if (
+      claims.phone_number &&
+      user.telegramPhoneNumber !== claims.phone_number
+    ) {
+      update.telegramPhoneNumber = claims.phone_number;
+    }
+    if (Object.keys(update).length > 0) {
+      const updated = await ctx.internalAdapter.updateUser(userId, update);
+      if (!updated) {
+        throw APIError.from("FORBIDDEN", ERROR_CODES.IDENTITY_UPDATE_REJECTED);
+      }
+    }
+  });
 }
 
 /** The user's OIDC account that the verified claims belong to, if any. */
@@ -287,7 +304,8 @@ export function telegramIdentityHooks(
     },
     session: {
       create: {
-        async after(session) {
+        // Reject identity-sync vetoes before a session is stored.
+        async before(session) {
           const claims = await currentClaims();
           if (!claims) {
             return;

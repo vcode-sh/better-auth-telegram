@@ -1,4 +1,7 @@
-import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
+import {
+  getCurrentAdapter,
+  tryGetCurrentAuthEndpointContext,
+} from "@better-auth/core/context";
 import { APIError } from "@better-auth/core/error";
 import type {
   OAuth2Tokens,
@@ -76,12 +79,20 @@ async function oidcPlaceholderEmail(sub: string): Promise<string> {
     namespace: TELEGRAM_OIDC_PROVIDER_ID,
   });
   const ctx = tryGetCurrentAuthEndpointContext()?.context;
+  if (!ctx) {
+    return email;
+  }
+  const adapter = await getCurrentAdapter(ctx.adapter);
+  // Existence only: Better Auth resolves ownership later and rejects duplicate
+  // identities there. Placeholder selection must not throw ahead of that check.
   if (
-    !ctx ||
-    (await ctx.internalAdapter.findAccountByKey({
-      providerId: TELEGRAM_OIDC_PROVIDER_ID,
-      accountId: sub,
-    }))
+    await adapter.findOne({
+      model: "account",
+      where: [
+        { field: "providerId", value: TELEGRAM_OIDC_PROVIDER_ID },
+        { field: "accountId", value: sub },
+      ],
+    })
   ) {
     return email;
   }

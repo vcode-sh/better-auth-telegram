@@ -59,7 +59,7 @@ export const everything = telegram({
 
 Why two bots in the last one: see [the two-bot rule](./telegram-bot-setup.md#using-more-than-one-method).
 
-**Invite-only.** Existing users can sign in with Telegram, but nobody new is created and nobody can link a new Telegram account:
+**Invite-only.** The Login Widget and Mini App may sign in existing users, but cannot create users; explicit Login Widget linking is disabled:
 
 ```ts
 import { telegram } from "better-auth-telegram";
@@ -68,12 +68,12 @@ export const inviteOnly = telegram({
   botToken: process.env.TELEGRAM_BOT_TOKEN,
   botUsername: process.env.TELEGRAM_BOT_USERNAME,
   autoCreateUser: false, // no new users from the Login Widget or Mini App
-  allowUserToLink: false, // no linking of new Telegram accounts
+  allowUserToLink: false, // disable the explicit /telegram/link route
   maxAuthAge: 3600, // accept sign-in data for 1 hour instead of 24
 });
 ```
 
-For OIDC, the matching switch is `oidc.disableSignUp: true`.
+For OIDC, the matching switch is `oidc.disableSignUp: true`. To also block a Widget/Mini App sign-in from linking itself to an existing OIDC user, set Better Auth's `account.accountLinking.disableImplicitLinking: true`.
 
 ## Plugin options
 

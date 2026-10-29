@@ -21,7 +21,7 @@ Better Auth 1.7 support. Stable release under the npm dist-tag `latest`.
 - **`oidc.clientSecret` is required** — the bot-token fallback is gone; Telegram never accepted it.
 - **Client-submitted ID tokens need their nonce** — `POST /sign-in/social` / `/link-social` with `idToken` must include the `nonce` the token carries. This refuses tokens issued without one; it is not replay protection (a captured token is accepted until it expires, about a minute with clock tolerance). The path stays on by default, as for Better Auth's built-in providers; `oidc.disableIdTokenSignIn` turns it off.
 - **Custom user mappers merge over the defaults** — `mapTelegramDataToUser` and `mapMiniAppDataToUser` no longer replace the default name and image when they omit them.
-- **Mapper output is parsed like a Better Auth OAuth profile** — mappers (including `mapOIDCProfileToUser`) can no longer set the user `id` or `emailVerified` (Telegram verifies no email; a verified flag from a mapper let Better Auth link the Telegram user to an existing account with that email), and `input: false` or unknown fields are dropped, as on Better Auth's OAuth sign-up. A mapper email another user already has answers 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (before: a 500 on SQL databases).
+- **Mapper output is parsed like a Better Auth OAuth profile** — mappers (including `mapOIDCProfileToUser`) can no longer set the user `id` or `emailVerified` (Telegram verifies no email; a verified flag from a mapper let Better Auth link the Telegram user to an existing account with that email), and `input: false` or unknown fields are dropped, as on Better Auth's OAuth sign-up. A Login Widget or Mini App mapper email another user already has answers 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (before: a 500 on SQL databases). OIDC follows Better Auth's OAuth linking rules.
 - **`oidc.scopes` adds to the defaults** — like Better Auth's built-in providers: `openid` and `profile` are always requested unless the new `oidc.disableDefaultScope` drops `profile`. Before, any `scopes` list replaced `profile`, so `scopes: ["phone"]` silently lost the Telegram id, names and username. Scopes are requested once each, including those passed to the sign-in request.
 - **Sign-in responses are filtered like Better Auth's** — `/telegram/signin` and `/telegram/miniapp/signin` return `user` and `session` through Better Auth's output parsing, so `returned: false` fields no longer leak.
 - **`TelegramOIDCClaims.id` is a `string`** — that is what Telegram sends (`"8306595751"`).
@@ -29,6 +29,9 @@ Better Auth 1.7 support. Stable release under the npm dist-tag `latest`.
 - **Tooling** — built with tsdown instead of tsup, TypeScript 7. `jose` is now a dependency instead of being bundled into `dist`.
 
 ### Fixed
+
+- **OIDC identity sync vetoes** — account/user updates are checked and synchronized in one adapter transaction. Refused writes stop sign-in before a new session is created, with `IDENTITY_UPDATE_REJECTED`; duplicate OIDC identities reach Better Auth's error redirect rather than an unhandled 500.
+- **React examples** — each widget effect owns a separate host, so out-of-order initialization cannot remove the active button. The linking example recreates its button after unlink; the Mini App example preserves URL-parameter fallback when the SDK is unavailable.
 
 - **Hook vetoes are respected** — a refused Telegram account creation or identity update returns 403, and `/telegram/unlink` reads back account removal before reporting success. A stale `user.telegramId` without a linked account no longer grants sign-in access. SQL transactions roll back rejected link/unlink changes.
 - **Concurrent links to one user** — different Telegram identities are serialized by target user as well as Telegram ID within one Better Auth instance, so only one can link.
@@ -46,7 +49,7 @@ Better Auth 1.7 support. Stable release under the npm dist-tag `latest`.
 - **`useSession` after Telegram sign-in, link and unlink** — the client actions (`signInWithTelegram`, `signInWithMiniApp`, `autoSignInFromMiniApp`, `linkTelegram`, `unlinkTelegram`) and the generated routes (`authClient.telegram.signin(...)`) now refresh the session store like Better Auth's own actions; before, the UI stayed signed out (or showed the old Telegram identity) until a reload.
 - **Coded errors instead of empty 500s** — a missing `oidc.clientSecret` (or client id) answers 500 `OIDC_CLIENT_SECRET_REQUIRED` / `OIDC_CLIENT_ID_REQUIRED` with a message; a database hook vetoing the session answers 401 `FAILED_TO_CREATE_SESSION`, as `/sign-in/email` does.
 - **`miniApp.validateInitData: false` no longer needs a bot token** for `/telegram/miniapp/signin` (nothing is verified with it there).
-- **Duplicate account rows** left by older versions no longer break sign-in, and link/create writes run in a transaction.
+- **Duplicate Login Widget / Mini App account rows** left by older versions no longer break sign-in, and link/create writes run in a transaction. OIDC still rejects ambiguous account ownership; resolve its duplicate rows before upgrading.
 - **`testMode` documentation** — it is informational (returned by `GET /telegram/config`) and never switched the widget to a test environment.
 
 ### Security

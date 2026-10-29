@@ -279,6 +279,82 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     expect(db.account).toHaveLength(1);
   });
 
+  it("redirects duplicate OIDC identities to an error without creating a session", async () => {
+    const { client, db } = createMemoryAuth(oidc());
+    await signInWithTelegramOIDC(client, telegramMock);
+    db.account.push({ ...db.account[0]!, id: "duplicate-oidc-account" });
+    client.clearCookies();
+    const sessionCount = db.session.length;
+
+    const { callback, location } = await signInWithTelegramOIDC(
+      client,
+      telegramMock
+    );
+
+    expect(callback.status).toBe(302);
+    expect(location).toContain("error=internal_server_error");
+    expect(client.hasSession()).toBe(false);
+    expect(db.session).toHaveLength(sessionCount);
+    expect(db.user).toHaveLength(1);
+  });
+
+  it.each([
+    { model: "account" as const, returning: false },
+    { model: "user" as const, returning: false },
+    { model: "account" as const, returning: true },
+    { model: "user" as const, returning: true },
+  ])(
+    "rejects OIDC when $model identity sync is vetoed (returning: $returning)",
+    async ({ model, returning }) => {
+      const before = vi.fn(async (): Promise<false | undefined> => undefined);
+      const { client, db } = createMemoryAuth(oidc(), {
+        databaseHooks: {
+          [model]: {
+            update: {
+              before: (data: Record<string, unknown>) =>
+                "telegramId" in data || "telegramUsername" in data
+                  ? before()
+                  : undefined,
+            },
+          },
+        },
+      });
+      if (returning) {
+        await signInWithTelegramOIDC(client, telegramMock);
+        client.clearCookies();
+      }
+      const sessionCount = db.session.length;
+      before.mockResolvedValue(false);
+
+      const { location } = await signInWithTelegramOIDC(
+        client,
+        telegramMock,
+        telegramClaims({ preferred_username: "changed" })
+      );
+
+      expect(location).toContain("error=IDENTITY_UPDATE_REJECTED");
+      expect(client.hasSession()).toBe(false);
+      expect(db.session).toHaveLength(sessionCount);
+    }
+  );
+
+  it("rolls back OIDC identity fields when a user update is vetoed on SQL", async () => {
+    const { client, rows, sqlite } = await createSqliteAuth(oidc(), {
+      databaseHooks: { user: { update: { before: async () => false } } },
+    });
+    try {
+      const { location } = await signInWithTelegramOIDC(client, telegramMock);
+
+      expect(location).toContain("error=IDENTITY_UPDATE_REJECTED");
+      expect(rows("account")[0]!.telegramId).toBeNull();
+      expect(rows("user")[0]!.telegramId).toBeNull();
+      expect(rows("session")).toHaveLength(0);
+      expect(client.hasSession()).toBe(false);
+    } finally {
+      sqlite.close();
+    }
+  });
+
   // An app may let Telegram users add a real email (password login, magic
   // links). Better Auth's `overrideUserInfoOnSignIn` writes the provider's
   // email back on every redirect-flow sign-in (callback.mjs, the only route

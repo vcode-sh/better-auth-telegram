@@ -266,7 +266,7 @@ These still work, but you can remove them:
 | `oidc.clientSecret` required, no bot-token fallback | OIDC sign-in answers 500 `OIDC_CLIENT_SECRET_REQUIRED` | [Step 4](#4-oidc-set-the-client-secret-oidc-users) |
 | Client-submitted ID tokens need their nonce | ID-token sign-in without `nonce` answers 401 | [Step 8](#8-oidc-send-the-nonce-with-client-side-id-tokens-only-if-you-call-sign-insocial-with-idtoken) |
 | Mappers merge over the defaults | Nothing breaks; omitted `name` / `image` now keep their default | [Step 9](#9-review-your-mappers-if-you-use-maptelegramdatatouser-or-mapminiappdatatouser) |
-| Mapper output is filtered like an OAuth profile | Mappers can't set `id`, `emailVerified`, unknown or `input: false` fields; a taken email answers 422 | [Step 9](#9-review-your-mappers-if-you-use-maptelegramdatatouser-or-mapminiappdatatouser) |
+| Mapper output is filtered like an OAuth profile | Mappers can't set `id`, `emailVerified`, unknown or `input: false` fields; a taken Widget/Mini App mapper email answers 422 | [Step 9](#9-review-your-mappers-if-you-use-maptelegramdatatouser-or-mapminiappdatatouser) |
 | `oidc.scopes` adds to `openid` + `profile` | Requests now include `profile` even if your list didn't | [Step 7](#7-oidc-check-scopes-oidc-users-who-set-oidcscopes) |
 | Sign-in responses are filtered like Better Auth's | Fields marked `returned: false` no longer appear in `/telegram/signin` and `/telegram/miniapp/signin` responses | Read them on the server if you need them |
 | `TelegramOIDCClaims.id` is `string` | TypeScript errors where code expects a number | [Step 5](#5-oidc-the-id-claim-is-a-string-oidc-users-with-typescript-code-that-reads-it) |

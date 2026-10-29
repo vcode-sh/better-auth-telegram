@@ -548,6 +548,9 @@ TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code; // "CANNOT_UNLINK_LAST_ACC
 | `ACCOUNT_NOT_LINKED` | 401 | A user with this Telegram account exists, but the account is not linked and account linking does not allow linking it on sign-in | signin, miniapp/signin |
 | `CANNOT_UNLINK_LAST_ACCOUNT` | 400 | Cannot unlink Telegram: it is the only way to sign in to this account | unlink |
 | `USER_CREATION_REJECTED` | 403 | User creation was rejected | signin, miniapp/signin |
+| `ACCOUNT_CREATION_REJECTED` | 403 | Telegram account creation was rejected | signin, miniapp/signin, link |
+| `ACCOUNT_UNLINK_REJECTED` | 403 | Telegram account removal was rejected | unlink |
+| `IDENTITY_UPDATE_REJECTED` | 403 / OAuth error redirect | Telegram identity update was rejected | link, unlink, OIDC identity sync |
 | `ORPHANED_ACCOUNT` | 500 | Telegram account references a user that does not exist | signin, miniapp/signin |
 | `INIT_DATA_REQUIRED` | 400 | initData is required and must be a string | miniapp/signin, miniapp/validate |
 | `INVALID_MINI_APP_INIT_DATA` | 401 | Invalid Mini App initData | miniapp/signin |
@@ -565,7 +568,7 @@ TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code; // "CANNOT_UNLINK_LAST_ACC
 | `INVALID_ORIGIN` | 403 | Sign-in from an untrusted origin |
 | `validation_failed` | 403 | `user.validateUserInfo` threw |
 | `FAILED_TO_CREATE_SESSION` | 401 | A database hook refused the session |
-| `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | 422 | The new user's email is taken |
+| `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | 422 | The new Widget/Mini App user's email is taken |
 | `BANNED_USER` | 403 | Better Auth's admin plugin: the user is banned |
 | `ID_TOKEN_NOT_SUPPORTED` | 404 | ID-token sign-in with `oidc.disableIdTokenSignIn` |
 

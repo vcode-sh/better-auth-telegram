@@ -3,17 +3,21 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authClient } from "../lib/auth-client";
 
 export function TelegramLinkButton() {
+  const container = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (success || !container.current) return;
+    const host = document.createElement("div");
+    container.current.appendChild(host);
     const widget = authClient.initTelegramWidget(
-      "telegram-link-container",
+      host,
       {
         size: "medium",
         showUserPhoto: true,
@@ -34,12 +38,13 @@ export function TelegramLinkButton() {
       }
     );
     widget.catch(() => {
-      setError("Failed to load Telegram widget");
+      if (host.isConnected) setError("Failed to load Telegram widget");
     });
     return () => {
+      host.remove();
       widget.then((w) => w.destroy()).catch(() => undefined);
     };
-  }, []);
+  }, [success]);
 
   const handleUnlink = async () => {
     setLoading(true);
@@ -59,7 +64,7 @@ export function TelegramLinkButton() {
     <div className="flex flex-col space-y-4">
       <h3 className="font-semibold text-lg">Link Telegram Account</h3>
 
-      {!success && <div id="telegram-link-container" />}
+      {!success && <div ref={container} />}
 
       {success && (
         <div className="space-y-2">
