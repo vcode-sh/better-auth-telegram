@@ -1,6 +1,6 @@
 name: Bug Report
 description: Something broke. I'm not surprised, but I'm listening.
-labels: [bug]
+labels: [ bug ]
 body:
   - type: markdown
     attributes:
