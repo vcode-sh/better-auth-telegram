@@ -21,6 +21,7 @@ vi.mock("better-auth/api", () => {
       (_path: string, _options: any, handler: any) => handler
     ),
     sessionMiddleware: {},
+    freshSessionMiddleware: {},
     APIError: MockAPIError,
   };
 });

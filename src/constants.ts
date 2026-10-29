@@ -13,6 +13,12 @@ export const ERROR_CODES = defineErrorCodes({
   TELEGRAM_ALREADY_LINKED_SELF:
     "This Telegram account is already linked to your account",
   NOT_LINKED: "No Telegram account linked",
+  DIFFERENT_TELEGRAM_ACCOUNT_LINKED:
+    "A different Telegram account is already linked to your account",
+  CANNOT_UNLINK_LAST_ACCOUNT:
+    "Cannot unlink Telegram: it is the only way to sign in to this account",
+  USER_CREATION_REJECTED: "User creation was rejected",
+  ORPHANED_ACCOUNT: "Telegram account references a user that does not exist",
   INIT_DATA_REQUIRED: "initData is required and must be a string",
   INVALID_MINI_APP_INIT_DATA: "Invalid Mini App initData",
   INVALID_MINI_APP_DATA_STRUCTURE: "Invalid Mini App data structure",
@@ -31,6 +37,12 @@ export const PLUGIN_ID = "telegram";
 export const DEFAULT_MAX_AUTH_AGE = 86400;
 
 export const TELEGRAM_OIDC_PROVIDER_ID = "telegram-oidc";
+
+/** Domains of the placeholder emails, keyed by namespace (provider id). */
+export const PLACEHOLDER_EMAIL_DOMAINS = {
+  [PLUGIN_ID]: `${PLUGIN_ID}.placeholder.invalid`,
+  [TELEGRAM_OIDC_PROVIDER_ID]: `${TELEGRAM_OIDC_PROVIDER_ID}.placeholder.invalid`,
+} as const;
 export const TELEGRAM_OIDC_ISSUER = "https://oauth.telegram.org";
 export const TELEGRAM_OIDC_AUTH_ENDPOINT = "https://oauth.telegram.org/auth";
 export const TELEGRAM_OIDC_TOKEN_ENDPOINT = "https://oauth.telegram.org/token";

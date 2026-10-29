@@ -1,22 +1,43 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "extends": ["ultracite/core"],
+  "extends": ["ultracite/biome/core", "ultracite/biome/vitest"],
+  "files": {
+    // examples/ and test/ are standalone Next.js apps with their own deps.
+    "includes": ["!!examples", "!!test"]
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        // Ultracite 8 enables key sorting; reordering every object literal
+        // is churn without a behavioral benefit here.
+        "useSortedKeys": "off"
+      }
+    }
+  },
   "linter": {
     "rules": {
+      "nursery": {
+        "useTailwindSortedClasses": "off"
+      },
       "style": {
         "useNumericSeparators": "off",
         "noNonNullAssertion": "off",
         "useNamingConvention": "off",
         "useFilenamingConvention": "off",
         "noMagicNumbers": "off",
-        "useDefaultParameterLast": "off"
+        "useDefaultParameterLast": "off",
+        // getElementById(id) is not equivalent to querySelector(`#${id}`)
+        // for ids that need CSS escaping.
+        "useDomQuerySelector": "off"
       },
       "suspicious": {
         "noExplicitAny": "off",
         "noEmptyBlockStatements": "off"
       },
       "complexity": {
-        "noExcessiveCognitiveComplexity": "off"
+        "noExcessiveCognitiveComplexity": "off",
+        // `export default telegramClient` is public API.
+        "noRedundantDefaultExport": "off"
       },
       "performance": {
         "useTopLevelRegex": "off",

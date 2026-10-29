@@ -22,6 +22,8 @@ export function createTelegramSchema(
           type: "string",
           required: false,
           unique: false,
+          // Every Login Widget / Mini App sign-in looks users up by it.
+          index: true,
           input: false,
         },
         telegramPhoneNumber: {

@@ -82,9 +82,21 @@ export function createPluginConfig(
     );
   }
 
-  if (oidcEnabled && !(oidc?.clientSecret || resolvedBotToken)) {
+  if (oidcEnabled && !oidc?.clientSecret) {
     console.warn(
-      "[better-auth-telegram] OIDC: clientSecret is required. Configure oidc.clientSecret or botToken before starting an OIDC login."
+      "[better-auth-telegram] OIDC: clientSecret is required. Configure oidc.clientSecret (the Client Secret shown in @BotFather > your bot > Login Widget) before starting an OIDC login."
+    );
+  }
+
+  if (miniAppEnabled && miniApp?.validateInitData === false) {
+    console.warn(
+      "[better-auth-telegram] miniApp.validateInitData is false: Mini App sign-in accepts unsigned initData, so anyone can sign in as any Telegram user. Never use this in production."
+    );
+  }
+
+  if (widgetEnabled && oidcEnabled && !oidc?.clientId) {
+    console.warn(
+      "[better-auth-telegram] Login Widget and OIDC are both enabled on the same bot. Switching a bot to OpenID Connect in @BotFather permanently disables its legacy Login Widget; use a second bot for OIDC (oidc.clientId and oidc.clientSecret) or set loginWidget: false."
     );
   }
 

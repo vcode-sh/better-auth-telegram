@@ -1,11 +1,31 @@
 {
   "name": "better-auth-telegram",
-  "version": "2.0.1",
-  "type": "module",
+  "version": "3.0.0-beta.0",
   "description": "Telegram authentication plugin for Better Auth",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "keywords": [
+    "better-auth",
+    "better-auth-plugin",
+    "telegram",
+    "telegram-login",
+    "telegram-mini-apps",
+    "authentication",
+    "oidc",
+    "oauth",
+    "plugin",
+    "typescript"
+  ],
+  "homepage": "https://github.com/vcode-sh/better-auth-telegram#readme",
+  "bugs": {
+    "url": "https://github.com/vcode-sh/better-auth-telegram/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vcode-sh/better-auth-telegram.git"
+  },
+  "license": "MIT",
+  "author": "Vibe Code <hello@vcode.sh> (https://vcode.sh)",
+  "sideEffects": false,
+  "type": "module",
   "exports": {
     ".": {
       "import": {
@@ -28,65 +48,54 @@
       }
     }
   },
-  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "type-check": "tsc --noEmit",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "lint": "ultracite check",
+    "lint:fix": "ultracite fix",
+    "prepublishOnly": "npm run type-check && npm run test && npm run build && npm run test:types",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "lint": "npx ultracite check",
-    "lint:fix": "npx ultracite fix",
-    "prepublishOnly": "npm run type-check && npm run test && npm run build"
+    "test:types": "tsc -p test-d && tsc -p test-d/tsconfig.node16.json",
+    "test:ui": "vitest --ui",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
   },
-  "keywords": [
-    "better-auth",
-    "better-auth-plugin",
-    "telegram",
-    "telegram-login",
-    "telegram-mini-apps",
-    "authentication",
-    "oauth",
-    "plugin",
-    "typescript"
-  ],
-  "author": "Vibe Code <hello@vcode.sh> (https://vcode.sh)",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/vcode-sh/better-auth-telegram.git"
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,jsonc,css}": [
+      "ultracite fix"
+    ]
   },
-  "bugs": {
-    "url": "https://github.com/vcode-sh/better-auth-telegram/issues"
+  "dependencies": {
+    "jose": "^6.2.14"
   },
-  "homepage": "https://github.com/vcode-sh/better-auth-telegram#readme",
+  "devDependencies": {
+    "@arethetypeswrong/core": "0.18.5",
+    "@better-auth/core": "1.7.14",
+    "@biomejs/biome": "2.6.4",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/ui": "5.0.5",
+    "better-auth": "1.7.14",
+    "happy-dom": "21.0.4",
+    "lint-staged": "17.6.0",
+    "publint": "0.3.25",
+    "tsdown": "0.23.3",
+    "typescript": "7.0.2",
+    "ultracite": "8.1.0",
+    "vitest": "5.0.5"
+  },
   "peerDependencies": {
-    "better-auth": ">=1.6.22 <1.7.0"
+    "@better-auth/core": ">=1.7.12 <1.8.0",
+    "better-auth": ">=1.7.12 <1.8.0"
   },
   "engines": {
     "node": ">=24.0.0"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.4.6",
-    "@types/node": "^24.13.3",
-    "@vitest/coverage-v8": "4.1.10",
-    "@vitest/ui": "^4.1.10",
-    "better-auth": "1.6.25",
-    "happy-dom": "20.11.1",
-    "lint-staged": "17.2.0",
-    "tsup": "8.5.1",
-    "typescript": "5.9.3",
-    "ultracite": "7.5.9",
-    "vitest": "4.1.10"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,css}": [
-      "npx ultracite fix"
-    ]
   }
 }

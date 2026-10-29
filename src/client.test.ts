@@ -180,7 +180,7 @@ describe("telegramClient", () => {
       const actions = client.getActions(mockFetch);
       await actions.unlinkTelegram();
 
-      const callArgs = mockFetch.mock.calls[0];
+      const [callArgs] = mockFetch.mock.calls;
       expect(callArgs[1]).not.toHaveProperty("body");
     });
 
@@ -287,7 +287,7 @@ describe("telegramClient", () => {
     });
 
     it("should clear container before adding widget", async () => {
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       container.innerHTML = "<div>Old content</div>";
 
       const actions = client.getActions(mockFetch);
@@ -310,7 +310,7 @@ describe("telegramClient", () => {
         async () => {}
       );
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script).toBeTruthy();
@@ -325,7 +325,7 @@ describe("telegramClient", () => {
       const actions = client.getActions(mockFetch);
       await actions.initTelegramWidget("telegram-login", {}, async () => {});
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.getAttribute("data-size")).toBe("large");
@@ -337,7 +337,7 @@ describe("telegramClient", () => {
       const actions = client.getActions(mockFetch);
       await actions.initTelegramWidget("telegram-login", {}, async () => {});
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.hasAttribute("data-request-access")).toBe(false);
@@ -351,7 +351,7 @@ describe("telegramClient", () => {
         async () => {}
       );
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.getAttribute("data-request-access")).toBe("write");
@@ -363,11 +363,11 @@ describe("telegramClient", () => {
 
       await actions.initTelegramWidget("telegram-login", {}, callback);
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
       const onAuthAttr = script?.getAttribute("data-onauth");
 
-      expect(onAuthAttr).toMatch(/telegramCallback_\d+\(user\)/);
+      expect(onAuthAttr).toMatch(/telegramCallback_\d+\(user\)/u);
 
       // Extract callback name
       const callbackName = onAuthAttr?.replace("(user)", "");
@@ -388,7 +388,7 @@ describe("telegramClient", () => {
       await actions.initTelegramWidget("telegram-login", {}, callback);
 
       // Find the callback function
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
       const onAuthAttr = script?.getAttribute("data-onauth");
       const callbackName = onAuthAttr?.replace("(user)", "");
@@ -411,7 +411,7 @@ describe("telegramClient", () => {
       const actions = client.getActions(mockFetch);
       await actions.initTelegramWidget("telegram-login", {}, callback);
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
       const onAuthAttr = script?.getAttribute("data-onauth");
       const callbackName = onAuthAttr?.replace("(user)", "");
@@ -457,7 +457,7 @@ describe("telegramClient", () => {
         {}
       );
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.getAttribute("data-auth-url")).toBe("/auth/callback");
@@ -471,7 +471,7 @@ describe("telegramClient", () => {
         {}
       );
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.hasAttribute("data-onauth")).toBe(false);
@@ -485,7 +485,7 @@ describe("telegramClient", () => {
         {}
       );
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.getAttribute("data-size")).toBe("large");
@@ -503,7 +503,7 @@ describe("telegramClient", () => {
         lang: "pl",
       });
 
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       const script = container.querySelector("script");
 
       expect(script?.getAttribute("data-size")).toBe("small");
@@ -514,7 +514,7 @@ describe("telegramClient", () => {
     });
 
     it("should clear container before adding widget", async () => {
-      const container = document.getElementById("telegram-login")!;
+      const container = document.querySelector("#telegram-login")!;
       container.innerHTML = "<p>Old content</p>";
 
       const actions = client.getActions(mockFetch);
@@ -838,7 +838,7 @@ describe("telegramClient", () => {
     });
 
     afterEach(() => {
-      const container = document.getElementById("telegram-widget-test");
+      const container = document.querySelector("#telegram-widget-test");
       if (container) {
         document.body.removeChild(container);
       }

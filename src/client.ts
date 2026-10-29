@@ -1,4 +1,4 @@
-import type { BetterAuthClientPlugin } from "better-auth/client";
+import type { BetterAuthClientPlugin, BetterFetch } from "better-auth/client";
 import type { telegram } from "./index";
 import type { TelegramAuthData } from "./types";
 
@@ -21,7 +21,7 @@ interface TelegramConfigResponse {
 /**
  * Telegram Login Widget script URL
  */
-const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?22";
+const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?24";
 
 /**
  * Options for initializing Telegram Login Widget
@@ -92,7 +92,7 @@ function getMiniAppInitData(): string | undefined {
   }
 
   try {
-    const hash = window.location.hash;
+    const { hash } = window.location;
     if (!hash) {
       return undefined;
     }
@@ -111,7 +111,7 @@ export const telegramClient = () => {
     id: "telegram",
     $InferServerPlugin: {} as ReturnType<TelegramPlugin>,
 
-    getActions: ($fetch) => ({
+    getActions: ($fetch: BetterFetch) => ({
       /**
        * Sign in with Telegram
        * @param authData - Authentication data from Telegram Login Widget
@@ -447,8 +447,8 @@ export const telegramClient = () => {
           errorCallbackURL?: string;
         },
         fetchOptions?: FetchOptions
-      ) => {
-        return await $fetch("/sign-in/social", {
+      ) =>
+        await $fetch("/sign-in/social", {
           method: "POST",
           body: {
             provider: "telegram-oidc",
@@ -456,8 +456,7 @@ export const telegramClient = () => {
             errorCallbackURL: options?.errorCallbackURL,
           },
           ...fetchOptions,
-        });
-      },
+        }),
     }),
   } satisfies BetterAuthClientPlugin;
 };

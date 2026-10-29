@@ -8,6 +8,7 @@ import {
 import { createTelegramOIDCProvider } from "./oidc";
 import { createPluginConfig } from "./plugin-config";
 import { createTelegramSchema } from "./schema";
+import { telegramIdentityHooks } from "./telegram-identity";
 import type { TelegramPluginOptions } from "./types";
 import { createWidgetEndpoints, getWidgetRateLimits } from "./widget-endpoints";
 
@@ -49,19 +50,26 @@ export const telegram = (options: TelegramPluginOptions) => {
   return {
     id: PLUGIN_ID,
 
-    // Inject OIDC provider into better-auth's social providers
-    ...(config.oidcEnabled
-      ? {
-          init: (ctx) => ({
+    // Inject the OIDC provider into Better Auth's social providers, and
+    // install the database hooks that guard placeholder emails and keep the
+    // Telegram identity on the user consistent (see telegram-identity.ts).
+    init: (ctx) => ({
+      ...(config.oidcEnabled
+        ? {
             context: {
               socialProviders: [
                 createTelegramOIDCProvider(config.botToken, config.oidc!),
                 ...ctx.socialProviders,
               ],
             },
-          }),
-        }
-      : {}),
+          }
+        : {}),
+      options: {
+        databaseHooks: telegramIdentityHooks(ctx, {
+          identityFields: config.widgetEnabled || config.miniAppEnabled,
+        }),
+      },
+    }),
 
     schema: createTelegramSchema(config),
 

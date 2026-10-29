@@ -528,13 +528,7 @@ describe("validateTelegramAuthData", () => {
         hash: "abc123",
       };
 
-      if (validateTelegramAuthData(data)) {
-        // TypeScript should know this is TelegramAuthData now
-        expect(data.id).toBe(123456789);
-        expect(data.first_name).toBe("John");
-        expect(data.auth_date).toBe(1234567890);
-        expect(data.hash).toBe("abc123");
-      }
+      expect(validateTelegramAuthData(data)).toBe(true);
     });
   });
 });

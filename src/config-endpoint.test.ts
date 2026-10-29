@@ -2,15 +2,14 @@
  * @vitest-environment happy-dom
  */
 import { describe, expect, it, vi } from "vitest";
+import { createConfigEndpoint } from "./config-endpoint";
+import type { TelegramPluginConfig } from "./plugin-config";
 
 vi.mock("better-auth/api", () => ({
   createAuthEndpoint: vi.fn(
     (_path: string, _options: any, handler: any) => handler
   ),
 }));
-
-import { createConfigEndpoint } from "./config-endpoint";
-import type { TelegramPluginConfig } from "./plugin-config";
 
 function makeConfig(
   overrides: Partial<TelegramPluginConfig> = {}
@@ -92,7 +91,7 @@ describe("createConfigEndpoint", () => {
     const ctx = mockCtx();
     await (endpoint.getTelegramConfig as any)(ctx);
 
-    const response = ctx.json.mock.calls[0]![0];
+    const [[response]] = ctx.json.mock.calls as [[unknown]];
     expect(response).not.toHaveProperty("botToken");
     expect(JSON.stringify(response)).not.toContain("tok:en");
   });

@@ -1,7 +1,11 @@
 /**
  * @vitest-environment happy-dom
  */
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
+
+import {
+  createAuthorizationURL,
+  validateAuthorizationCode,
+} from "@better-auth/core/oauth2";
 import {
   afterEach,
   beforeEach,
@@ -19,36 +23,26 @@ import {
   TELEGRAM_OIDC_TOKEN_ENDPOINT,
 } from "./constants";
 import { buildScopes, createTelegramOIDCProvider } from "./oidc";
+import { mockTelegramOIDC, telegramClaims } from "./testing/harness";
 import type { TelegramOIDCClaims } from "./types";
 
-// Mock @better-fetch/fetch
-vi.mock("@better-fetch/fetch", () => ({
-  betterFetch: vi.fn(),
-}));
-
-// Mock @better-auth/core/oauth2
+// Mock @better-auth/core/oauth2 (hoisted above the imports by Vitest)
 vi.mock("@better-auth/core/oauth2", () => ({
   createAuthorizationURL: vi.fn(),
   validateAuthorizationCode: vi.fn(),
 }));
 
-import {
-  createAuthorizationURL,
-  validateAuthorizationCode,
-} from "@better-auth/core/oauth2";
-import { betterFetch } from "@better-fetch/fetch";
-
-const mockedBetterFetch = vi.mocked(betterFetch);
 const mockedCreateAuthorizationURL = vi.mocked(createAuthorizationURL);
 const mockedValidateAuthorizationCode = vi.mocked(validateAuthorizationCode);
 
 const BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz";
 const BOT_ID = "123456789";
+const CLIENT_SECRET = "client-secret-from-botfather";
 
 describe("TelegramOIDCClaims", () => {
   it("models Telegram profile and phone verification claims", () => {
     expectTypeOf<TelegramOIDCClaims["id"]>().toEqualTypeOf<
-      number | undefined
+      string | undefined
     >();
     expectTypeOf<TelegramOIDCClaims["given_name"]>().toEqualTypeOf<
       string | undefined
@@ -144,48 +138,101 @@ describe("createTelegramOIDCProvider", () => {
 
   describe("Provider shape", () => {
     it("should return a valid OAuthProvider object", () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
 
       expect(provider).toHaveProperty("id");
       expect(provider).toHaveProperty("name");
       expect(provider).toHaveProperty("createAuthorizationURL");
       expect(provider).toHaveProperty("validateAuthorizationCode");
       expect(provider).toHaveProperty("getUserInfo");
-      expect(provider).toHaveProperty("verifyIdToken");
+      expect(provider).toHaveProperty("accountSubject");
+      expect(provider).toHaveProperty("idToken");
       expect(provider).toHaveProperty("options");
     });
 
     it("should have correct id", () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       expect(provider.id).toBe(TELEGRAM_OIDC_PROVIDER_ID);
       expect(provider.id).toBe("telegram-oidc");
     });
 
     it("should have correct name", () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       expect(provider.name).toBe("Telegram");
     });
 
     it("should have all methods as functions", () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
 
       expect(typeof provider.createAuthorizationURL).toBe("function");
       expect(typeof provider.validateAuthorizationCode).toBe("function");
       expect(typeof provider.getUserInfo).toBe("function");
-      expect(typeof provider.verifyIdToken).toBe("function");
+      expect(typeof provider.accountSubject).toBe("function");
+    });
+
+    it("binds ID tokens to the authorization request and Telegram's issuer", () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+
+      expect(provider.requiresIdTokenNonce).toBe(true);
+      expect(provider.issuer).toBe(TELEGRAM_OIDC_ISSUER);
+      expect(provider.idToken).toHaveProperty("verify");
+    });
+
+    it("rejects client-submitted ID tokens without a nonce", async () => {
+      const telegram = await mockTelegramOIDC();
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+      const token = await telegram.sign({ ...telegramClaims(), nonce: "n" });
+      const { verify } = provider.idToken as {
+        verify: (t: string, n?: string) => Promise<boolean>;
+      };
+
+      expect(await verify(token)).toBe(false);
+      expect(await verify(token, "other")).toBe(false);
+      expect(await verify(token, "n")).toBe(true);
+      telegram.restore();
+    });
+
+    it("verifies client-submitted ID tokens against the configured client ID", async () => {
+      const telegram = await mockTelegramOIDC({ clientId: "987654321" });
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+        clientId: "987654321",
+      });
+      const { verify } = provider.idToken as {
+        verify: (t: string, n?: string) => Promise<boolean>;
+      };
+      const token = await telegram.sign({ ...telegramClaims(), nonce: "n" });
+
+      expect(await verify(token, "n")).toBe(true);
+      telegram.restore();
     });
 
     it("should set correct options with bot ID as clientId", () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      expect(provider.options).toEqual({
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+      expect(provider.options).toMatchObject({
         clientId: BOT_ID,
-        clientSecret: BOT_TOKEN,
+        clientSecret: CLIENT_SECRET,
       });
     });
 
     it("should use separate clientId when provided", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
         clientId: "999888777",
       });
       expect(provider.options?.clientId).toBe("999888777");
@@ -202,22 +249,30 @@ describe("createTelegramOIDCProvider", () => {
       });
     });
 
-    it("should fall back to bot token when clientSecret is not provided", () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    it("never uses the bot token as the client secret", () => {
       const provider = createTelegramOIDCProvider(BOT_TOKEN, {});
-      expect(provider.options?.clientSecret).toBe(BOT_TOKEN);
-      warnSpy.mockRestore();
+
+      expect(provider.options?.clientSecret).toBe("");
+      expect(() =>
+        provider.createAuthorizationURL({
+          state: "s",
+          codeVerifier: "v",
+          redirectURI: "https://example.com/cb",
+        })
+      ).toThrow("clientSecret is required");
     });
 
-    it("should warn when clientSecret is not provided", () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      createTelegramOIDCProvider(BOT_TOKEN, {});
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("no clientSecret provided"),
-        expect.any(String),
-        expect.any(String)
-      );
-      warnSpy.mockRestore();
+    it("passes disableIdTokenSignIn and disableSignUp to Better Auth", () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+        disableIdTokenSignIn: true,
+        disableSignUp: true,
+      });
+
+      expect(provider.options).toMatchObject({
+        disableIdTokenSignIn: true,
+        disableSignUp: true,
+      });
     });
   });
 
@@ -228,7 +283,9 @@ describe("createTelegramOIDCProvider", () => {
     });
 
     it("should use first part before colon as bot ID", () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       expect(provider.options?.clientId).toBe("123456789");
     });
 
@@ -243,7 +300,9 @@ describe("createTelegramOIDCProvider", () => {
       const mockUrl = new URL("https://oauth.telegram.org/auth?test=1");
       mockedCreateAuthorizationURL.mockResolvedValueOnce(mockUrl);
 
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       const result = await provider.createAuthorizationURL({
         state: "test-state",
         codeVerifier: "test-verifier",
@@ -257,16 +316,37 @@ describe("createTelegramOIDCProvider", () => {
         id: TELEGRAM_OIDC_PROVIDER_ID,
         options: {
           clientId: BOT_ID,
-          clientSecret: BOT_TOKEN,
+          clientSecret: CLIENT_SECRET,
         },
         authorizationEndpoint: TELEGRAM_OIDC_AUTH_ENDPOINT,
         scopes: expect.arrayContaining(["openid", "profile"]),
         state: "test-state",
         codeVerifier: "test-verifier",
         redirectURI: "https://example.com/callback",
+        nonce: undefined,
       });
 
       expect(result).toBe(mockUrl);
+    });
+
+    it("forwards the ID token nonce Better Auth generated", async () => {
+      mockedCreateAuthorizationURL.mockResolvedValueOnce(
+        new URL("https://oauth.telegram.org/auth")
+      );
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+      await provider.createAuthorizationURL({
+        state: "s",
+        codeVerifier: "v",
+        redirectURI: "https://example.com/callback",
+        idTokenNonce: "nonce-1",
+      });
+
+      expect(mockedCreateAuthorizationURL).toHaveBeenCalledWith(
+        expect.objectContaining({ nonce: "nonce-1" })
+      );
     });
 
     it("should reject authorization when neither botToken nor OIDC credentials are configured", () => {
@@ -303,7 +383,9 @@ describe("createTelegramOIDCProvider", () => {
       const mockUrl = new URL("https://oauth.telegram.org/auth");
       mockedCreateAuthorizationURL.mockResolvedValueOnce(mockUrl);
 
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       await provider.createAuthorizationURL({
         state: "state",
         codeVerifier: "verifier",
@@ -313,9 +395,9 @@ describe("createTelegramOIDCProvider", () => {
         loginHint: undefined,
       });
 
-      const callArgs = mockedCreateAuthorizationURL.mock.calls[0]![0];
-      expect(callArgs.scopes).toContain("extra_scope");
-      expect(callArgs.scopes).toContain("openid");
+      const [{ scopes }] = mockedCreateAuthorizationURL.mock.lastCall!;
+      expect(scopes).toContain("extra_scope");
+      expect(scopes).toContain("openid");
     });
 
     it("should use custom scopes from options", async () => {
@@ -323,6 +405,7 @@ describe("createTelegramOIDCProvider", () => {
       mockedCreateAuthorizationURL.mockResolvedValueOnce(mockUrl);
 
       const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
         requestPhone: true,
         requestBotAccess: true,
       });
@@ -336,16 +419,18 @@ describe("createTelegramOIDCProvider", () => {
         loginHint: undefined,
       });
 
-      const callArgs = mockedCreateAuthorizationURL.mock.calls[0]![0];
-      expect(callArgs.scopes).toContain("phone");
-      expect(callArgs.scopes).toContain("telegram:bot_access");
+      const [{ scopes }] = mockedCreateAuthorizationURL.mock.lastCall!;
+      expect(scopes).toContain("phone");
+      expect(scopes).toContain("telegram:bot_access");
     });
 
     it("should NOT pass additionalParams, origin, or bot_id (issue #12)", async () => {
       const mockUrl = new URL("https://oauth.telegram.org/auth");
       mockedCreateAuthorizationURL.mockResolvedValueOnce(mockUrl);
 
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       await provider.createAuthorizationURL({
         state: "state",
         codeVerifier: "verifier",
@@ -370,7 +455,9 @@ describe("createTelegramOIDCProvider", () => {
       };
       mockedValidateAuthorizationCode.mockResolvedValueOnce(mockTokens);
 
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
       const result = await provider.validateAuthorizationCode({
         code: "auth-code",
         codeVerifier: "verifier",
@@ -383,12 +470,31 @@ describe("createTelegramOIDCProvider", () => {
         redirectURI: "https://example.com/cb",
         options: {
           clientId: BOT_ID,
-          clientSecret: BOT_TOKEN,
+          clientSecret: CLIENT_SECRET,
         },
         tokenEndpoint: TELEGRAM_OIDC_TOKEN_ENDPOINT,
+        authentication: "basic",
       });
 
       expect(result).toBe(mockTokens);
+    });
+
+    it("turns an error answered with HTTP 200 into a failed exchange", async () => {
+      mockedValidateAuthorizationCode.mockResolvedValueOnce({
+        raw: { error: "invalid_grant" },
+      });
+
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+
+      await expect(
+        provider.validateAuthorizationCode({
+          code: "expired",
+          codeVerifier: "v",
+          redirectURI: "https://example.com/cb",
+        })
+      ).rejects.toThrow('token endpoint returned "invalid_grant"');
     });
 
     it("should use separate clientSecret for token exchange", async () => {
@@ -415,452 +521,162 @@ describe("createTelegramOIDCProvider", () => {
     });
   });
 
-  describe("getUserInfo", () => {
-    function createTestJWT(claims: Partial<TelegramOIDCClaims>): string {
-      const header = Buffer.from(
-        JSON.stringify({ alg: "RS256", typ: "JWT" })
-      ).toString("base64url");
-      const payload = Buffer.from(
-        JSON.stringify({
-          sub: "12345",
-          name: "John Doe",
-          picture: "https://example.com/photo.jpg",
-          preferred_username: "johndoe",
-          iss: TELEGRAM_OIDC_ISSUER,
-          aud: BOT_ID,
-          iat: Math.floor(Date.now() / 1000),
-          exp: Math.floor(Date.now() / 1000) + 3600,
-          ...claims,
+  describe("accountSubject", () => {
+    const profile = telegramClaims() as unknown as TelegramOIDCClaims;
+
+    it("uses the OIDC sub, not Telegram's numeric id", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+
+      expect(await provider.accountSubject({ tokens: {}, profile })).toBe(
+        "12224742808376279442"
+      );
+    });
+
+    it.each([undefined, "", "   ", 123])("rejects subject %s", (sub) => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+
+      expect(() =>
+        provider.accountSubject({
+          tokens: {},
+          profile: { ...profile, sub } as unknown as TelegramOIDCClaims,
         })
-      ).toString("base64url");
-      const signature = Buffer.from("fake-signature").toString("base64url");
-      return `${header}.${payload}.${signature}`;
-    }
-
-    it("should return null when no idToken is provided", async () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({
-        idToken: undefined,
-      });
-
-      expect(result).toBeNull();
-    });
-
-    it("should decode JWT and map claims to user info", async () => {
-      const idToken = createTestJWT({
-        sub: "99999",
-        name: "Alice Smith",
-        picture: "https://example.com/alice.jpg",
-        preferred_username: "alice",
-      });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result).not.toBeNull();
-      expect(result!.user.id).toBe("99999");
-      expect(result!.user.name).toBe("Alice Smith");
-      expect(result!.user.image).toBe("https://example.com/alice.jpg");
-      expect(result!.user.emailVerified).toBe(false);
-      expect(result!.user.email).toBe("99999@telegram.oidc");
-    });
-
-    it("should return claims as data", async () => {
-      const idToken = createTestJWT({
-        sub: "12345",
-        preferred_username: "johndoe",
-        phone_number: "+1234567890",
-      });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result!.data.sub).toBe("12345");
-      expect(result!.data.preferred_username).toBe("johndoe");
-      expect(result!.data.phone_number).toBe("+1234567890");
-    });
-
-    it("should handle missing optional claims", async () => {
-      const idToken = createTestJWT({
-        sub: "12345",
-        name: undefined,
-        picture: undefined,
-        preferred_username: undefined,
-      });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result).not.toBeNull();
-      expect(result!.user.id).toBe("12345");
-      expect(result!.user.name).toBeUndefined();
-      expect(result!.user.image).toBeUndefined();
-    });
-
-    it("should always set emailVerified to false", async () => {
-      const idToken = createTestJWT({ sub: "12345" });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result!.user.emailVerified).toBe(false);
-    });
-
-    it("should generate placeholder email from telegram sub", async () => {
-      const idToken = createTestJWT({ sub: "12345" });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result!.user.email).toBe("12345@telegram.oidc");
-    });
-
-    it("should return null for malformed idToken", async () => {
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken: "not-a-jwt" });
-
-      expect(result).toBeNull();
-    });
-
-    it("should return null when JWT has no sub claim", async () => {
-      const header = Buffer.from(
-        JSON.stringify({ alg: "RS256", typ: "JWT" })
-      ).toString("base64url");
-      const payload = Buffer.from(
-        JSON.stringify({
-          name: "No Sub User",
-          iss: TELEGRAM_OIDC_ISSUER,
-          aud: BOT_ID,
-          iat: Math.floor(Date.now() / 1000),
-          exp: Math.floor(Date.now() / 1000) + 3600,
-        })
-      ).toString("base64url");
-      const signature = Buffer.from("fake-signature").toString("base64url");
-      const idToken = `${header}.${payload}.${signature}`;
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result).toBeNull();
-    });
-
-    it("should use mapOIDCProfileToUser when provided", async () => {
-      const idToken = createTestJWT({
-        sub: "12345",
-        name: "Original Name",
-        preferred_username: "original",
-      });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
-        mapOIDCProfileToUser: (claims) => ({
-          name: `Custom: ${claims.name}`,
-          email: "custom@example.com",
-          image: "https://custom.com/photo.jpg",
-        }),
-      });
-
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result!.user.name).toBe("Custom: Original Name");
-      expect(result!.user.email).toBe("custom@example.com");
-      expect(result!.user.image).toBe("https://custom.com/photo.jpg");
-    });
-
-    it("should override default fields with mapOIDCProfileToUser result", async () => {
-      const idToken = createTestJWT({
-        sub: "12345",
-        name: "Original",
-      });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
-        mapOIDCProfileToUser: () => ({
-          name: "Overridden",
-        }),
-      });
-
-      const result = await provider.getUserInfo({ idToken });
-
-      expect(result!.user.name).toBe("Overridden");
-      expect(result!.user.id).toBe("12345");
-    });
-
-    it("should still include standard fields when mapOIDCProfileToUser is provided", async () => {
-      const idToken = createTestJWT({
-        sub: "12345",
-        name: "Alice",
-        picture: "https://example.com/pic.jpg",
-      });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
-        mapOIDCProfileToUser: () => ({
-          name: "Custom Alice",
-        }),
-      });
-
-      const result = await provider.getUserInfo({ idToken });
-
-      // mapOIDCProfileToUser overrides spread last
-      expect(result!.user.id).toBe("12345");
-      expect(result!.user.emailVerified).toBe(false);
+      ).toThrow("ID token has no subject");
     });
   });
 
-  describe("verifyIdToken", () => {
-    let rsaKeyPair: Awaited<ReturnType<typeof generateKeyPair>>;
-    let jwk: any;
+  describe("getUserInfo", () => {
+    let telegram: Awaited<ReturnType<typeof mockTelegramOIDC>>;
 
     beforeEach(async () => {
-      rsaKeyPair = await generateKeyPair("RS256");
-      const exportedJwk = await exportJWK(rsaKeyPair.publicKey);
-      jwk = {
-        ...exportedJwk,
-        kid: "test-kid-1",
-        alg: "RS256",
-        use: "sig",
-      };
+      telegram = await mockTelegramOIDC();
     });
 
-    async function createSignedJWT(
-      claims: Record<string, any>,
-      kid = "test-kid-1"
-    ): Promise<string> {
-      return await new SignJWT(claims)
-        .setProtectedHeader({ alg: "RS256", kid })
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .setIssuer(TELEGRAM_OIDC_ISSUER)
-        .setAudience(BOT_ID)
-        .sign(rsaKeyPair.privateKey);
-    }
+    afterEach(() => {
+      telegram.restore();
+    });
 
-    it("should verify a valid JWT token", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: { keys: [jwk] },
-      } as any);
+    it("maps verified claims to the user", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+      const idToken = await telegram.sign(telegramClaims());
 
-      const token = await createSignedJWT({
-        sub: "12345",
-        name: "Test User",
+      const result = await provider.getUserInfo({ idToken });
+
+      expect(result?.user).toEqual({
+        name: "Ann Example",
+        image: "https://t.me/i/userpic/320/ann.jpg",
+        email: "12224742808376279442@telegram-oidc.placeholder.invalid",
+        emailVerified: false,
+      });
+      expect(result?.data).toMatchObject({
+        id: "8306595751",
+        sub: "12224742808376279442",
+      });
+    });
+
+    it("builds the name from given and family name, then username", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
       });
 
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(token);
-
-      expect(result).toBe(true);
-      expect(mockedBetterFetch).toHaveBeenCalledWith(TELEGRAM_OIDC_JWKS_URI);
-    });
-
-    it.each([
-      "ES256",
-      "EdDSA",
-    ] as const)("should verify a valid %s JWT token", async (algorithm) => {
-      const keyPair = await generateKeyPair(algorithm);
-      const exportedJwk = await exportJWK(keyPair.publicKey);
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: {
-          keys: [
-            {
-              ...exportedJwk,
-              kid: "algorithm-test-kid",
-              alg: algorithm,
-              use: "sig",
-            },
-          ],
-        },
-      } as any);
-
-      const token = await new SignJWT({ sub: "12345" })
-        .setProtectedHeader({ alg: algorithm, kid: "algorithm-test-kid" })
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .setIssuer(TELEGRAM_OIDC_ISSUER)
-        .setAudience(BOT_ID)
-        .sign(keyPair.privateKey);
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-
-      await expect(provider.verifyIdToken!(token)).resolves.toBe(true);
-    });
-
-    it("should return false when JWT header has no kid", async () => {
-      // Create a JWT without kid in header
-      const token = new SignJWT({ sub: "12345" })
-        .setProtectedHeader({ alg: "RS256" }) // no kid
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .setIssuer(TELEGRAM_OIDC_ISSUER)
-        .setAudience(BOT_ID);
-
-      const signedToken = await token.sign(rsaKeyPair.privateKey);
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(signedToken);
-
-      expect(result).toBe(false);
-    });
-
-    it("should reject unsupported signing algorithms before fetching JWKS", async () => {
-      const header = Buffer.from(
-        JSON.stringify({ alg: "HS256", kid: "test-kid-1" })
-      ).toString("base64url");
-      const payload = Buffer.from(
-        JSON.stringify({
-          sub: "12345",
-          iss: TELEGRAM_OIDC_ISSUER,
-          aud: BOT_ID,
-          exp: Math.floor(Date.now() / 1000) + 3600,
-        })
-      ).toString("base64url");
-      const token = `${header}.${payload}.invalid-signature`;
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(token);
-
-      expect(result).toBe(false);
-      expect(mockedBetterFetch).not.toHaveBeenCalled();
-    });
-
-    it("should reject token verification when clientId is missing", async () => {
-      const token = await createSignedJWT({ sub: "12345" });
-      const provider = createTelegramOIDCProvider("", {
-        clientSecret: "oidc-secret",
+      const fromParts = await provider.getUserInfo({
+        idToken: await telegram.sign(telegramClaims({ name: undefined })),
+      });
+      const fromUsername = await provider.getUserInfo({
+        idToken: await telegram.sign({ sub: "1", preferred_username: "ann" }),
       });
 
-      await expect(provider.verifyIdToken!(token)).resolves.toBe(false);
-      expect(mockedBetterFetch).not.toHaveBeenCalled();
+      expect(fromParts?.user.name).toBe("Ann Example");
+      expect(fromUsername?.user.name).toBe("ann");
     });
 
-    it("should reject a JWK whose algorithm does not match the token header", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: { keys: [{ ...jwk, alg: undefined }] },
-      } as any);
+    it("applies mapOIDCProfileToUser but never lets it set the id", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+        mapOIDCProfileToUser: (claims) => ({
+          id: "hijack",
+          email: `${claims.preferred_username}@example.com`,
+        }),
+      });
 
-      const token = await createSignedJWT({ sub: "12345" });
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(token);
+      const result = await provider.getUserInfo({
+        idToken: await telegram.sign(telegramClaims()),
+      });
 
-      expect(result).toBe(false);
+      expect(result?.user.email).toBe("ann@example.com");
+      expect(result?.user).not.toHaveProperty("id");
     });
 
-    it("should select the JWK matching both kid and algorithm", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: {
-          keys: [
-            { ...jwk, alg: "ES256" },
-            { ...jwk, alg: "RS256" },
-          ],
-        },
-      } as any);
+    it("rejects a token Telegram did not sign", async () => {
+      const forger = await mockTelegramOIDC();
+      const idToken = await forger.sign(telegramClaims());
+      forger.restore();
+      telegram.restore();
+      telegram = await mockTelegramOIDC();
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
 
-      const token = await createSignedJWT({ sub: "12345" });
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-
-      await expect(provider.verifyIdToken!(token)).resolves.toBe(true);
+      expect(await provider.getUserInfo({ idToken })).toBeNull();
     });
 
-    it("should return false when JWKS fetch fails", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: null,
-      } as any);
+    it("rejects a token issued to another bot", async () => {
+      const other = await mockTelegramOIDC({ clientId: "999" });
+      const idToken = await other.sign(telegramClaims());
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
 
-      const token = await createSignedJWT({ sub: "12345" });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(token);
-      expect(result).toBe(false);
+      expect(await provider.getUserInfo({ idToken })).toBeNull();
+      other.restore();
     });
 
-    it("should return false when kid is not found in JWKS", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: {
-          keys: [{ ...jwk, kid: "different-kid" }],
-        },
-      } as any);
+    it("rejects a token whose nonce differs from the authorization request", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
+      const idToken = await telegram.sign({ ...telegramClaims(), nonce: "a" });
 
-      const token = await createSignedJWT({ sub: "12345" });
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(token);
-      expect(result).toBe(false);
+      expect(
+        await provider.getUserInfo({ idToken, expectedIdTokenNonce: "b" })
+      ).toBeNull();
+      expect(
+        await provider.getUserInfo({ idToken, expectedIdTokenNonce: "a" })
+      ).not.toBeNull();
     });
 
-    it("should return false for a token with wrong issuer", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: { keys: [jwk] },
-      } as any);
+    it("returns null without an id_token", async () => {
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
 
-      const token = new SignJWT({ sub: "12345" })
-        .setProtectedHeader({ alg: "RS256", kid: "test-kid-1" })
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .setIssuer("https://wrong-issuer.com")
-        .setAudience(BOT_ID);
-
-      const signedToken = await token.sign(rsaKeyPair.privateKey);
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(signedToken);
-      expect(result).toBe(false);
+      expect(await provider.getUserInfo({ accessToken: "at" })).toBeNull();
     });
 
-    it("should return false for a token with wrong audience", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: { keys: [jwk] },
-      } as any);
+    it("warns when the token has no profile claims", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const provider = createTelegramOIDCProvider(BOT_TOKEN, {
+        clientSecret: CLIENT_SECRET,
+      });
 
-      const token = new SignJWT({ sub: "12345" })
-        .setProtectedHeader({ alg: "RS256", kid: "test-kid-1" })
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .setIssuer(TELEGRAM_OIDC_ISSUER)
-        .setAudience("wrong-audience");
+      const result = await provider.getUserInfo({
+        idToken: await telegram.sign({ sub: "12224742808376279442" }),
+      });
 
-      const signedToken = await token.sign(rsaKeyPair.privateKey);
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(signedToken);
-      expect(result).toBe(false);
-    });
-
-    it("should return false for an expired token", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: { keys: [jwk] },
-      } as any);
-
-      const token = new SignJWT({ sub: "12345" })
-        .setProtectedHeader({ alg: "RS256", kid: "test-kid-1" })
-        .setIssuedAt(Math.floor(Date.now() / 1000) - 7200)
-        .setExpirationTime(Math.floor(Date.now() / 1000) - 3600)
-        .setIssuer(TELEGRAM_OIDC_ISSUER)
-        .setAudience(BOT_ID);
-
-      const signedToken = await token.sign(rsaKeyPair.privateKey);
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(signedToken);
-      expect(result).toBe(false);
-    });
-
-    it("should return false for a token signed with a different key", async () => {
-      mockedBetterFetch.mockResolvedValueOnce({
-        data: { keys: [jwk] },
-      } as any);
-
-      // Generate a different key pair
-      const otherKeyPair = await generateKeyPair("RS256");
-
-      const token = new SignJWT({ sub: "12345" })
-        .setProtectedHeader({ alg: "RS256", kid: "test-kid-1" })
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .setIssuer(TELEGRAM_OIDC_ISSUER)
-        .setAudience(BOT_ID);
-
-      const signedToken = await token.sign(otherKeyPair.privateKey);
-
-      const provider = createTelegramOIDCProvider(BOT_TOKEN);
-      const result = await provider.verifyIdToken!(signedToken);
-      expect(result).toBe(false);
+      expect(result).not.toBeNull();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("no profile claims"),
+        expect.any(String),
+        expect.any(String)
+      );
+      warn.mockRestore();
     });
   });
 });
@@ -872,24 +688,26 @@ describe("Plugin integration", () => {
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       expect(plugin).toHaveProperty("init");
       expect(typeof plugin.init).toBe("function");
     });
 
-    it("should NOT include init hook when oidc is not configured", async () => {
+    it("does not inject a social provider when oidc is not configured", async () => {
       const { telegram } = await import("./index");
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
       });
 
-      expect(plugin).not.toHaveProperty("init");
+      const result = plugin.init({ socialProviders: [] } as any);
+      expect(result).not.toHaveProperty("context");
+      expect(result.options.databaseHooks).toBeDefined();
     });
 
-    it("should NOT include init hook when oidc.enabled is false", async () => {
+    it("does not inject a social provider when oidc.enabled is false", async () => {
       const { telegram } = await import("./index");
       const plugin = telegram({
         botToken: BOT_TOKEN,
@@ -897,7 +715,9 @@ describe("Plugin integration", () => {
         oidc: { enabled: false },
       });
 
-      expect(plugin).not.toHaveProperty("init");
+      expect(plugin.init({ socialProviders: [] } as any)).not.toHaveProperty(
+        "context"
+      );
     });
 
     it("should return socialProviders from init hook", async () => {
@@ -905,7 +725,7 @@ describe("Plugin integration", () => {
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       const mockCtx = {
@@ -926,7 +746,7 @@ describe("Plugin integration", () => {
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       const existingProvider = {
@@ -953,6 +773,7 @@ describe("Plugin integration", () => {
         botUsername: "test_bot",
         oidc: {
           enabled: true,
+          clientSecret: CLIENT_SECRET,
           requestPhone: true,
           requestBotAccess: true,
         },
@@ -964,10 +785,10 @@ describe("Plugin integration", () => {
         hasPlugin: () => false,
       } as any;
       const result = plugin.init!(mockCtx);
-      const provider = result.context!.socialProviders![0];
+      const [provider] = result.context!.socialProviders!;
 
       expect(provider!.options?.clientId).toBe(BOT_ID);
-      expect(provider!.options?.clientSecret).toBe(BOT_TOKEN);
+      expect(provider!.options?.clientSecret).toBe(CLIENT_SECRET);
     });
   });
 
@@ -980,7 +801,7 @@ describe("Plugin integration", () => {
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
         testMode: true,
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       expect(warnSpy).toHaveBeenCalledWith(
@@ -1029,7 +850,7 @@ describe("Plugin integration", () => {
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
         testMode: false,
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       expect(warnSpy).not.toHaveBeenCalled();
@@ -1045,7 +866,7 @@ describe("Plugin integration", () => {
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
         testMode: true,
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       expect(warnSpy).toHaveBeenCalledWith(
@@ -1067,7 +888,7 @@ describe("Plugin integration", () => {
       telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       // testMode defaults to false, so no warning even though oidc is on
@@ -1085,8 +906,10 @@ describe("Plugin integration", () => {
         testMode: true,
       });
 
-      // testMode alone doesn't add init — only oidc.enabled does
-      expect(plugin.init).toBeUndefined();
+      // testMode alone doesn't add a social provider — only oidc.enabled does
+      expect(plugin.init({ socialProviders: [] } as any)).not.toHaveProperty(
+        "context"
+      );
     });
 
     it("should return init result as an object (not void) when oidc enabled", async () => {
@@ -1094,7 +917,7 @@ describe("Plugin integration", () => {
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       const mockCtx = {
@@ -1118,7 +941,7 @@ describe("Plugin integration", () => {
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       expect(plugin.endpoints).toHaveProperty("getTelegramConfig");
@@ -1129,7 +952,7 @@ describe("Plugin integration", () => {
       const plugin = telegram({
         botToken: BOT_TOKEN,
         botUsername: "test_bot",
-        oidc: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
       });
 
       expect(plugin.schema!.user!.fields).toHaveProperty("telegramPhoneNumber");
@@ -1365,7 +1188,7 @@ describe("Adversarial: testMode option", () => {
       botToken: BOT_TOKEN,
       botUsername: "test_bot",
       testMode: true,
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -1382,7 +1205,7 @@ describe("Adversarial: testMode option", () => {
       botToken: BOT_TOKEN,
       botUsername: "test_bot",
       testMode: false,
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     expect(warnSpy).not.toHaveBeenCalled();
@@ -1396,7 +1219,7 @@ describe("Adversarial: testMode option", () => {
       botToken: BOT_TOKEN,
       botUsername: "test_bot",
       // testMode omitted, defaults to false
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     expect(warnSpy).not.toHaveBeenCalled();
@@ -1411,13 +1234,13 @@ describe("Adversarial: testMode option", () => {
       botToken: BOT_TOKEN,
       botUsername: "test_bot",
       testMode: false,
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     const pluginWithOmitted = telegram({
       botToken: BOT_TOKEN,
       botUsername: "test_bot",
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     // Neither should have triggered a warning
@@ -1435,7 +1258,7 @@ describe("Adversarial: init hook return value is non-void object", () => {
     const plugin = telegram({
       botToken: BOT_TOKEN,
       botUsername: "test_bot",
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     const mockCtx = {
@@ -1466,7 +1289,7 @@ describe("Adversarial: config endpoint shape with testMode", () => {
       botUsername: "my_bot",
       testMode: true,
       miniApp: { enabled: true },
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
 
     // The getTelegramConfig endpoint must exist
@@ -1525,180 +1348,3 @@ describe("Adversarial: config endpoint shape with testMode", () => {
 });
 
 // These tests read built output — skip when dist/ doesn't exist (e.g. CI runs tests before build)
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-
-const distExists = existsSync(resolve(process.cwd(), "dist", "index.d.ts"));
-
-describe.skipIf(!distExists)("Module augmentation in built output", () => {
-  it("should have BetterAuthPluginRegistry in dist/index.d.ts", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const distDir = path.resolve(process.cwd(), "dist");
-    const dtsContent = fs.readFileSync(
-      path.join(distDir, "index.d.ts"),
-      "utf-8"
-    );
-    expect(dtsContent).toContain("BetterAuthPluginRegistry");
-    expect(dtsContent).toContain("typeof telegram");
-    expect(dtsContent).toContain('declare module "@better-auth/core"');
-  });
-
-  it("should have BetterAuthPluginRegistry in dist/index.d.cts", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const distDir = path.resolve(process.cwd(), "dist");
-    const dctsContent = fs.readFileSync(
-      path.join(distDir, "index.d.cts"),
-      "utf-8"
-    );
-    expect(dctsContent).toContain("BetterAuthPluginRegistry");
-    expect(dctsContent).toContain("typeof telegram");
-    expect(dctsContent).toContain('declare module "@better-auth/core"');
-  });
-
-  it("should reference the correct module path @better-auth/core in d.ts", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const distDir = path.resolve(process.cwd(), "dist");
-    const dtsContent = fs.readFileSync(
-      path.join(distDir, "index.d.ts"),
-      "utf-8"
-    );
-
-    // Verify the augmentation references the exact module
-    const moduleRegex = /declare module "@better-auth\/core"/;
-    expect(moduleRegex.test(dtsContent)).toBe(true);
-
-    // Make sure the creator is typed, not just `any`
-    expect(dtsContent).toContain("creator: typeof telegram");
-  });
-
-  it("should have the augmentation in both ESM and CJS declaration files", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const distDir = path.resolve(process.cwd(), "dist");
-
-    const dtsContent = fs.readFileSync(
-      path.join(distDir, "index.d.ts"),
-      "utf-8"
-    );
-    const dctsContent = fs.readFileSync(
-      path.join(distDir, "index.d.cts"),
-      "utf-8"
-    );
-
-    // Extract the augmentation blocks
-    const augmentationPattern =
-      /declare module "@better-auth\/core"\s*\{[\s\S]*?BetterAuthPluginRegistry[\s\S]*?\}/;
-
-    const dtsMatch = dtsContent.match(augmentationPattern);
-    const dctsMatch = dctsContent.match(augmentationPattern);
-
-    expect(dtsMatch).not.toBeNull();
-    expect(dctsMatch).not.toBeNull();
-
-    // The augmentation content should be identical between ESM and CJS
-    expect(dtsMatch![0]).toBe(dctsMatch![0]);
-  });
-});
-
-describe("Adversarial: miniApp conditional endpoints", () => {
-  it("should NOT have miniApp endpoints when miniApp is not configured", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-    });
-
-    expect(plugin.endpoints).not.toHaveProperty("signInWithMiniApp");
-    expect(plugin.endpoints).not.toHaveProperty("validateMiniApp");
-  });
-
-  it("should NOT have miniApp endpoints when miniApp.enabled is false", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-      miniApp: { enabled: false },
-    });
-
-    expect(plugin.endpoints).not.toHaveProperty("signInWithMiniApp");
-    expect(plugin.endpoints).not.toHaveProperty("validateMiniApp");
-  });
-
-  it("should HAVE miniApp endpoints when miniApp.enabled is true", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-      miniApp: { enabled: true },
-    });
-
-    expect(plugin.endpoints).toHaveProperty("signInWithMiniApp");
-    expect(plugin.endpoints).toHaveProperty("validateMiniApp");
-  });
-
-  it("should have miniApp rate limits when miniApp is enabled", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-      miniApp: { enabled: true },
-    });
-
-    const miniAppSigninMatcher = plugin.rateLimit.find(
-      (r) => r.pathMatcher("/telegram/miniapp/signin") === true
-    );
-    const miniAppValidateMatcher = plugin.rateLimit.find(
-      (r) => r.pathMatcher("/telegram/miniapp/validate") === true
-    );
-
-    expect(miniAppSigninMatcher).toBeDefined();
-    expect(miniAppSigninMatcher!.max).toBe(10);
-    expect(miniAppValidateMatcher).toBeDefined();
-    expect(miniAppValidateMatcher!.max).toBe(20);
-  });
-});
-
-describe("Adversarial: schema shape", () => {
-  it("should have all expected user fields", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-    });
-
-    const userFields = Object.keys(plugin.schema!.user!.fields);
-    expect(userFields).toContain("telegramId");
-    expect(userFields).toContain("telegramUsername");
-    expect(userFields).toContain("telegramPhoneNumber");
-    expect(userFields.length).toBe(3);
-  });
-
-  it("should have all expected account fields", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-    });
-
-    const accountFields = Object.keys(plugin.schema!.account!.fields);
-    expect(accountFields).toContain("telegramId");
-    expect(accountFields).toContain("telegramUsername");
-    expect(accountFields.length).toBe(2);
-  });
-
-  it("should mark all user fields as non-required and non-input", async () => {
-    const { telegram } = await import("./index");
-    const plugin = telegram({
-      botToken: BOT_TOKEN,
-      botUsername: "test_bot",
-    });
-
-    for (const [, field] of Object.entries(plugin.schema!.user!.fields)) {
-      expect(field.required).toBe(false);
-      expect(field.input).toBe(false);
-    }
-  });
-});

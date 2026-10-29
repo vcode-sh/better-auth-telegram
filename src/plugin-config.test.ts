@@ -122,10 +122,14 @@ describe("createPluginConfig", () => {
   it("oidc.enabled: true enables OIDC", () => {
     const config = createPluginConfig({
       ...BASE,
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
     expect(config.oidcEnabled).toBe(true);
-    expect(config.oidc).toEqual({ enabled: true });
+    expect(config.oidc).toEqual({
+      enabled: true,
+      clientId: "987654321",
+      clientSecret: "s",
+    });
   });
 
   // ── Mini App sub-options ───────────────────────────────────────────
@@ -173,12 +177,50 @@ describe("createPluginConfig", () => {
 
   // ── testMode + OIDC warning ────────────────────────────────────────
 
+  it("warns when the Login Widget and OIDC would share one bot", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createPluginConfig({ ...BASE, oidc: { enabled: true, clientSecret: "s" } });
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0]![0]).toContain(
+      "permanently disables its legacy Login Widget"
+    );
+    spy.mockRestore();
+  });
+
+  it("does not warn about sharing a bot when OIDC uses its own client", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createPluginConfig({
+      ...BASE,
+      loginWidget: false,
+      oidc: { enabled: true, clientSecret: "s" },
+    });
+    createPluginConfig({
+      ...BASE,
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
+    });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("warns when Mini App initData validation is off", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createPluginConfig({
+      ...BASE,
+      miniApp: { enabled: true, validateInitData: false },
+    });
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0]![0]).toContain(
+      "anyone can sign in as any Telegram user"
+    );
+    spy.mockRestore();
+  });
+
   it("warns when testMode and oidc are both enabled", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     createPluginConfig({
       ...BASE,
       testMode: true,
-      oidc: { enabled: true },
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
     });
     expect(spy).toHaveBeenCalledOnce();
     expect(spy.mock.calls[0]![0]).toContain("testMode is enabled with OIDC");
@@ -194,7 +236,10 @@ describe("createPluginConfig", () => {
 
   it("does NOT warn when oidc is enabled but testMode is false", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    createPluginConfig({ ...BASE, oidc: { enabled: true } });
+    createPluginConfig({
+      ...BASE,
+      oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
+    });
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
