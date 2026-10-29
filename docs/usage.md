@@ -180,16 +180,26 @@ The digital breakup. No widget needed -- just call `unlinkTelegram`.
 ```tsx
 const result = await authClient.unlinkTelegram();
 
-if (result.error) {
+if (result.error?.code === "CANNOT_UNLINK_LAST_ACCOUNT") {
+  console.error("Add another way to sign in first.");
+} else if (result.error?.code === "SESSION_NOT_FRESH") {
+  console.error("Sign in again, then unlink.");
+} else if (result.error) {
   console.error("Unlink failed:", result.error.message);
 } else {
   console.log("Telegram unlinked. Freedom.");
 }
 ```
 
+Unlink needs a fresh session, like Better Auth's own `/unlink-account`: a session older than `session.freshAge` (default 1 day) gets 403 `SESSION_NOT_FRESH`. If Telegram is the user's only account, unlink answers 400 `CANNOT_UNLINK_LAST_ACCOUNT` instead of stranding them. Set Better Auth's `account.accountLinking.allowUnlinkingAll: true` if you really want to allow it.
+
+Unlinking actually revokes the Telegram identity. After any `telegram` or `telegram-oidc` account is removed (here, via Better Auth's `POST /unlink-account`, or anything else), the plugin re-checks the user: `telegramId` stays only if a remaining Telegram account proves it, switches to one that does, or is cleared along with `telegramUsername` and `telegramPhoneNumber`. So the unlinked Telegram user can't sign back in through the Login Widget or Mini App.
+
+Linking checks both directions: 409 `TELEGRAM_ALREADY_LINKED_OTHER` if another user has the Telegram account, or already has that `telegramId` on their profile (for example from OIDC). And it's one Telegram user per account: linking a different Telegram id than the user already has is 409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`. `user.validateUserInfo` gets a say first, with action `"link-account"`.
+
 ## OIDC (OpenID Connect)
 
-Standard OAuth 2.0 flow via `oauth.telegram.org`. No widgets, no callbacks, no injecting scripts into your DOM. The user clicks a button, gets redirected to Telegram, comes back authenticated. Like every other social login, except it's Telegram and it took them until Bot API 9.5 to ship it.
+Standard OAuth 2.0 flow via `oauth.telegram.org`. No widgets, no callbacks, no injecting scripts into your DOM. The user clicks a button, gets redirected to Telegram, comes back authenticated. Like every other social login, except it's Telegram, so the setup happens inside a bot. See [Telegram's "Log In With Telegram" docs](https://core.telegram.org/bots/telegram-login) and the [OIDC prerequisites](../README.md#prerequisites).
 
 Enable on server:
 
@@ -201,9 +211,6 @@ telegram({
     clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
     requestPhone: true,  // phone numbers -- the Login Widget's biggest regret
-    mapOIDCProfileToUser: (claims) => ({
-      telegramPhoneNumber: claims.phone_number,
-    }),
   },
 });
 ```
@@ -216,19 +223,44 @@ await authClient.signInWithTelegramOIDC({
 });
 ```
 
-That's it. Better Auth's social login system handles the PKCE, state tokens, JWT verification, and callback. You don't need to think about any of it. The `telegram-oidc` provider is injected automatically via the `init` hook — no manual provider registration.
+That's it. Better Auth's social login system handles PKCE, state and the callback; the plugin adds the nonce, HTTP Basic client authentication and ID token verification against Telegram's JWKS. You don't need to think about any of it. The `telegram-oidc` provider is injected automatically via the `init` hook — no manual provider registration.
+
+Already holding an ID token client-side? Better Auth's ID token sign-in (`POST /sign-in/social` with an `idToken`) works too:
+
+```typescript
+await authClient.$fetch("/sign-in/social", {
+  method: "POST",
+  body: { provider: "telegram-oidc", idToken: { token, nonce } },
+});
+```
+
+It's verified against the same JWKS. The `nonce` isn't optional here, even though Better Auth treats it as optional: the plugin only accepts a token together with the nonce it was issued for, and forged, nonce-less or mismatched tokens get a 401. Telegram ID tokens live 30 seconds, so send it right away. Set `oidc.disableIdTokenSignIn: true` to reject ID tokens on `/sign-in/social` and `/link-social` altogether, and `oidc.disableSignUp: true` if OIDC should only sign in existing users.
 
 ### OIDC + Phone Numbers
 
-The `phone` scope gives you what the Login Widget never could. With `requestPhone: true`, Telegram can return `phone_number` and `phone_number_verified` claims. The plugin exposes them to `mapOIDCProfileToUser`; persist the value in a field defined by your user schema.
+The `phone` scope gives you what the Login Widget never could. With `requestPhone: true`, Telegram can return `phone_number` (digits only, no leading `+`) and `phone_number_verified` (a boolean).
+
+When the Login Widget or Mini App is enabled, the Telegram columns exist and the plugin copies the claims onto the user for you:
 
 ```typescript
-// With telegramPhoneNumber defined in your user schema and mapped above:
+// The user after an OIDC sign-in with requestPhone: true
 {
   name: "John Doe",
-  telegramPhoneNumber: "+1234567890",
+  telegramId: "8306595751",          // the `id` claim, not `sub`
+  telegramUsername: "johndoe",       // `preferred_username`
+  telegramPhoneNumber: "1234567890", // `phone_number`
 }
 ```
+
+Don't try to do this in `mapOIDCProfileToUser`: those fields are `input: false`, and Better Auth silently drops them from mapper output. The old examples here that did exactly that never worked. In an OIDC-only setup there are no Telegram columns, so nothing is copied.
+
+A Login Widget or Mini App sign-in then finds the user who signed up with OIDC, through `telegramId`. The claims only ever go to the user who owns the `telegram-oidc` account for that token's `sub`.
+
+Known limitations:
+
+- The reverse isn't automatic yet (issue #25): Better Auth matches OAuth accounts by provider account id and then by verified email only, so an OIDC sign-in won't find an existing widget/Mini App user.
+- With Better Auth's `oauth-proxy` plugin, the Telegram id isn't copied onto the user: the claims are verified on the server that exchanges the code, and the user is created on the other one.
+- Better Auth's `/account-info` stops working for `telegram-oidc` after about 30 seconds. Telegram issues 30-second tokens and no refresh token.
 
 ### React Example
 
@@ -297,7 +329,8 @@ Every method returns `{ data, error }`. If `error` exists, something went wrong.
 const result = await authClient.signInWithTelegram(authData);
 
 if (result.error) {
-  // 400 = bad data, 401 = auth failed, 409 = conflict
+  // 400 = bad data, 401 = auth failed, 409 = conflict,
+  // 500 = server misconfigured (missing bot token, schema not migrated)
   console.error(result.error.status, result.error.message);
   return;
 }

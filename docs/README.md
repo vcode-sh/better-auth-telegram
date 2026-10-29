@@ -1,6 +1,6 @@
 # better-auth-telegram
 
-Telegram auth for [Better Auth](https://www.better-auth.com/). Login Widget, Mini Apps, the whole circus -- in one plugin that somehow works on every runtime.
+Telegram auth for [Better Auth](https://www.better-auth.com/). Login Widget, Mini Apps, OIDC, the whole circus -- in one plugin that somehow works on every runtime.
 
 ESM + CJS | Web Crypto API | Works where `node:crypto` fears to tread
 
@@ -19,8 +19,10 @@ ESM + CJS | Web Crypto API | Works where `node:crypto` fears to tread
 ## Quick Start
 
 ```bash
-npm install better-auth-telegram
+npm install better-auth-telegram better-auth
 ```
+
+(v3 beta: `npm install better-auth-telegram@next`.)
 
 Message [@BotFather](https://t.me/botfather), run `/newbot`, pretend you had a plan all along.
 
@@ -52,6 +54,13 @@ export const authClient = createAuthClient({
 });
 ```
 
+Then make the database match, because Better Auth >= 1.7.3 refuses to serve auth requests until it does:
+
+```bash
+npx auth@latest generate        # or `migrate` for Kysely
+npx auth@latest check schema
+```
+
 That's it. The rest is in the [Installation Guide](./installation.md) for people who read manuals.
 
 ---
@@ -59,9 +68,11 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 ## Features
 
 - **Login Widget** -- callback and redirect modes, because one way to authenticate was never enough
-- **OIDC (OpenID Connect)** -- standard OAuth 2.0 with PKCE via `oauth.telegram.org`. Phone numbers when the `phone` scope is requested, plus JWKS-verified JWTs, without the legacy widget callback
+- **OIDC (OpenID Connect)** -- standard OAuth 2.0 with PKCE and a nonce via `oauth.telegram.org`. Phone numbers when the `phone` scope is requested, ID tokens verified against Telegram's JWKS before any claim is used, no legacy widget callback
 - **Mini Apps** -- auto-signin, manual signin, initData validation. Enable it, forget it works
-- **Link/unlink** -- attach Telegram to existing accounts, detach when you inevitably change your mind
+- **Link/unlink** -- attach Telegram to existing accounts, detach when you inevitably change your mind (but not the last account, unless you allow it)
+- **Plays by Better Auth's rules** -- users and accounts are written through the internal adapter, so `databaseHooks` apply and `user.validateUserInfo` sees every sign-up, sign-in and link
+- **Unlink means unlink** -- removing a Telegram account (by any route) revokes `telegramId`-based sign-in, and placeholder emails can't be squatted by other sign-up methods
 - **HMAC-SHA-256 via Web Crypto API** (`crypto.subtle`) -- runs on Node, Bun, Cloudflare Workers, edge runtimes, presumably a toaster
 - **Replay attack prevention** -- configurable `maxAuthAge` (default 24h) so yesterday's auth stays yesterday
 - **Per-endpoint rate limiting** -- built into the plugin, not bolted on as an afterthought
@@ -69,7 +80,7 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 - **Exported `$ERROR_CODES`** -- match errors client-side like a civilised person
 - **`fetchOptions`** on all client methods -- custom headers, cache control, whatever you need
 - **Async verification** -- `verifyTelegramAuth()` and `verifyMiniAppInitData()` return `Promise<boolean>`
-- **Schema fields are `input: false`** -- `telegramId` and `telegramUsername` on user table can't be written to directly. Trust issues, but the good kind
+- **Schema fields are `input: false`** -- `telegramId`, `telegramUsername` and `telegramPhoneNumber` on the user table can't be written to directly. Trust issues, but the good kind
 - **`TelegramAccountRecord` type exported** -- for when you need to type things properly
 - **ESM-first** (`"type": "module"`), CJS via `.cjs` because backwards compatibility is a lifestyle
 - Full TypeScript. Framework-agnostic. Works with every Better Auth adapter
@@ -78,7 +89,7 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 
 ## Docs
 
-- **[Installation Guide](./installation.md)** -- bot creation, server/client config, database schema, local dev with ngrok
+- **[Installation Guide](./installation.md)** -- bot creation, server/client config, database schema and schema checks, local dev with ngrok
 - **[Usage Guide](./usage.md)** -- sign-in flows, account linking, session management, framework examples
 - **[Mini Apps Guide](./miniapps.md)** -- Mini App auth, auto-signin, bot setup, testing, troubleshooting
 - **[API Reference](./api-reference.md)** -- endpoints, types, schema extensions, configuration options
@@ -90,10 +101,10 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 
 ## Requirements
 
-- Node.js >= 22 (or Bun, or any runtime with Web Crypto API)
-- `better-auth@>=1.6.22 <1.7.0`
+- Node.js >= 24 (Bun works too)
+- `better-auth` and `@better-auth/core` `>=1.7.12 <1.8.0` (1.7.7 fixed [GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm), there is no 1.6 fix; 1.7.12 is the first release whose `oauth-proxy` callback enforces the ID token nonce)
 - HTTPS (Telegram insists, and honestly, so should you)
-- Public domain (use ngrok for local dev)
+- Public domain (use ngrok for local dev; BotFather rejects `localhost`)
 
 ---
 
@@ -104,8 +115,8 @@ That's it. The rest is in the [Installation Guide](./installation.md) for people
 - [Changelog](../CHANGELOG.md)
 - [Better Auth](https://www.better-auth.com/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
-- [Telegram Login Widget](https://core.telegram.org/widgets/login)
-- [Telegram OIDC](https://core.telegram.org/bots/features#oidc-authorization)
+- [Telegram Login Widget (legacy)](https://core.telegram.org/widgets/login-legacy)
+- [Log In With Telegram (OIDC)](https://core.telegram.org/bots/telegram-login)
 
 ---
 

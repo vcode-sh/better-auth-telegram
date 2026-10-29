@@ -34,7 +34,9 @@ export const auth = betterAuth({
       },
 
       // OIDC — OAuth 2.0 flow via oauth.telegram.org
-      // Requires BotFather Web Login setup. See README prerequisites.
+      // Requires @BotFather > your bot > Login Widget > Switch to OpenID Connect.
+      // That switch permanently disables the legacy widget, so use a second bot
+      // for OIDC if this app also uses the Login Widget. See README prerequisites.
       oidc: {
         enabled: true,
         clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,

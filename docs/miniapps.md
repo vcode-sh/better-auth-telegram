@@ -2,7 +2,9 @@
 
 Your web app, living inside Telegram. No login popups, no OAuth dances, no "please verify your email." The user opened your Mini App — they're already Telegram. Act accordingly.
 
-Requires `better-auth@>=1.6.22 <1.7.0`.
+Requires `better-auth` and `@better-auth/core` `>=1.7.12 <1.8.0`, and the plugin's five Telegram columns in your database (see [Database Schema](./installation.md#database-schema)) -- Better Auth >= 1.7.3 answers every request with a 500 until they exist.
+
+Mini Apps don't care whether your bot was switched to OpenID Connect in BotFather; that only kills the legacy Login Widget.
 
 ## Mini Apps vs Login Widget
 
@@ -76,17 +78,18 @@ telegram({
     enabled: true,
 
     // Validate initData cryptographically (default: true)
-    // Turn this off and you deserve what happens next
+    // Turn this off and anyone can sign in as any Telegram user.
+    // The plugin logs a startup warning, and you deserve what happens next
     validateInitData: true,
 
     // Allow auto-signin to create new users (default: true)
     // New users are created ONLY when BOTH autoCreateUser AND allowAutoSignin are true
     allowAutoSignin: true,
 
-    // Map Telegram user data to your user model
+    // Map Telegram user data to your user model.
+    // Merged over the defaults (first + last name, photo_url, placeholder email)
     mapMiniAppDataToUser: (user) => ({
       name: user.username || user.first_name,
-      image: user.photo_url,
     }),
   },
 })
@@ -96,10 +99,10 @@ telegram({
 
 ### 1. Load the Telegram WebApp SDK
 
-Add this to your HTML `<head>`:
+Add this to your HTML `<head>`, before your other scripts, and without `async` ([Telegram's instructions](https://core.telegram.org/bots/webapps)):
 
 ```html
-<script src="https://telegram.org/js/telegram-web-app.js" async></script>
+<script src="https://telegram.org/js/telegram-web-app.js?64"></script>
 ```
 
 ### 2. Create the Auth Client
@@ -175,7 +178,7 @@ Both only exist when `miniApp.enabled` is `true`.
 
 #### `POST /api/auth/telegram/miniapp/signin`
 
-Signs in (or creates) a user from Mini App initData. Sets session cookie.
+Signs in (or creates) a user from Mini App initData. Sets session cookie. Finds an existing user by the Telegram account first, then by `user.telegramId` -- so a user who signed in with the Login Widget, or signed up with OIDC (when the plugin copied their Telegram id), lands in the same account. Writes go through Better Auth's internal adapter (in a transaction): `databaseHooks` run, and `user.validateUserInfo` sees `source.method: "telegram-mini-app"` with action `"sign-in"` (returning user), `"link-account"` (linked by `telegramId`) or `"create-user"`. New users get the placeholder email `<telegramId>@telegram.placeholder.invalid` unless your mapper returns one. If the user unlinked their Telegram account, the `telegramId` lookup no longer finds them: removing a Telegram account clears `user.telegramId` unless another Telegram account still proves it.
 
 **Body:** `{ "initData": "user=%7B%22id%22...&auth_date=...&hash=..." }`
 
@@ -183,12 +186,14 @@ Signs in (or creates) a user from Mini App initData. Sets session cookie.
 
 **Errors:**
 - `400` — Missing or malformed initData, no user in payload
-- `401` — Cryptographic verification failed
+- `401` — Cryptographic verification failed, or `auth_date` older than `maxAuthAge` / more than 60 s in the future
+- `403` — `user.validateUserInfo` rejected the sign-in, link or sign-up (`validation_failed` if it threw), or a database hook vetoed creating the user (`USER_CREATION_REJECTED`)
 - `404` — User not found and auto-creation disabled (`autoCreateUser` or `allowAutoSignin` is `false`)
+- `500` — `botToken` not configured (`BOT_TOKEN_REQUIRED`), or the database schema doesn't match
 
 #### `POST /api/auth/telegram/miniapp/validate`
 
-Validates initData without creating a session. Useful for checking if the data is legit before doing something with it.
+Validates initData without creating a session. Useful for checking if the data is legit before doing something with it. Always verifies the HMAC, whatever `validateInitData` says.
 
 **Body:** `{ "initData": "..." }`
 
@@ -213,6 +218,7 @@ interface TelegramMiniAppUser {
   language_code?: string;
   is_premium?: boolean;
   is_bot?: boolean;
+  added_to_attachment_menu?: boolean;
   allows_write_to_pm?: boolean;
   photo_url?: string;
 }
@@ -223,10 +229,12 @@ interface TelegramMiniAppData {
   chat?: TelegramMiniAppChat;
   chat_type?: "sender" | "private" | "group" | "supergroup" | "channel";
   chat_instance?: string;
+  chat_join_request_query_id?: string; // opened from a chat join request
   start_param?: string;
   can_send_after?: number;
   query_id?: string;
   auth_date: number;
+  signature?: string; // Ed25519, for third-party validation
   hash: string;
 }
 
@@ -246,7 +254,9 @@ Unlike the Login Widget (which uses `SHA256(botToken)` as the HMAC key), Mini Ap
 1. `secret = HMAC-SHA256("WebAppData", botToken)`
 2. `signature = HMAC-SHA256(secret, dataCheckString)`
 
-Where `dataCheckString` is all initData params (minus `hash`), sorted alphabetically, joined with `\n`. Timestamp is checked against `maxAuthAge` (default 24h) to prevent replay attacks.
+Where `dataCheckString` is all initData params (minus `hash`, but including `signature`, as Telegram specifies), sorted alphabetically, joined with `\n`. The `hash` must be 64 lowercase hex characters and is compared in constant time. `auth_date` must be an integer no older than `maxAuthAge` (default 24h) and no more than 60 seconds in the future.
+
+The Ed25519 `signature` field exists so third parties can validate initData without your bot token. The plugin has the bot token, so it doesn't implement that check; the HMAC already covers `signature`.
 
 All of this runs on Web Crypto API (`crypto.subtle`) — no Node-specific deps, works everywhere.
 
@@ -258,7 +268,9 @@ All of this runs on Web Crypto API (`crypto.subtle`) — no Node-specific deps, 
 
 **"No initData available"** — The Mini App isn't properly configured in BotFather, or you're hitting the URL directly instead of through Telegram.
 
-**"Invalid Mini App initData" (401)** — Cryptographic verification failed. Check your `TELEGRAM_BOT_TOKEN` is correct and matches the bot that owns the Mini App. Also check if `auth_date` is within `maxAuthAge`.
+**"Invalid Mini App initData" (401)** — Cryptographic verification failed. Check your `TELEGRAM_BOT_TOKEN` is correct and matches the bot that owns the Mini App. Also check if `auth_date` is within `maxAuthAge`, and that your server clock isn't more than a minute behind.
+
+**500 with "Database schema mismatch"** — The Telegram columns are missing. Run `npx auth@latest generate` or `npx auth@latest migrate`, then `npx auth@latest check schema`.
 
 **"User not found and auto-signin is disabled" (404)** — Either `autoCreateUser` or `miniApp.allowAutoSignin` is `false`, and this Telegram user doesn't have an existing account. Both must be `true` to create new users via Mini App.
 

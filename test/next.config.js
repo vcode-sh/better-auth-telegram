@@ -10,7 +10,7 @@ const nextConfig = {
   webpack: (config, { isServer }) => {
     // Handle .node files (native modules like better-sqlite3)
     config.module.rules.push({
-      test: /\.node$/,
+      test: /\.node$/u,
       use: "node-loader",
     });
 

@@ -3,17 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "dev": "next dev",
+    "lint": "next lint",
+    "start": "next start"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
-    "better-auth": "^1.5.0",
+    "better-auth": ">=1.7.12 <1.8.0",
     "better-auth-telegram": "file:..",
     "better-sqlite3": "^12.6.2",
     "next": "^16.1.6",

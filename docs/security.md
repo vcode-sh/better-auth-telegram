@@ -8,6 +8,8 @@ Because "trust me bro" is not a cryptographic primitive.
 - [HMAC Verification](#hmac-verification)
 - [Replay Attack Prevention](#replay-attack-prevention)
 - [Rate Limiting](#rate-limiting)
+- [OIDC Security](#oidc-security)
+- [Account Provisioning](#account-provisioning)
 - [Token Security](#token-security)
 - [Session Security](#session-security)
 - [Schema Security](#schema-security)
@@ -21,8 +23,11 @@ The plugin implements several layers of security so you can sleep at night inste
 1. **HMAC-SHA-256 Verification** — cryptographic proof that Telegram sent the data, not some bloke with curl
 2. **Timestamp Validation** — stops replay attacks dead. Old data gets rejected, no exceptions
 3. **Built-in Rate Limiting** — every endpoint is rate-limited out of the box
-4. **Schema Protection** — `telegramId` and `telegramUsername` on the user table have `input: false`, so clients cannot write to them directly
-5. **Account Uniqueness** — one Telegram account, one user. No double-dipping
+4. **Schema Protection** — `telegramId`, `telegramUsername` and `telegramPhoneNumber` on the user table have `input: false`, so clients cannot write to them directly
+5. **Account Uniqueness** — one Telegram account, one user, and one Telegram identity per user. No double-dipping
+6. **Better Auth's own gates** — users and accounts are written through Better Auth's internal adapter, so `databaseHooks` and `user.validateUserInfo` apply (before v3 they were silently bypassed)
+7. **Revocable identity** — `user.telegramId` is always backed by a linked Telegram account; unlink it and the `telegramId` sign-in path closes
+8. **Placeholder email guard** — the plugin's `.placeholder.invalid` addresses can't be registered or claimed by any other flow
 
 ## HMAC Verification
 
@@ -32,11 +37,11 @@ Every authentication payload from Telegram includes an HMAC-SHA-256 hash. The pl
 
 **Login Widget verification:**
 
-1. Extract `hash` from the auth data
-2. Sort remaining fields alphabetically, join as `key=value\n` pairs
-3. Derive secret: `SHA-256(botToken)`
-4. Compute `HMAC-SHA-256(secret, dataCheckString)`
-5. Compare computed hash with received hash
+1. Extract `hash` from the auth data; it must be exactly 64 lowercase hex characters
+2. Reject the payload if any field contains a line break. Telegram's values never do, and one that did could be re-split into several fields of the data-check-string (say, a different `id`)
+3. Sort remaining fields alphabetically, join as `key=value\n` pairs
+4. Derive secret: `SHA-256(botToken)`
+5. Verify `HMAC-SHA-256(secret, dataCheckString)` against the received hash with `crypto.subtle.verify`, which compares in constant time
 
 ```typescript
 // Simplified view of what the plugin does internally (Web Crypto API)
@@ -45,18 +50,26 @@ const secretKey = new Uint8Array(
 );
 
 const cryptoKey = await crypto.subtle.importKey(
-  "raw", secretKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  "raw", secretKey, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]
 );
 
-const signature = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(dataCheckString));
+const valid = await crypto.subtle.verify(
+  "HMAC", cryptoKey, hexToBytes(hash), encoder.encode(dataCheckString)
+);
 ```
+
+No string `===` on hashes, so there's no timing side channel to measure.
 
 **Mini App verification** uses a different key derivation:
 
 1. Secret: `HMAC-SHA-256("WebAppData", botToken)` — note the literal string `"WebAppData"` as the HMAC key
-2. Then: `HMAC-SHA-256(secret, sortedInitDataParams)`
+2. Then: `HMAC-SHA-256(secret, sortedInitDataParams)`, where the sorted params include `signature` (as Telegram specifies), verified in constant time
 
 Two paths, same idea: if the hash doesn't match, the request dies.
+
+Mini App `initData` also carries an Ed25519 `signature` meant for third parties who don't have the bot token. The plugin doesn't implement that check; it has the token, and the HMAC covers `signature` anyway.
+
+`miniApp.validateInitData: false` skips the HMAC on `/telegram/miniapp/signin`, which means anyone can sign in as any Telegram user. The plugin logs a warning at startup. Keep it for tests.
 
 ### What This Prevents
 
@@ -68,7 +81,7 @@ Two paths, same idea: if the hash doesn't match, the request dies.
 
 Someone intercepts a valid auth payload and sends it again three days later. Classic.
 
-The plugin checks `auth_date` against the current time. If the data is older than `maxAuthAge`, it gets rejected.
+The plugin checks `auth_date` against the current time. It must be an integer Unix time, no older than `maxAuthAge`, and no more than 60 seconds in the future (clock skew tolerance, not a time machine). Anything else gets rejected.
 
 ```typescript
 telegram({
@@ -121,22 +134,54 @@ All of this is handled by Better Auth's social login system. You don't configure
 
 ### OIDC JWT Verification
 
-Telegram currently documents `RS256`, `ES256`, `EdDSA`, and `ES256K` signing algorithms. The plugin accepts `RS256`, `ES256`, and `EdDSA`, which are supported by the current `jose` runtime, and rejects `ES256K`. It verifies accepted tokens against Telegram's JWKS endpoint (`oauth.telegram.org/.well-known/jwks.json`):
+The authorization request carries a nonce, and the ID token returned by the code exchange is verified **before any claim is used**. (Before v3, the callback path decoded the token without verifying it, while this page claimed otherwise. Both are fixed.)
 
-1. Decode the JWT header to get `kid` (Key ID) and `alg`
-2. Reject algorithms outside the explicit allowlist
-3. Fetch the public key set from Telegram's JWKS endpoint
-4. Match the key by both `kid` and `alg`, then verify the signature
-5. Validate `iss` (issuer), `aud` (audience = your client ID), and `exp` (expiration)
+BotFather offers `RS256` (default), `ES256`, `EdDSA` and `ES256K`. The plugin accepts `RS256`, `ES256` and `EdDSA`. `ES256K` can't be verified with Web Crypto, so it's unsupported. Verification, via `jose`:
 
-Keys are fetched per verification — no caching means no stale-key vulnerabilities. The `jose` library handles the heavy lifting.
+1. Reject algorithms outside the allowlist
+2. Verify the signature with a key from Telegram's JWKS (`https://oauth.telegram.org/.well-known/jwks.json`)
+3. Validate `iss` (`https://oauth.telegram.org`) and `aud` (your client ID)
+4. Validate `exp` and `iat` with 30 seconds of clock tolerance
+5. Require `iss`, `sub`, `aud`, `exp` and `iat` to be present
+6. Check `nonce` matches the one sent in the authorization request
+
+The key set is fetched lazily and cached by jose's `createRemoteJWKSet`, which also handles refetching on unknown key ids, timeouts and cooldowns. Client-submitted ID tokens (`POST /sign-in/social` or `/link-social` with `idToken`) go through the same checks, and they must come with the `nonce` they were issued for. Better Auth treats that nonce as optional; the plugin doesn't, because a Telegram ID token is a bearer credential and without the nonce anyone who got hold of one could replay it within its 30 seconds. Forged, nonce-less or mismatched tokens get a 401. If you don't use ID token sign-in, turn it off with `oidc.disableIdTokenSignIn: true`. `oidc.disableSignUp: true` restricts OIDC to existing users.
+
+`oidc.clientSecret` is required. The old bot-token fallback is gone (Telegram never accepted it, and sending the bot token to the token endpoint was a bad idea anyway): startup warns and OIDC logins throw until the secret is set.
+
+The token endpoint is called with HTTP Basic client authentication (`client_secret_basic`), as Telegram's docs require, so the client secret never travels in a request body. Telegram returns token errors as HTTP 200 with an `error` field; the plugin treats them as failures (Better Auth's `invalid_code` redirect) instead of pretending a token arrived.
+
+Tokens are short-lived by design: the ID token lives 30 seconds, there's no refresh token, and the access token isn't useful for any API.
+
+`EdDSA` and `ES256K` bots have another problem: Telegram's docs say the profile and phone scopes are rejected for them; live, the flow succeeds but the ID token contains only `iss`/`aud`/`sub`/`iat`/`exp`. The plugin logs a warning when `id` is missing. Use `RS256` or `ES256` (BotFather > your bot > Login Widget > Advanced > Signing Algorithm).
 
 ### What This Prevents
 
 - **Token forgery** — supported signatures require Telegram's private key. Good luck with that.
-- **Token replay** — `exp` claim enforces expiration. `aud` ensures the token was meant for your OIDC client.
+- **Token replay** — `exp` claim enforces expiration, the nonce binds the token to one authorization request, and `aud` ensures the token was meant for your OIDC client.
 - **Authorization code interception** — PKCE makes stolen auth codes useless without the original `code_verifier`.
 - **CSRF on callback** — state parameter binds the callback to the session that initiated the flow.
+
+### Identity Mapping
+
+`sub` is not the Telegram user id, and it differs per bot. The OIDC account is keyed by `sub`, so switching bots or client ids gives every OIDC user a new account. When the Telegram columns exist, the plugin copies the verified `id` claim to `user.telegramId` and to the `telegram-oidc` account's `telegramId`, but never overwrites a different `telegramId` and never copies an id that another user already has (it logs a warning instead). The claims are only applied to the user who owns the `telegram-oidc` account whose id is the token's `sub`; another session created in the same request doesn't get them. Mapper output can't set these fields: they're `input: false`.
+
+Known gap: with Better Auth's `oauth-proxy` plugin, the claims are verified on the server that exchanges the code while the user is created on the other one, so the Telegram id isn't copied there.
+
+## Account Provisioning
+
+Login Widget and Mini App users and accounts are created through Better Auth's internal adapter, not raw adapter writes:
+
+- `databaseHooks` (user and account create/update/delete) run; links and sign-ups are written in a transaction. A hook that vetoes a Telegram sign-up yields 403 `USER_CREATION_REJECTED`
+- `user.validateUserInfo` gates every step, with `source.method` `"telegram-login-widget"` or `"telegram-mini-app"` and action `"create-user"` (sign-up), `"sign-in"` (returning user) or `"link-account"` (implicit link by `telegramId`, and `/telegram/link`). A rejection is a 403 with your code; a validator that throws fails closed with 403 `validation_failed`
+
+`/telegram/link` refuses a second, different Telegram identity (409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`).
+
+Unlinking needs a fresh session (Better Auth's `freshSessionMiddleware`, like `/unlink-account`; 403 `SESSION_NOT_FRESH` past `session.freshAge`, default 1 day), so a stolen old session can't strip the Telegram login. It refuses to remove a user's only account (400 `CANNOT_UNLINK_LAST_ACCOUNT`) unless Better Auth's `account.accountLinking.allowUnlinkingAll` is `true`.
+
+Unlinking also revokes. Whenever a `telegram` or `telegram-oidc` account is removed — `/telegram/unlink`, Better Auth's `POST /unlink-account`, or anything else — an `account.delete` database hook re-checks the user: if no remaining Telegram account proves the stored `telegramId`, it switches to one that does or clears `telegramId`, `telegramUsername` and `telegramPhoneNumber`. Without that, a Telegram user you unlinked could sign straight back in through the `telegramId` lookup. (OIDC accounts created before v3 don't carry `account.telegramId` until their next OIDC sign-in, so until then they don't count as proof.)
+
+Users without a real email get a placeholder (`<telegramId>@telegram.placeholder.invalid`, or `<sub>@telegram-oidc.placeholder.invalid` for OIDC) with `emailVerified: false`. `.invalid` is reserved by RFC 6761, so password-reset or magic-link mail can never be delivered to it. Database hooks guard those addresses: a user with a `@telegram.placeholder.invalid` email can only be created by the Telegram flow for that exact Telegram id, one with `@telegram-oidc.placeholder.invalid` only by the OIDC flow for that `sub`, and no user's email can be changed to a placeholder. Otherwise someone could register `<telegramId>@telegram.placeholder.invalid` with a password and block, or pre-claim, that Telegram user's account.
 
 ## Token Security
 
@@ -194,7 +239,7 @@ openssl rand -hex 32
 
 The user table fields `telegramId` and `telegramUsername` are defined with `input: false`. This means clients cannot set or modify these values through Better Auth's API — they're server-side only, populated during authentication.
 
-The account table stores the provider link with `providerId: "telegram"` and enforces that a Telegram account cannot be linked to multiple users. Attempting to link an already-claimed Telegram account returns a `409 Conflict`.
+The account table stores the provider link with `providerId: "telegram"` and enforces that a Telegram account cannot be linked to multiple users. Attempting to link an already-claimed Telegram account returns a `409 Conflict`, and so does linking a Telegram id that another user already has on their profile (for example from OIDC).
 
 ## Security Checklist
 
@@ -206,6 +251,10 @@ Before shipping to production — the abridged "please don't get hacked" list:
 - [ ] HTTPS enabled (Telegram requires it for the Login Widget anyway)
 - [ ] Domain configured with @BotFather (`/setdomain`)
 - [ ] `maxAuthAge` set appropriately for your risk profile
+- [ ] `miniApp.validateInitData` left at `true`
+- [ ] OIDC bot signs with `RS256` or `ES256`
+- [ ] Better Auth `>=1.7.12` (GHSA-965c-763c-88jm fixed in 1.7.7; nonce enforced on every callback route from 1.7.12)
+- [ ] `oidc.disableIdTokenSignIn: true` if you don't use client-side ID token sign-in
 - [ ] Secure cookies enabled in production
 - [ ] Separate bots for development and production
 - [ ] Error logging enabled (without logging tokens or hashes, obviously)
