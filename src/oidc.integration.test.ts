@@ -175,6 +175,63 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     expect(telegramMock.jwksRequests).toBe(1);
   });
 
+  // jose refetches the key set for an unknown kid, at most once per 30 s
+  // (createRemoteJWKSet's default cooldownDuration).
+  it("picks up a rotated Telegram signing key once the 30 s refetch cooldown has passed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_761_730_000_000);
+    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+    await telegramMock.rotateKey();
+
+    const tooSoon = await signInWithTelegramOIDC(client, telegramMock);
+    vi.setSystemTime(1_761_730_031_000);
+    const later = await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(tooSoon.location).toContain("error=unable_to_get_user_info");
+    expect(later.location).toBe("/dashboard");
+    expect(telegramMock.jwksRequests).toBe(2);
+    expect(db.user).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it("fails the sign-in without a user while Telegram's JWKS is down, and recovers", async () => {
+    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
+    telegramMock.setJwksStatus(503);
+
+    const down = await signInWithTelegramOIDC(client, telegramMock);
+    telegramMock.setJwksStatus(200);
+    const up = await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(down.location).toContain("error=unable_to_get_user_info");
+    expect(up.location).toBe("/dashboard");
+    expect(db.user).toHaveLength(1);
+  });
+
+  // Telegram's docs don't say what the callback carries when the user
+  // declines; OAuth 2.0 (RFC 6749 §4.1.2.1) says `error=access_denied`.
+  it("sends a user who declines in Telegram to errorCallbackURL, creating nothing", async () => {
+    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
+    const start = await client.post("/sign-in/social", {
+      provider: "telegram-oidc",
+      callbackURL: "/dashboard",
+      errorCallbackURL: "/login-failed",
+    });
+    const state = new URL(start.json.url).searchParams.get("state");
+
+    const callback = await client.get(
+      `/callback/telegram-oidc?error=access_denied&state=${state}`
+    );
+
+    expect(callback.headers.get("location")).toBe(
+      "/login-failed?error=access_denied"
+    );
+    expect(telegramMock.tokenRequests).toHaveLength(0);
+    expect(db.user).toHaveLength(0);
+    expect(client.hasSession()).toBe(false);
+  });
+
   it("signs the same Telegram user back into the same account", async () => {
     const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
 
@@ -311,6 +368,76 @@ describe("Telegram identity on OIDC users", () => {
     );
 
     expect(db.user[0]!.telegramUsername).toBe("ann_renamed");
+  });
+
+  // The Login Widget clears it too; a stale username could be shown or
+  // trusted as the user's handle after someone else takes it.
+  it("clears the stored username once the Telegram user has none", async () => {
+    const { client, db } = createMemoryAuth(oidc());
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ preferred_username: undefined })
+    );
+
+    expect(db.user[0]!.telegramUsername ?? null).toBeNull();
+    expect(db.account[0]!.telegramUsername ?? null).toBeNull();
+  });
+
+  it("keeps the username when the token carries no profile claims at all", async () => {
+    const { client, db } = createMemoryAuth(oidc());
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    // `openid` only (or an EdDSA / ES256K bot): nothing is known about the
+    // username, so nothing is cleared.
+    await signInWithTelegramOIDC(client, telegramMock, {
+      sub: "12224742808376279442",
+    });
+
+    expect(db.user[0]!.telegramUsername).toBe("ann");
+  });
+
+  // `phone_number` only comes with the `phone` scope and the user's consent
+  // in a separate Telegram dialog: its absence is not a removed number.
+  it("keeps the stored phone number when a later token has none", async () => {
+    const { client, db } = createMemoryAuth(oidc());
+    await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ phone_number: "48572068680" })
+    );
+    client.clearCookies();
+
+    await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(db.user[0]!.telegramPhoneNumber).toBe("48572068680");
+  });
+
+  // Telegram's docs show `"id": 987654321` (a number); live tokens carry a
+  // string. Both must land as the same string the Login Widget uses.
+  it("stores the documented numeric id claim as a string", async () => {
+    const { client, db } = createMemoryAuth({
+      ...oidc(),
+      miniApp: { enabled: true },
+    });
+    await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ id: 987_654_321 })
+    );
+    client.clearCookies();
+
+    const miniApp = await client.post("/telegram/miniapp/signin", {
+      initData: await signInitData({ id: 987_654_321 }),
+    });
+
+    expect(db.user[0]!.telegramId).toBe("987654321");
+    expect(miniApp.status).toBe(200);
+    expect(db.user).toHaveLength(1);
   });
 
   it("lets a Mini App sign-in find the user OIDC created", async () => {
@@ -479,6 +606,24 @@ describe("ID token checks", () => {
 
     expect(location).toContain("error=unable_to_get_user_info");
     expect(db.user).toHaveLength(0);
+  });
+
+  // OpenID Connect Core 1.0 §3.1.3.7: "The ID Token MUST be rejected if
+  // [...] it contains additional audiences not trusted by the Client."
+  it.each([
+    [["123456789"], "/dashboard"],
+    [["123456789", "987654321"], "error=unable_to_get_user_info"],
+  ])("an ID token for audiences %j → %s", async (aud, outcome) => {
+    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
+
+    const { location } = await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ aud })
+    );
+
+    expect(location).toContain(outcome);
+    expect(db.user).toHaveLength(outcome === "/dashboard" ? 1 : 0);
   });
 
   // Telegram's tokens expire 30 s after issue; 30 s of clock tolerance on top.

@@ -37,7 +37,7 @@ const TELEGRAM_JWKS_URI = "https://oauth.telegram.org/.well-known/jwks.json";
 export const MINI_APP_SIGNATURE =
   "kXz3oVbV0wL3n0rZt7x1Qq9oX2y4m6n8p0r2t4v6x8z0B2D4F6H8J0L2N4P6R8T0V2X4Z6b8d0f2h4j6l8n0pA";
 
-type AuthOptions = Parameters<typeof betterAuth>[0];
+export type AuthOptions = Parameters<typeof betterAuth>[0];
 
 type Row = Record<string, any>;
 export interface MemoryDB extends Record<string, Row[]> {
@@ -53,7 +53,8 @@ function telegramOptions(
   return { botToken: BOT_TOKEN, botUsername: "test_bot", ...overrides };
 }
 
-function baseOptions(
+/** Better Auth options with the plugin, without a database. */
+export function baseOptions(
   pluginOptions: Partial<TelegramPluginOptions>,
   authOptions: Partial<AuthOptions>
 ): AuthOptions {
@@ -69,12 +70,15 @@ function baseOptions(
   };
 }
 
-/** Better Auth on the in-memory adapter. */
+/**
+ * Better Auth on the in-memory adapter. Pass another instance's `db` to get
+ * a second "server" on the same data.
+ */
 export function createMemoryAuth(
   pluginOptions: Partial<TelegramPluginOptions> = {},
-  authOptions: Partial<AuthOptions> = {}
+  authOptions: Partial<AuthOptions> = {},
+  db: MemoryDB = { user: [], session: [], account: [], verification: [] }
 ) {
-  const db: MemoryDB = { user: [], session: [], account: [], verification: [] };
   const auth = betterAuth({
     ...baseOptions(pluginOptions, authOptions),
     database: memoryAdapter(db),
@@ -293,11 +297,15 @@ export async function mockTelegramOIDC(
   const clientId = options.clientId ?? BOT_ID;
   const clientSecret = options.clientSecret ?? "oidc-client-secret";
   const alg = options.alg ?? "RS256";
-  const { privateKey, publicKey } = await generateKeyPair(alg, {
-    ...(alg === "EdDSA" ? { crv: "Ed25519" } : {}),
-  });
-  const kid = `test-${alg.toLowerCase()}`;
-  const jwk = { ...(await exportJWK(publicKey)), kid, alg, use: "sig" };
+  const newSigningKey = async (kid: string) => {
+    const pair = await generateKeyPair(alg, {
+      ...(alg === "EdDSA" ? { crv: "Ed25519" } : {}),
+    });
+    const jwk = { ...(await exportJWK(pair.publicKey)), kid, alg, use: "sig" };
+    return { kid, privateKey: pair.privateKey, jwk };
+  };
+  let signingKey = await newSigningKey(`test-${alg.toLowerCase()}`);
+  let jwksStatus = 200;
   const pending = new Map<string, PendingAuthorization>();
   const tokenRequests: {
     authorization: string | null;
@@ -313,7 +321,9 @@ export async function mockTelegramOIDC(
       const { url } = new Request(input as RequestInfo);
       if (url.startsWith(TELEGRAM_JWKS_URI)) {
         jwksRequests += 1;
-        return Response.json({ keys: [jwk] });
+        return jwksStatus === 200
+          ? Response.json({ keys: [signingKey.jwk] })
+          : new Response("Service Unavailable", { status: jwksStatus });
       }
       if (url.startsWith(TELEGRAM_TOKEN_ENDPOINT)) {
         const request = new Request(input as RequestInfo, init);
@@ -328,11 +338,11 @@ export async function mockTelegramOIDC(
   /** Signs an ID token; `iss` / `aud` in `claims` override Telegram's. */
   async function sign(
     claims: JWTPayload,
-    key: KeyObject | CryptoKey = privateKey
+    key: KeyObject | CryptoKey = signingKey.privateKey
   ) {
     const now = Math.floor(Date.now() / 1000);
     return await new SignJWT({ ...claims })
-      .setProtectedHeader({ alg, kid, typ: "JWT" })
+      .setProtectedHeader({ alg, kid: signingKey.kid, typ: "JWT" })
       .setIssuer(claims.iss ?? TELEGRAM_ISSUER)
       .setAudience(claims.aud ?? clientId)
       .setIssuedAt(now)
@@ -370,7 +380,9 @@ export async function mockTelegramOIDC(
     pending.delete(code);
     const idToken = await sign(
       { ...authz.claims, ...(authz.nonce ? { nonce: authz.nonce } : {}) },
-      authz.forge ? (await generateKeyPair(alg)).privateKey : privateKey
+      authz.forge
+        ? (await generateKeyPair(alg)).privateKey
+        : signingKey.privateKey
     );
     return {
       access_token: "AAAAAAAAAAAAAAAAAAAAAAAA",
@@ -433,6 +445,14 @@ export async function mockTelegramOIDC(
     tokenRequests,
     get jwksRequests() {
       return jwksRequests;
+    },
+    /** Telegram replaces its signing key: new kid, old key gone from the JWKS. */
+    rotateKey: async () => {
+      signingKey = await newSigningKey(`test-${alg.toLowerCase()}-rotated`);
+    },
+    /** The HTTP status the JWKS endpoint answers with (200 = up). */
+    setJwksStatus: (status: number) => {
+      jwksStatus = status;
     },
     restore: () => fetchSpy.mockRestore(),
   };

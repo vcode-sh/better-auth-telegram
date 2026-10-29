@@ -25,6 +25,7 @@ export default defineConfig({
       },
     },
     include: ["src/**/*.{test,spec}.ts"],
-    exclude: ["node_modules", "dist"],
+    // Real databases: `npm run test:adapters` (vitest.adapters.config.ts).
+    exclude: ["node_modules", "dist", "src/**/*.adapter.test.ts"],
   },
 });

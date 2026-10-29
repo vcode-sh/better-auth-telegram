@@ -28,6 +28,7 @@ npm test             # Run all tests -- you'd be surprised how many people skip 
 npm run test:watch   # Watch mode -- for when you're in the zone
 npm run test:ui      # Vitest UI -- pretty graphs that prove you did something
 npm run test:coverage # Coverage report -- the number must go up
+npm run test:adapters # Real PostgreSQL / MySQL / MongoDB (Docker); databases without a BAT_TEST_*_URL are skipped, see vitest.adapters.config.ts
 npm run lint         # Biome lint check -- it has opinions and they are correct
 npm run lint:fix     # Auto-fix -- let the machine do the boring part
 ```

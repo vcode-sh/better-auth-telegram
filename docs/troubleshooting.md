@@ -234,7 +234,21 @@ Or make sure users exist before they attempt Telegram sign-in.
 
 ### "Linking Telegram accounts is disabled" (403)
 
-You set `allowUserToLink: false` (or it defaulted to... wait, no, it defaults to `true`). If you're getting this, you explicitly disabled linking. Check your plugin config.
+You set `allowUserToLink: false` (or it defaulted to... wait, no, it defaults to `true`), or Better Auth's `account.accountLinking.enabled` is `false`, which turns off every kind of linking, this one included. Check both configs.
+
+### "A user with this Telegram account exists, but the account is not linked..." (401)
+
+`ACCOUNT_NOT_LINKED`. Someone already has this `telegramId` (typically a user who signed up with OIDC), the Login Widget / Mini App account isn't linked to them yet, and Better Auth's `account.accountLinking` has `enabled: false` or `disableImplicitLinking: true`, so the sign-in won't link itself. That's the same rule Better Auth applies to OAuth sign-ins. Either drop the setting, or let the signed-in user link Telegram explicitly with `/telegram/link` (allowed with `disableImplicitLinking`, not with `enabled: false`).
+
+### "Invalid origin" (403) on Sign-in
+
+`INVALID_ORIGIN`, from Better Auth. `/telegram/signin` and `/telegram/miniapp/signin` refuse browser requests from origins outside `trustedOrigins`, even without cookies (login CSRF protection, the same as `/sign-in/email`). If your login page or Mini App lives on another origin than the auth server (`app.example.com` vs `api.example.com`), add it:
+
+```typescript
+betterAuth({
+  trustedOrigins: ["https://app.example.com"],
+});
+```
 
 ### "This Telegram account is already linked to another user" (409)
 
@@ -442,7 +456,9 @@ Every error this plugin can throw, mapped to what actually went wrong:
 | `Invalid Telegram authentication` | 401 | HMAC check failed. Wrong token, expired data, or tampered payload. |
 | `User not found and auto-create is disabled` | 404 | `autoCreateUser` is `false` and no existing account matches. |
 | `Unauthorized` (`UNAUTHORIZED`, from Better Auth) | 401 | No valid session. Probably missing `credentials: "include"`. |
-| `Linking Telegram accounts is disabled` | 403 | `allowUserToLink` is `false`. |
+| `Linking Telegram accounts is disabled` | 403 | `allowUserToLink` is `false`, or Better Auth's `account.accountLinking.enabled` is `false`. |
+| `A user with this Telegram account exists, but the account is not linked and account linking does not allow linking it on sign-in` | 401 | `ACCOUNT_NOT_LINKED`: implicit linking by `telegramId` is off (`accountLinking.enabled: false` or `disableImplicitLinking: true`). |
+| `Invalid origin` (`INVALID_ORIGIN`, from Better Auth) | 403 | Sign-in from an origin outside `trustedOrigins`. |
 | `This Telegram account is already linked to another user` | 409 | Telegram account belongs to a different user. |
 | `This Telegram account is already linked to your account` | 409 | Already linked. Nothing to do. |
 | `No Telegram account linked` | 404 | Tried to unlink but nothing was linked. |

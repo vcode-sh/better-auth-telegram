@@ -1,4 +1,8 @@
-import { APIError, createAuthEndpoint } from "better-auth/api";
+import {
+  APIError,
+  createAuthEndpoint,
+  formCsrfMiddleware,
+} from "better-auth/api";
 import { ERROR_CODES } from "./constants";
 import type { TelegramPluginConfig } from "./plugin-config";
 import { findOrCreateTelegramUser, startSession } from "./telegram-account";
@@ -35,6 +39,8 @@ export function createMiniAppEndpoints(config: TelegramPluginConfig) {
       "/telegram/miniapp/signin",
       {
         method: "POST",
+        // Login CSRF protection, as on /telegram/signin.
+        use: [formCsrfMiddleware],
       },
       async (ctx) => {
         const initData = readInitData(ctx.body);

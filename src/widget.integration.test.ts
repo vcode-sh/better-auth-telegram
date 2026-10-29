@@ -7,6 +7,7 @@ import {
   createClient,
   createMemoryAuth,
   createSqliteAuth,
+  type MemoryDB,
   signInitData,
   signInitParams,
   signWidgetData,
@@ -223,6 +224,35 @@ describe("Mini App sign-in", () => {
       telegramId: "7",
       telegramUsername: "ann",
     });
+  });
+
+  // Opened from the attachment menu in a private chat, initData also carries
+  // the chat partner (`receiver`); from a direct link, chat_type and
+  // chat_instance; plus start_param and can_send_after
+  // (https://core.telegram.org/bots/webapps#webappinitdata).
+  it("signs in the user who opened the Mini App, never the chat partner", async () => {
+    const { client, db } = createMemoryAuth(miniApp);
+
+    const response = await client.post("/telegram/miniapp/signin", {
+      initData: await signInitData(
+        { id: 7, first_name: "Ann" },
+        {
+          receiver: JSON.stringify({
+            id: 99,
+            first_name: "Bob",
+            is_bot: false,
+          }),
+          chat_type: "private",
+          chat_instance: "-8834455221",
+          start_param: "ref_42",
+          can_send_after: "10",
+        }
+      ),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.json.user).toMatchObject({ telegramId: "7", name: "Ann" });
+    expect(db.user.map((user) => user.telegramId)).toEqual(["7"]);
   });
 
   it("signs a Login Widget user into the same account", async () => {
@@ -545,6 +575,87 @@ describe("Telegram account bookkeeping", () => {
 
     expect(response.status).toBe(409);
     expect(response.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
+  });
+});
+
+describe("another server creating the same Telegram user first", () => {
+  // Server B signs the user up while server A is creating them; on SQL the
+  // unique user.email makes A's insert fail. The hook stands in for that
+  // database error, which the memory adapter can't raise.
+  function racingServers(failure: () => Error) {
+    const db: MemoryDB = {
+      user: [],
+      session: [],
+      account: [],
+      verification: [],
+    };
+    const serverB = createMemoryAuth({}, {}, db);
+    let raced = false;
+    const serverA = createMemoryAuth(
+      {},
+      {
+        databaseHooks: {
+          user: {
+            create: {
+              async before() {
+                if (!raced) {
+                  raced = true;
+                  await serverB.client.post(
+                    "/telegram/signin",
+                    await widgetUser()
+                  );
+                  throw failure();
+                }
+              },
+            },
+          },
+        },
+      },
+      db
+    );
+    return { serverA, db };
+  }
+
+  it("signs in as the user the other server created", async () => {
+    const { serverA, db } = racingServers(
+      () =>
+        new Error(
+          'duplicate key value violates unique constraint "user_email_key"'
+        )
+    );
+
+    const response = await serverA.client.post(
+      "/telegram/signin",
+      await widgetUser()
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.user).toHaveLength(1);
+    expect(db.account).toHaveLength(1);
+    expect(response.json.user.id).toBe(db.user[0]!.id);
+  });
+
+  it("still reports a database error when no Telegram user was created", async () => {
+    const { client, db } = createMemoryAuth(
+      {},
+      {
+        databaseHooks: {
+          user: {
+            create: {
+              before() {
+                throw new Error("connection reset");
+              },
+            },
+          },
+        },
+      }
+    );
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(500);
+    expect(client.hasSession()).toBe(false);
+    expect(db.user).toHaveLength(0);
   });
 });
 

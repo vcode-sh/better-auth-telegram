@@ -91,6 +91,8 @@ telegram({
 })
 ```
 
+Within that window a payload is a bearer credential: Telegram's docs only suggest checking `auth_date` ("To prevent the use of outdated data, you can additionally check the auth_date field"), and there's no nonce, so whoever captures a payload can replay it until it's `maxAuthAge` old.
+
 The default is `86400` seconds (24 hours). Tighten it if you're paranoid, loosen it if you trust humanity (don't):
 
 | Use Case | Value | Notes |
@@ -140,7 +142,7 @@ BotFather offers `RS256` (default), `ES256`, `EdDSA` and `ES256K`. The plugin ac
 
 1. Reject algorithms outside the allowlist
 2. Verify the signature with a key from Telegram's JWKS (`https://oauth.telegram.org/.well-known/jwks.json`)
-3. Validate `iss` (`https://oauth.telegram.org`) and `aud` (your client ID)
+3. Validate `iss` (`https://oauth.telegram.org`) and `aud` (your client ID, and no other audience: OpenID Connect Core §3.1.3.7 says a token naming "additional audiences not trusted by the Client" MUST be rejected)
 4. Validate `exp` and `iat` with 30 seconds of clock tolerance
 5. Require `iss`, `sub`, `aud`, `exp` and `iat` to be present
 6. Check `nonce` matches the one sent in the authorization request
@@ -175,7 +177,9 @@ Login Widget and Mini App users and accounts are created through Better Auth's i
 - `databaseHooks` (user and account create/update/delete) run; links and sign-ups are written in a transaction. A hook that vetoes a Telegram sign-up yields 403 `USER_CREATION_REJECTED`
 - `user.validateUserInfo` gates every step, with `source.method` `"telegram-login-widget"` or `"telegram-mini-app"` and action `"create-user"` (sign-up), `"sign-in"` (returning user) or `"link-account"` (implicit link by `telegramId`, and `/telegram/link`). A rejection is a 403 with your code; a validator that throws fails closed with 403 `validation_failed`
 
-`/telegram/link` refuses a second, different Telegram identity (409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`).
+`/telegram/link` refuses a second, different Telegram identity (409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`). Better Auth's `account.accountLinking.enabled: false` turns it off (403 `LINKING_DISABLED`), and with `enabled: false` or `disableImplicitLinking: true` a sign-in never links itself to an existing user by `telegramId` (401 `ACCOUNT_NOT_LINKED`).
+
+`/telegram/signin` and `/telegram/miniapp/signin` run Better Auth's `formCsrfMiddleware`, like `/sign-in/email`: a browser request from an origin outside `trustedOrigins` gets 403 `INVALID_ORIGIN` even without cookies. Without it, a page on another site could post the attacker's own fresh Telegram data (login CSRF) and sign the visitor into the attacker's account. Better Auth's JSON-only body parsing already stops plain HTML form posts (415); this covers a permissive CORS setup.
 
 Unlinking needs a fresh session (Better Auth's `freshSessionMiddleware`, like `/unlink-account`; 403 `SESSION_NOT_FRESH` past `session.freshAge`, default 1 day), so a stolen old session can't strip the Telegram login. It refuses to remove a user's only account (400 `CANNOT_UNLINK_LAST_ACCOUNT`) unless Better Auth's `account.accountLinking.allowUnlinkingAll` is `true`.
 
@@ -213,7 +217,7 @@ telegram({
 
 **Use separate bots for dev and production.** Your test bot should not have access to production data, and your production bot should not be running on `localhost:3000` via ngrok.
 
-**Rotate tokens** periodically via @BotFather. Update your environment, deploy, revoke the old one.
+**Rotate tokens** via @BotFather when you have to. Revoking generates the new token and retires the old one in the same step ("revoke the current token and generate a new one", [Bot Features](https://core.telegram.org/bots/features)), so deploy the new token right away. The bot token is also the HMAC key: Login Widget data and Mini App `initData` signed with the old token get 401 once the new one is live, so users sign in again and Mini Apps opened before the switch need reopening.
 
 ## Session Security
 
@@ -251,6 +255,7 @@ Before shipping to production — the abridged "please don't get hacked" list:
 - [ ] HTTPS enabled (Telegram requires it for the Login Widget anyway)
 - [ ] Domain configured with @BotFather (`/setdomain`)
 - [ ] `maxAuthAge` set appropriately for your risk profile
+- [ ] Every origin that serves your login page or Mini App is in `trustedOrigins`
 - [ ] `miniApp.validateInitData` left at `true`
 - [ ] OIDC bot signs with `RS256` or `ES256`
 - [ ] Better Auth `>=1.7.12` (GHSA-965c-763c-88jm fixed in 1.7.7; nonce enforced on every callback route from 1.7.12)

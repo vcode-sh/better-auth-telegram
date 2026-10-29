@@ -56,17 +56,19 @@ export interface TelegramWidgetOptions {
   size?: "large" | "medium" | "small";
 }
 
+/** The widget script load in flight, shared by widgets initialized meanwhile. */
+let widgetScriptLoading: Promise<void> | undefined;
+
 /**
  * Helper to load Telegram Widget script
  */
 function loadTelegramWidgetScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Check if script already loaded
-    if ((window as any).Telegram?.Login) {
-      resolve();
-      return;
-    }
+  // Check if script already loaded
+  if ((window as any).Telegram?.Login) {
+    return Promise.resolve();
+  }
 
+  widgetScriptLoading ??= new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = TELEGRAM_WIDGET_SCRIPT;
     script.async = true;
@@ -74,7 +76,10 @@ function loadTelegramWidgetScript(): Promise<void> {
     script.onerror = () =>
       reject(new Error("Failed to load Telegram widget script"));
     document.head.appendChild(script);
+  }).finally(() => {
+    widgetScriptLoading = undefined;
   });
+  return widgetScriptLoading;
 }
 
 let widgetCount = 0;

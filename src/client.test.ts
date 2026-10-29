@@ -243,6 +243,21 @@ describe("loading Telegram's widget script", () => {
     expect(loaded[0]!.getAttribute("src")).toBe(WIDGET_SCRIPT);
   });
 
+  // React strict mode runs the effect that renders the widget twice at once.
+  it("loads it once when two widgets initialize at the same time, rendering one", async () => {
+    (window as any).Telegram = undefined;
+
+    await Promise.all([
+      actions().initTelegramWidget("telegram-login", {}, () => {}),
+      actions().initTelegramWidget("telegram-login", {}, () => {}),
+    ]);
+
+    expect(document.head.querySelectorAll("script")).toHaveLength(1);
+    expect(
+      document.getElementById("telegram-login")!.querySelectorAll("script")
+    ).toHaveLength(1);
+  });
+
   it("rejects without rendering a widget when the script fails to load", async () => {
     (window as any).Telegram = undefined;
     // happy-dom then logs a DOMException for the refused load; that is expected.

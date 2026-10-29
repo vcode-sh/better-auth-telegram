@@ -15,6 +15,8 @@ export const ERROR_CODES = defineErrorCodes({
   NOT_LINKED: "No Telegram account linked",
   DIFFERENT_TELEGRAM_ACCOUNT_LINKED:
     "A different Telegram account is already linked to your account",
+  ACCOUNT_NOT_LINKED:
+    "A user with this Telegram account exists, but the account is not linked and account linking does not allow linking it on sign-in",
   CANNOT_UNLINK_LAST_ACCOUNT:
     "Cannot unlink Telegram: it is the only way to sign in to this account",
   USER_CREATION_REJECTED: "User creation was rejected",

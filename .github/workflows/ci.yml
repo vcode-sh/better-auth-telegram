@@ -52,6 +52,63 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  # The core flows on real databases (src/adapters.adapter.test.ts):
+  # PostgreSQL and MySQL through Better Auth's Kysely adapter, Drizzle and
+  # Prisma on PostgreSQL, and MongoDB.
+  adapters:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: bat
+          POSTGRES_PASSWORD: bat
+          POSTGRES_DB: bat
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U bat"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: bat
+          MYSQL_DATABASE: bat
+        ports: [ "3306:3306" ]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pbat"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    env:
+      BAT_TEST_POSTGRES_URL: postgres://bat:bat@127.0.0.1:5432/bat
+      BAT_TEST_MYSQL_URL: mysql://root:bat@127.0.0.1:3306/bat
+      BAT_TEST_MONGODB_URL: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Service containers can't pass arguments; transactions need a replica set.
+      - name: Start MongoDB (single-node replica set)
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8.2 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' && break
+            sleep 2
+          done
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "127.0.0.1:27017" }] })'
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the adapter lane
+        run: npm run test:adapters
+
   test-bun:
     runs-on: ubuntu-latest
 

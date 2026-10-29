@@ -137,7 +137,9 @@ async function syncTelegramIdentity(
   if (user.telegramId !== telegramId) {
     update.telegramId = telegramId;
   }
-  if (username && user.telegramUsername !== username) {
+  // `id` is present, so the profile claims are: no `preferred_username`
+  // means the Telegram user has no username now.
+  if ((user.telegramUsername ?? null) !== username) {
     update.telegramUsername = username;
   }
   if (claims.phone_number && user.telegramPhoneNumber !== claims.phone_number) {

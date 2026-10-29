@@ -1,8 +1,8 @@
 import type { GenericEndpointContext } from "@better-auth/core";
 import { runWithTransaction } from "@better-auth/core/context";
 import { createPlaceholderEmail } from "@better-auth/core/utils/email";
-import type { Account, User } from "better-auth";
-import { APIError } from "better-auth/api";
+import type { Account, Session, User } from "better-auth";
+import { APIError, isAPIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { ERROR_CODES, PLUGIN_ID } from "./constants";
 import { reconcileTelegramIdentity } from "./telegram-identity";
@@ -138,6 +138,63 @@ async function refreshIdentity(
   );
 }
 
+/** Telegram ids with a sign-in or link in progress, per Better Auth instance. */
+const inProgress = new WeakMap<object, Map<string, Promise<unknown>>>();
+
+/**
+ * Runs `task` once every earlier task for the same Telegram id on this
+ * Better Auth instance has settled. A double-submitted first sign-in (React
+ * strict mode, a double click) would otherwise create the user twice, or
+ * link a second account to the user the first request just created.
+ */
+async function oneAtATime<T>(
+  ctx: GenericEndpointContext,
+  telegramId: string,
+  task: () => Promise<T>
+): Promise<T> {
+  const key = ctx.context.adapter;
+  let tasks = inProgress.get(key);
+  if (!tasks) {
+    tasks = new Map();
+    inProgress.set(key, tasks);
+  }
+  const current = (tasks.get(telegramId) ?? Promise.resolve()).then(task);
+  const settled = current.then(
+    () => undefined,
+    () => undefined
+  );
+  tasks.set(telegramId, settled);
+  try {
+    return await current;
+  } finally {
+    if (tasks.get(telegramId) === settled) {
+      tasks.delete(telegramId);
+    }
+  }
+}
+
+/** Signs a returning Telegram user in through their `telegram` account. */
+async function signInWithAccount(
+  ctx: GenericEndpointContext,
+  account: TelegramAccount,
+  identity: TelegramIdentity,
+  method: TelegramProvisioningMethod
+): Promise<TelegramUser> {
+  const user = (await ctx.context.internalAdapter.findUserById(
+    account.userId
+  )) as TelegramUser | null;
+  if (!user) {
+    throw APIError.from("INTERNAL_SERVER_ERROR", ERROR_CODES.ORPHANED_ACCOUNT);
+  }
+  await assertValidUserInfo(
+    ctx,
+    { ...user, telegramUsername: identity.username ?? null },
+    "sign-in",
+    method
+  );
+  return await refreshIdentity(ctx, user, account, identity);
+}
+
 /**
  * Finds the user for a verified Telegram identity, linking or creating the
  * Telegram account when needed:
@@ -159,31 +216,39 @@ export async function findOrCreateTelegramUser(
     notFound: (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
   }
 ): Promise<TelegramUser> {
+  return await oneAtATime(ctx, options.identity.telegramId, () =>
+    findOrCreate(ctx, options)
+  );
+}
+
+async function findOrCreate(
+  ctx: GenericEndpointContext,
+  options: Parameters<typeof findOrCreateTelegramUser>[1]
+): Promise<TelegramUser> {
   const { identity, method } = options;
   const { internalAdapter } = ctx.context;
 
   const account = await findTelegramAccount(ctx, identity.telegramId);
   if (account) {
-    const user = (await internalAdapter.findUserById(
-      account.userId
-    )) as TelegramUser | null;
-    if (!user) {
-      throw APIError.from(
-        "INTERNAL_SERVER_ERROR",
-        ERROR_CODES.ORPHANED_ACCOUNT
-      );
-    }
-    await assertValidUserInfo(
-      ctx,
-      { ...user, telegramUsername: identity.username ?? null },
-      "sign-in",
-      method
-    );
-    return await refreshIdentity(ctx, user, account, identity);
+    return await signInWithAccount(ctx, account, identity, method);
   }
 
   const existingUser = await findUserByTelegramId(ctx, identity.telegramId);
   if (existingUser) {
+    // Another server's first sign-in may have committed this user (and, in
+    // the same transaction, the account) since the lookup above.
+    const committed = await findTelegramAccount(ctx, identity.telegramId);
+    if (committed) {
+      return await signInWithAccount(ctx, committed, identity, method);
+    }
+    // Same rule as Better Auth's OAuth sign-in linking to an existing user.
+    const accountLinking = ctx.context.options.account?.accountLinking;
+    if (
+      accountLinking?.enabled === false ||
+      accountLinking?.disableImplicitLinking === true
+    ) {
+      throw APIError.from("UNAUTHORIZED", ERROR_CODES.ACCOUNT_NOT_LINKED);
+    }
     await assertValidUserInfo(ctx, existingUser, "link-account", method);
     return await runWithTransaction(ctx.context.adapter, async () => {
       const linked = (await internalAdapter.linkAccount(
@@ -197,6 +262,28 @@ export async function findOrCreateTelegramUser(
     throw APIError.from("NOT_FOUND", options.notFound);
   }
 
+  try {
+    return await createTelegramUser(ctx, options);
+  } catch (error) {
+    // Another server created this Telegram user a moment earlier, and the
+    // database refused our copy (unique email): sign in as that user.
+    const created = isAPIError(error)
+      ? null
+      : await findTelegramAccount(ctx, identity.telegramId);
+    if (!created) {
+      throw error;
+    }
+    return await signInWithAccount(ctx, created, identity, method);
+  }
+}
+
+/** Creates the user and their `telegram` account, in a transaction. */
+async function createTelegramUser(
+  ctx: GenericEndpointContext,
+  options: Parameters<typeof findOrCreateTelegramUser>[1]
+): Promise<TelegramUser> {
+  const { identity, method } = options;
+  const { internalAdapter } = ctx.context;
   return await runWithTransaction(ctx.context.adapter, async () => {
     const user = (await internalAdapter.createUser(
       {
@@ -235,10 +322,33 @@ export async function startSession(
 }
 
 /**
+ * Re-issues the session cookie with the user as stored now, like Better
+ * Auth's /update-user, so `session.cookieCache` doesn't keep serving the
+ * Telegram identity from before a link or unlink.
+ */
+export async function refreshSessionCookie(
+  ctx: GenericEndpointContext,
+  session: { session: Session; user: User }
+) {
+  const user = await ctx.context.internalAdapter.findUserById(session.user.id);
+  if (user) {
+    await setSessionCookie(ctx, { session: session.session, user });
+  }
+}
+
+/**
  * Links a verified Telegram identity to the signed-in user. A user has at
  * most one Telegram identity: linking a different one is refused.
  */
 export async function linkTelegramAccount(
+  ctx: GenericEndpointContext,
+  user: TelegramUser,
+  identity: TelegramIdentity
+) {
+  await oneAtATime(ctx, identity.telegramId, () => link(ctx, user, identity));
+}
+
+async function link(
   ctx: GenericEndpointContext,
   user: TelegramUser,
   identity: TelegramIdentity

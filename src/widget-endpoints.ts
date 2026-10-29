@@ -1,6 +1,7 @@
 import {
   APIError,
   createAuthEndpoint,
+  formCsrfMiddleware,
   freshSessionMiddleware,
   sessionMiddleware,
 } from "better-auth/api";
@@ -9,6 +10,7 @@ import type { TelegramPluginConfig } from "./plugin-config";
 import {
   findOrCreateTelegramUser,
   linkTelegramAccount,
+  refreshSessionCookie,
   startSession,
   type TelegramIdentity,
   unlinkTelegramAccount,
@@ -52,6 +54,9 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
       "/telegram/signin",
       {
         method: "POST",
+        // Like Better Auth's /sign-in/email: a browser request from an
+        // untrusted origin is refused even without cookies (login CSRF).
+        use: [formCsrfMiddleware],
       },
       async (ctx) => {
         const { data, identity } = await verifiedWidgetData(config, ctx.body);
@@ -81,12 +86,16 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
         use: [sessionMiddleware],
       },
       async (ctx) => {
-        if (!config.allowUserToLink) {
+        if (
+          !config.allowUserToLink ||
+          ctx.context.options.account?.accountLinking?.enabled === false
+        ) {
           throw APIError.from("FORBIDDEN", ERROR_CODES.LINKING_DISABLED);
         }
 
         const { identity } = await verifiedWidgetData(config, ctx.body);
         await linkTelegramAccount(ctx, ctx.context.session.user, identity);
+        await refreshSessionCookie(ctx, ctx.context.session);
 
         return ctx.json({
           success: true,
@@ -104,6 +113,7 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
       },
       async (ctx) => {
         await unlinkTelegramAccount(ctx, ctx.context.session.user.id);
+        await refreshSessionCookie(ctx, ctx.context.session);
 
         return ctx.json({
           success: true,

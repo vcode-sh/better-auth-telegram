@@ -125,6 +125,11 @@ export function createTelegramOIDCProvider(
       requiredClaims: ID_TOKEN_REQUIRED_CLAIMS,
       clockTolerance: ID_TOKEN_CLOCK_TOLERANCE_SECONDS,
     });
+    // OIDC Core 3.1.3.7: reject a token that also names audiences we don't
+    // trust (jose only checks that ours is among them).
+    if ([payload.aud].flat().some((audience) => audience !== clientId)) {
+      throw new Error("ID token is also issued to another audience");
+    }
     if (expectedNonce !== undefined && payload.nonce !== expectedNonce) {
       throw new Error(
         "ID token nonce does not match the authorization request"

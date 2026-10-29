@@ -585,7 +585,11 @@ Sign in or create a user with Telegram Login Widget data. No session required.
 
 Sets a session cookie via `setSessionCookie`.
 
-Lookup order: the `telegram` account with this Telegram id (duplicate rows left by older versions are tolerated), then a user whose `telegramId` matches (for example one created by OIDC or a Mini App; the account is linked to them, in a transaction), then a new user, if `autoCreateUser` allows (user and account created in a transaction). Writes go through Better Auth's internal adapter, so `databaseHooks` run. `user.validateUserInfo` is called with `source.method: "telegram-login-widget"` and `source.action` `"sign-in"` (returning user), `"link-account"` (linked by `telegramId`) or `"create-user"` (new user). Every sign-in refreshes `telegramUsername` on the user and the account.
+Lookup order: the `telegram` account with this Telegram id (duplicate rows left by older versions are tolerated), then a user whose `telegramId` matches (for example one created by OIDC or a Mini App; the account is linked to them, in a transaction, unless `account.accountLinking.enabled` is `false` or `disableImplicitLinking` is `true`), then a new user, if `autoCreateUser` allows (user and account created in a transaction). Writes go through Better Auth's internal adapter, so `databaseHooks` run. `user.validateUserInfo` is called with `source.method: "telegram-login-widget"` and `source.action` `"sign-in"` (returning user), `"link-account"` (linked by `telegramId`) or `"create-user"` (new user). Every sign-in refreshes `telegramUsername` on the user and the account (and clears it when Telegram sends none).
+
+Sign-ins of the same Telegram user run one at a time per Better Auth instance, so a double submit creates one user. If another server creates the user first and the database refuses the second copy (unique `user.email`), the request signs in as that user.
+
+Like Better Auth's `/sign-in/email`, the endpoint refuses browser requests from origins outside `trustedOrigins` (Better Auth's `formCsrfMiddleware`), even without cookies: otherwise a page on another site could post the attacker's own fresh Telegram data and sign the visitor into the attacker's account.
 
 Fields containing a line break are rejected before the HMAC check.
 
@@ -595,6 +599,8 @@ Fields containing a line break are rejected before the HMAC check.
 |---|---|---|
 | 400 | `INVALID_AUTH_DATA` | Missing required fields (`id`, `first_name`, `auth_date`, `hash`) |
 | 401 | `INVALID_AUTHENTICATION` | HMAC verification failed, `auth_date` too old or more than 60 s in the future |
+| 401 | `ACCOUNT_NOT_LINKED` | A user has this `telegramId` but no `telegram` account, and `account.accountLinking.enabled` is `false` or `disableImplicitLinking` is `true` |
+| 403 | `INVALID_ORIGIN` | Browser request from an origin outside `trustedOrigins` (Better Auth) |
 | 403 | your code | `user.validateUserInfo` rejected the sign-in, link or sign-up |
 | 403 | `validation_failed` | `user.validateUserInfo` threw (fails closed) |
 | 403 | `USER_CREATION_REJECTED` | A database hook vetoed creating the user |
@@ -626,14 +632,14 @@ Link a Telegram account to the currently authenticated user. Requires a valid se
 | 400 | `INVALID_AUTH_DATA` | Missing required fields |
 | 401 | `INVALID_AUTHENTICATION` | HMAC verification failed or `auth_date` out of range |
 | 401 | `UNAUTHORIZED` | No valid session (Better Auth's `sessionMiddleware`) |
-| 403 | `LINKING_DISABLED` | `allowUserToLink` is `false` |
+| 403 | `LINKING_DISABLED` | `allowUserToLink` is `false`, or Better Auth's `account.accountLinking.enabled` is `false` |
 | 403 | your code / `validation_failed` | `user.validateUserInfo` rejected (or threw) |
 | 409 | `TELEGRAM_ALREADY_LINKED_OTHER` | Telegram account is linked to a different user, or another user already has this `telegramId` on their profile |
 | 409 | `TELEGRAM_ALREADY_LINKED_SELF` | Telegram account is already linked to your account |
 | 409 | `DIFFERENT_TELEGRAM_ACCOUNT_LINKED` | Your account already has a different Telegram id |
 | 500 | `BOT_TOKEN_REQUIRED` | `botToken` is not configured |
 
-On success the user's `telegramId` and `telegramUsername` are set.
+On success the user's `telegramId` and `telegramUsername` are set, and the session cookie is re-issued so `session.cookieCache` serves them right away (`/telegram/unlink` does the same).
 
 ---
 
@@ -708,7 +714,7 @@ Sign in from a Telegram Mini App. Only available when `miniApp.enabled` is `true
 
 Sets a session cookie via `setSessionCookie`.
 
-Same lookup, provisioning and username refresh as `/telegram/signin`, with `source.method: "telegram-mini-app"` for `user.validateUserInfo`. A Mini App user and a Login Widget user with the same Telegram id are the same user.
+Same lookup, provisioning, username refresh and origin check as `/telegram/signin`, with `source.method: "telegram-mini-app"` for `user.validateUserInfo`. The signed-in user is `user`, never the chat partner in `receiver`. A Mini App user and a Login Widget user with the same Telegram id are the same user.
 
 **Errors:**
 
@@ -718,6 +724,8 @@ Same lookup, provisioning and username refresh as `/telegram/signin`, with `sour
 | 400 | `INVALID_MINI_APP_DATA_STRUCTURE` | Parsed data fails structural validation |
 | 400 | `NO_USER_IN_INIT_DATA` | No `user` object in parsed `initData` |
 | 401 | `INVALID_MINI_APP_INIT_DATA` | HMAC verification failed or `auth_date` out of range (when `validateInitData` is `true`) |
+| 401 | `ACCOUNT_NOT_LINKED` | As for `/telegram/signin` |
+| 403 | `INVALID_ORIGIN` | Browser request from an origin outside `trustedOrigins`: a Mini App served from another origin than the auth server needs that origin there |
 | 403 | your code / `validation_failed` | `user.validateUserInfo` rejected (or threw) |
 | 403 | `USER_CREATION_REJECTED` | A database hook vetoed creating the user |
 | 404 | `MINI_APP_AUTO_SIGNIN_DISABLED` | No existing account and `autoCreateUser` or `allowAutoSignin` is `false` |
@@ -783,7 +791,7 @@ Provider details for Better Auth 1.7: id `telegram-oidc`, `issuer: "https://oaut
 
 Verified claims are applied only to the user who owns the `telegram-oidc` account whose id equals the token's `sub`, and copied (with the Telegram columns) to `user.telegramId` / `telegramUsername` / `telegramPhoneNumber` and to `account.telegramId` / `telegramUsername`.
 
-Known limitations: with Better Auth's `oauth-proxy` plugin the Telegram id isn't copied onto the user (the claims are verified on the server that exchanges the code; the user is created on the other); `/account-info` stops working for `telegram-oidc` after about 30 s (30-second tokens, no refresh token); and an OIDC sign-in doesn't find an existing Login Widget / Mini App user (issue #25, reverse direction).
+Known limitations: with Better Auth's `oauth-proxy` plugin the Telegram id isn't copied onto the user (the claims are verified on the server that exchanges the code; the user is created on the other); `/account-info` stops working for `telegram-oidc` after about 30 s (30-second tokens, no refresh token); an OIDC sign-in doesn't find an existing Login Widget / Mini App user (issue #25, reverse direction); with `session.cookieCache`, the Telegram fields an OIDC link (`/link-social`) or `/unlink-account` changes show up in the session only once the cache expires, because those Better Auth routes don't re-issue the cookie; and when Telegram rotates its signing key, ID tokens signed with the new key fail for up to 30 s after the plugin last fetched the key set (jose refetches an unknown `kid` at most every 30 s).
 
 Zero custom endpoints. Delegation at its finest.
 
@@ -810,13 +818,14 @@ The `$ERROR_CODES` object exposed by the plugin. Since v1.1.0, each code is a `R
 | `USER_CREATION_REJECTED` | User creation was rejected |
 | `ORPHANED_ACCOUNT` | Telegram account references a user that does not exist |
 | `PLACEHOLDER_EMAIL_RESERVED` | Telegram placeholder email addresses are reserved for Telegram sign-in |
+| `ACCOUNT_NOT_LINKED` | A user with this Telegram account exists, but the account is not linked and account linking does not allow linking it on sign-in |
 | `INIT_DATA_REQUIRED` | initData is required and must be a string |
 | `INVALID_MINI_APP_INIT_DATA` | Invalid Mini App initData |
 | `INVALID_MINI_APP_DATA_STRUCTURE` | Invalid Mini App data structure |
 | `NO_USER_IN_INIT_DATA` | No user data in initData |
 | `MINI_APP_AUTO_SIGNIN_DISABLED` | User not found and auto-signin is disabled for Mini Apps |
 
-`NOT_AUTHENTICATED` is still defined, but no endpoint throws it: a missing session on `/telegram/link` and `/telegram/unlink` is rejected by Better Auth's session middleware with 401 `UNAUTHORIZED`. Better Auth's own codes you may also see: `SESSION_NOT_FRESH` (403, unlink) and `validation_failed` (403, a throwing `validateUserInfo`).
+`NOT_AUTHENTICATED` is still defined, but no endpoint throws it: a missing session on `/telegram/link` and `/telegram/unlink` is rejected by Better Auth's session middleware with 401 `UNAUTHORIZED`. Better Auth's own codes you may also see: `SESSION_NOT_FRESH` (403, unlink), `validation_failed` (403, a throwing `validateUserInfo`), `INVALID_ORIGIN` (403, sign-in from an untrusted origin) and `BANNED_USER` (403, the admin plugin).
 
 ```typescript
 // Matching errors client-side:
