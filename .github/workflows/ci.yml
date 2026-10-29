@@ -27,6 +27,8 @@ jobs:
         with:
           node-version: 24.x
           cache: npm
+      - name: Use the same npm version in every lane
+        run: npm install --global npm@11.18.0
       - run: npm ci
       - run: npm run lint
       - run: npm run type-check
@@ -66,18 +68,29 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      - name: Use the same npm version in every lane
+        run: npm install --global npm@11.18.0
       - run: npm ci
       - name: Install the minimum supported Better Auth family
         if: matrix.better-auth != 'locked'
         env:
           BETTER_AUTH_VERSION: ${{ matrix.better-auth }}
-        run: >-
-          npm install --no-save --package-lock=false
-          better-auth@"$BETTER_AUTH_VERSION" @better-auth/core@"$BETTER_AUTH_VERSION"
-          @better-auth/drizzle-adapter@"$BETTER_AUTH_VERSION"
-          @better-auth/kysely-adapter@"$BETTER_AUTH_VERSION"
-          @better-auth/mongo-adapter@"$BETTER_AUTH_VERSION"
-          @better-auth/prisma-adapter@"$BETTER_AUTH_VERSION" auth@"$BETTER_AUTH_VERSION"
+        # Downgrade the whole family in this disposable checkout. npm needs
+        # force to replace the newer locked peer graph; npm ls then verifies
+        # the resulting graph instead of accepting an invalid peer override.
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+          for (const name of Object.keys(pkg.devDependencies)) {
+            if (name === "better-auth" || name === "auth" || name.startsWith("@better-auth/")) {
+              pkg.devDependencies[name] = process.env.BETTER_AUTH_VERSION;
+            }
+          }
+          writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+          NODE
+          npm install --ignore-scripts --force
+          npm ls better-auth @better-auth/core @better-auth/drizzle-adapter @better-auth/kysely-adapter @better-auth/mongo-adapter @better-auth/prisma-adapter auth
       - name: Check types against the minimum Better Auth version
         if: matrix.better-auth != 'locked'
         run: npm run type-check
@@ -115,6 +128,8 @@ jobs:
           bun-version: 1.4.4
       # Use the same locked dependency graph as Node, then force Bun rather
       # than following Vitest's Node shebang.
+      - name: Use the same npm version in every lane
+        run: npm install --global npm@11.18.0
       - run: npm ci
       - run: bun --bun run test
 
@@ -149,6 +164,8 @@ jobs:
         with:
           node-version: 24.x
           cache: npm
+      - name: Use the same npm version in every lane
+        run: npm install --global npm@11.18.0
       - run: npm ci
       - name: Start MongoDB replica set
         shell: bash

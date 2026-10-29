@@ -13,7 +13,7 @@ npm install
 ### Prerequisites
 
 - Node.js >= 24 (see `.nvmrc` -- yes, I pinned it, I'm not an animal)
-- npm >= 10
+- npm 11.18.0 (the version used in CI)
 
 ## Commands
 
@@ -109,3 +109,5 @@ Node.js 24 is the minimum. The required `CI` check collects package validation, 
 `npm run build` checks the bundles and declarations with publint and Are The Types Wrong. `npm run test:package` packs the result, installs it outside the checkout, checks its consumer types, exercises ESM authentication configuration and loads both CommonJS exports. It leaves `better-auth-telegram-<version>.tgz` for inspection. CI uploads that tarball.
 
 A matching `v<version>` tag on a commit belonging to `main` runs the same CI before release. Only the separate publisher receives npm OIDC permission; it publishes the validated tarball with provenance, without rebuilding or running lifecycle scripts. Stable versions use `latest`, prereleases use `next`. Creating a PR does not publish a release.
+
+Codecov uses the same 90% coverage floor as Vitest. Coverage is a guardrail; add tests that challenge observable behavior rather than tests whose only purpose is reaching 100%.
