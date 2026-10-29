@@ -12,7 +12,8 @@ updates:
       # Peer dependencies: upgrades change the supported range and need a
       # deliberate compatibility review, not an automatic dev bump.
       - dependency-name: "better-auth"
-      - dependency-name: "@better-auth/core"
+      - dependency-name: "@better-auth/*"
+      - dependency-name: "auth"
       # Types must match the minimum supported Node.js (engines.node).
       - dependency-name: "@types/node"
         update-types: [ "version-update:semver-major" ]

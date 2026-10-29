@@ -243,7 +243,10 @@ function prismaLane(url: string | undefined): AdapterLane {
       });
     prisma("db", "push", "--skip-generate", "--accept-data-loss");
     prisma("generate");
-    const { PrismaClient } = await import("@prisma/client");
+    // This schema's client only exists after generate; a clean checkout's
+    // type-check must not depend on a previously generated database client.
+    const clientModule = "@prisma/client";
+    const { PrismaClient } = await import(clientModule);
     return { PrismaClient, databaseURL };
   };
   return {

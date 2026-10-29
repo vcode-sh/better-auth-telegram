@@ -58,6 +58,7 @@ Schema conditionally extends `user` table with `telegramId`, `telegramUsername`,
 npm run build          # tsdown (ESM + CJS + .d.ts, publint + attw)
 npm run dev            # tsdown --watch
 npm run test:types     # type-check a consumer of dist/
+npm run test:package   # build first; install and verify the release tarball
 npm run type-check     # tsc --noEmit
 npm run test           # vitest run
 npm run test:watch     # vitest (watch mode)
@@ -79,7 +80,7 @@ Single test file: `npx vitest run src/verify.test.ts`
 
 **Dev:** Biome 2.6 via ultracite 8, tsdown, TypeScript 7, Vitest 5, happy-dom
 
-**Node:** >= 22.0.0 (`engines.node`, tested on 22 and 24 in CI); 24 for development (`.nvmrc`)
+**Node:** >= 24.0.0 (`engines.node`, tested on 24.0.0, current 24 and 26 in CI); 24 for development (`.nvmrc`)
 
 ## Review Guidelines
 

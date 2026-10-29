@@ -2,60 +2,84 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: [ "v*" ]
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
+    name: Verify release tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - name: Match package version and require a commit on main
+        run: |
+          VERSION=$(node -p 'require("./package.json").version')
+          test "v$VERSION" = "$GITHUB_REF_NAME" || { echo "::error::Tag must match package.json version"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::Release commit must belong to main"; exit 1; }
 
-      - name: Use Node.js 24.x
-        uses: actions/setup-node@v7.1.0
+  validate:
+    name: Release validation
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish validated package
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-
-      - name: Use npm with trusted publishing support
-        run: npm install --global npm@11.18.0
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Type check
-        run: npm run type-check
-
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
-
-      - name: Type-check a consumer of the built package
-        run: npm run test:types
-
-      # Prereleases (e.g. v3.0.0-beta.0) go to the `next` dist-tag so they
-      # never become `latest`.
-      - name: Publish to npm
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $VERSION"
-            exit 1
-          fi
-          case "$VERSION" in
-            *-*) npm publish --access public --tag next ;;
-            *) npm publish --access public ;;
-          esac
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3.0.3
+      - run: npm install --global npm@11.18.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          name: package-${{ github.sha }}
+          path: package
+      - name: Publish the exact tested tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          TARBALLS=(package/*.tgz)
+          test "${#TARBALLS[@]}" -eq 1 || { echo "::error::Expected one validated tarball"; exit 1; }
+          case "$GITHUB_REF_NAME" in
+            *-*) DIST_TAG=next ;;
+            *) DIST_TAG=latest ;;
+          esac
+          npm publish "${TARBALLS[0]}" --ignore-scripts --access public --provenance --tag "$DIST_TAG"
+
+  github-release:
+    name: Create GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --prerelease
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi

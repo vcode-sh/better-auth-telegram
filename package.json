@@ -1,6 +1,6 @@
 {
   "name": "better-auth-telegram",
-  "version": "3.0.0-beta.0",
+  "version": "3.0.0",
   "description": "Telegram authentication plugin for Better Auth",
   "keywords": [
     "better-auth",
@@ -59,10 +59,11 @@
     "dev": "tsdown --watch",
     "lint": "ultracite check",
     "lint:fix": "ultracite fix",
-    "prepublishOnly": "npm run type-check && npm run test && npm run build && npm run test:types",
+    "prepublishOnly": "npm run lint && npm run type-check && npm test && npm run build && npm run test:package",
     "test": "vitest run",
     "test:adapters": "vitest run --config vitest.adapters.config.ts",
     "test:coverage": "vitest run --coverage",
+    "test:package": "node scripts/check-package.mjs",
     "test:types": "tsc -p test-d && tsc -p test-d/tsconfig.node16.json",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
@@ -110,6 +111,6 @@
     "better-auth": ">=1.7.12 <1.8.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.0.0"
   }
 }
