@@ -64,7 +64,7 @@ jobs:
             *-*) DIST_TAG=next ;;
             *) DIST_TAG=latest ;;
           esac
-          npm publish "${TARBALLS[0]}" --ignore-scripts --access public --provenance --tag "$DIST_TAG"
+          npm publish "./${TARBALLS[0]}" --ignore-scripts --access public --provenance --tag "$DIST_TAG"
 
   github-release:
     name: Create GitHub release
