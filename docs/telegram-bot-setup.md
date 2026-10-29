@@ -67,15 +67,15 @@ OIDC settings live in BotFather's Mini App, on the bot's **Login Widget** page.
 > **Read this first.** Switching a bot to OpenID Connect **permanently turns off that bot's legacy Login Widget**. If you also want the Login Widget, create a second bot for OIDC now ([Create a bot](#create-a-bot)) and use it for the steps below.
 
 1. **Open the settings.** Open BotFather's Mini App, select your bot, then select **Login Widget**.
-2. **Switch the bot to OpenID Connect.** Tap the switch button. In our test on 2026-10-29 it was labelled **Switch to OAuth 2.0 Login**. (OAuth 2.0 and OpenID Connect are the same flow here.) Telegram warns: "This action permanently disables the legacy login method." Confirm.
-3. **Add your redirect URI.** This is the address Telegram sends users back to after they confirm. With Better Auth's default settings it is:
+2. **Switch the bot to OpenID Connect.** Tap **Switch to OpenID Connect Login** (the label on 2026-10-29). Telegram warns: "This action permanently disables the legacy login method." Confirm.
+3. **Add your redirect URI.** Under **Redirect URIs**, tap **Add a Redirect URI**. This is the address Telegram sends users back to after they confirm. With Better Auth's default settings it is:
 
    ```text
    https://<your domain>/api/auth/callback/telegram-oidc
    ```
 
    For example `https://example.com/api/auth/callback/telegram-oidc`. It must match **exactly**, including `https://` and the path. If you changed Better Auth's `basePath`, replace `/api/auth` with it. BotFather rejects `localhost` addresses (both `http` and `https`), so use your tunnel's address during development.
-4. **Add your website's origin.** Telegram's guide asks you to register "the website origins where you embed the login widget" as well as redirect URIs, for example `https://example.com`. In our test, BotFather showed origins in a separate list called **Trusted Origins**.
+4. **Trusted Origins: optional.** BotFather describes this list as "Allowed origins for cross-origin token requests". You only need it if your web page talks to Telegram's token endpoint itself (Telegram's browser login library). The plugin's sign-in exchanges the code on your server, and it worked in our live test with this list empty. Telegram's guide also mentions registering your site's origin, so adding `https://example.com` does no harm.
 5. **Copy the Client ID and Client Secret.** BotFather shows both on this page. The Client ID is the bot's numeric ID (the part of the bot token before the `:`). The Client Secret is a separate value. **It is not the bot token.**
 6. **Check the signing algorithm.** Under **Login Widget** > **Advanced**, leave the signing algorithm on **RS256** (the default) or pick **ES256**. With **EdDSA** or **ES256K**, Telegram leaves the user's ID, name and username out of the ID token, and the plugin can't verify ES256K at all.
 
