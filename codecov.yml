@@ -1,0 +1,9 @@
+# Match the 90% coverage floor enforced by Vitest rather than an implicit 100% target.
+coverage:
+  status:
+    project:
+      default:
+        target: 90%
+    patch:
+      default:
+        target: 90%

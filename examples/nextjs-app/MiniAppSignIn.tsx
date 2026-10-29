@@ -20,7 +20,7 @@ export function MiniAppSignIn() {
       try {
         const result = await authClient.autoSignInFromMiniApp();
         if (result.error) {
-          setError(result.error.message);
+          setError(result.error.message ?? "Failed to sign in from Mini App");
           setStatus("error");
         } else {
           setStatus("success");
@@ -31,10 +31,8 @@ export function MiniAppSignIn() {
       }
     };
 
-    // Only attempt if running inside a Telegram Mini App
-    if (typeof window !== "undefined" && window.Telegram?.WebApp) {
-      signIn();
-    }
+    // The helper reads the SDK or Telegram's URL launch parameters.
+    signIn();
   }, []);
 
   if (status === "loading") {

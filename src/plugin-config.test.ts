@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_MAX_AUTH_AGE, ERROR_CODES } from "./constants";
+// @vitest-environment node
+/**
+ * Startup diagnostics. Construction must never throw (build environments
+ * have no secrets), so missing or risky configuration becomes a warning,
+ * which `init` logs through Better Auth's logger (see
+ * plugin.integration.test.ts).
+ */
+import { describe, expect, it } from "vitest";
 import { createPluginConfig } from "./plugin-config";
 
 const BASE = {
@@ -7,195 +13,164 @@ const BASE = {
   botUsername: "test_bot",
 };
 
+const warnings = (options: Parameters<typeof createPluginConfig>[0]) =>
+  createPluginConfig(options).warnings;
+
 describe("createPluginConfig", () => {
-  // ── Validation ─────────────────────────────────────────────────────
-
   it("warns instead of throwing when the default Widget flow has no botToken", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    expect(() => createPluginConfig({ botUsername: "bot" })).not.toThrow();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining(ERROR_CODES.BOT_TOKEN_REQUIRED.message)
-    );
-
-    warnSpy.mockRestore();
+    expect(warnings({ botUsername: "bot" })).toEqual([
+      expect.stringContaining("botToken is required"),
+    ]);
   });
 
   it("warns instead of throwing when the default Widget flow has no botUsername", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    expect(() => createPluginConfig({ botToken: "tok:en" })).not.toThrow();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining(ERROR_CODES.BOT_USERNAME_REQUIRED.message)
-    );
-
-    warnSpy.mockRestore();
+    expect(warnings({ botToken: BASE.botToken })).toEqual([
+      expect.stringContaining("botUsername is required"),
+    ]);
   });
 
-  it("allows OIDC-only configuration with explicit OIDC credentials", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("is silent for a correct configuration of every flow", () => {
+    expect(
+      warnings({
+        ...BASE,
+        miniApp: { enabled: true },
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
+      })
+    ).toEqual([]);
+  });
 
-    const config = createPluginConfig({
-      loginWidget: false,
-      oidc: {
-        enabled: true,
-        clientId: "123456789",
-        clientSecret: "oidc-secret",
-      },
-    });
-
-    expect(config.botToken).toBe("");
-    expect(config.botUsername).toBe("");
-    expect(warnSpy).not.toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+  it("does not warn about bot credentials in an OIDC-only configuration", () => {
+    expect(
+      warnings({
+        loginWidget: false,
+        oidc: { enabled: true, clientId: "123456789", clientSecret: "s" },
+      })
+    ).toEqual([]);
   });
 
   it("warns for each missing credential in an OIDC-only configuration", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    createPluginConfig({
-      loginWidget: false,
-      oidc: { enabled: true },
-    });
-
-    expect(warnSpy).toHaveBeenCalledTimes(2);
-    expect(warnSpy.mock.calls[0]![0]).toContain("clientId is required");
-    expect(warnSpy.mock.calls[1]![0]).toContain("clientSecret is required");
-
-    warnSpy.mockRestore();
+    expect(warnings({ loginWidget: false, oidc: { enabled: true } })).toEqual([
+      expect.stringContaining("clientId is required"),
+      expect.stringContaining("clientSecret is required"),
+    ]);
   });
 
   it("does not require botUsername for a Mini App-only configuration", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    createPluginConfig({
-      botToken: "tok:en",
-      loginWidget: false,
-      miniApp: { enabled: true },
-    });
-
-    expect(warnSpy).not.toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+    expect(
+      warnings({
+        botToken: BASE.botToken,
+        loginWidget: false,
+        miniApp: { enabled: true },
+      })
+    ).toEqual([]);
   });
 
-  // ── Defaults ───────────────────────────────────────────────────────
-
-  it("applies all defaults with minimal options", () => {
-    const config = createPluginConfig(BASE);
-
-    expect(config.widgetEnabled).toBe(true);
-    expect(config.miniAppEnabled).toBe(false);
-    expect(config.oidcEnabled).toBe(false);
-    expect(config.testMode).toBe(false);
-    expect(config.allowUserToLink).toBe(true);
-    expect(config.autoCreateUser).toBe(true);
-    expect(config.maxAuthAge).toBe(DEFAULT_MAX_AUTH_AGE);
-    expect(config.miniAppValidateInitData).toBe(true);
-    expect(config.miniAppAllowAutoSignin).toBe(true);
-    expect(config.mapTelegramDataToUser).toBeUndefined();
-    expect(config.mapMiniAppDataToUser).toBeUndefined();
-    expect(config.oidc).toBeUndefined();
-  });
-
-  // ── Feature flags ──────────────────────────────────────────────────
-
-  it("loginWidget: false disables widget", () => {
-    const config = createPluginConfig({ ...BASE, loginWidget: false });
-    expect(config.widgetEnabled).toBe(false);
-  });
-
-  it("loginWidget: undefined keeps widget enabled (backward compat)", () => {
-    const config = createPluginConfig(BASE);
-    expect(config.widgetEnabled).toBe(true);
-  });
-
-  it("miniApp.enabled: true enables mini app", () => {
+  // A trailing newline from an env file makes every HMAC check fail (401);
+  // Telegram's tokens are `<bot id>:<secret>`, e.g.
+  // "110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw" (core.telegram.org/bots/features).
+  it("trims whitespace around the bot token, and says so", () => {
     const config = createPluginConfig({
       ...BASE,
-      miniApp: { enabled: true },
+      botToken: ` ${BASE.botToken}\n`,
     });
-    expect(config.miniAppEnabled).toBe(true);
+
+    expect(config.botToken).toBe(BASE.botToken);
+    expect(config.warnings).toEqual([
+      expect.stringContaining("whitespace around botToken"),
+    ]);
   });
 
-  it("oidc.enabled: true enables OIDC", () => {
-    const config = createPluginConfig({
-      ...BASE,
-      oidc: { enabled: true },
-    });
-    expect(config.oidcEnabled).toBe(true);
-    expect(config.oidc).toEqual({ enabled: true });
+  it.each(["123456789", "bot123:abc", "123456789:abc def", "abc:def"])(
+    "warns about a bot token shaped %j",
+    (botToken) => {
+      expect(warnings({ ...BASE, botToken })).toContainEqual(
+        expect.stringContaining("doesn't look like a bot token")
+      );
+    }
+  );
+
+  it("strips a leading @ from botUsername (the widget wants the bare name)", () => {
+    const config = createPluginConfig({ ...BASE, botUsername: "@test_bot" });
+
+    expect(config.botUsername).toBe("test_bot");
+    expect(config.warnings).toEqual([
+      expect.stringContaining('botUsername "@test_bot"'),
+    ]);
   });
 
-  // ── Mini App sub-options ───────────────────────────────────────────
+  it.each([
+    ["no oidc.clientId", { enabled: true, clientSecret: "s" }],
+    [
+      "oidc.clientId = the Login Widget bot's id",
+      { enabled: true, clientId: "123456789", clientSecret: "s" },
+    ],
+  ])(
+    "warns when the Login Widget and OIDC would share one bot (%s)",
+    (_case, oidc) => {
+      expect(warnings({ ...BASE, oidc })).toEqual([
+        expect.stringContaining("permanently disables its legacy Login Widget"),
+      ]);
+    }
+  );
 
-  it("passes miniApp sub-options through", () => {
-    const mapper = () => ({ name: "custom" });
-    const config = createPluginConfig({
-      ...BASE,
-      miniApp: {
-        enabled: true,
-        validateInitData: false,
-        allowAutoSignin: false,
-        mapMiniAppDataToUser: mapper,
-      },
-    });
-    expect(config.miniAppValidateInitData).toBe(false);
-    expect(config.miniAppAllowAutoSignin).toBe(false);
-    expect(config.mapMiniAppDataToUser).toBe(mapper);
+  it("does not warn about sharing a bot when OIDC uses its own client", () => {
+    expect(
+      warnings({
+        ...BASE,
+        loginWidget: false,
+        oidc: { enabled: true, clientSecret: "s" },
+      })
+    ).toEqual([]);
+    expect(
+      warnings({
+        ...BASE,
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
+      })
+    ).toEqual([]);
   });
 
-  // ── Custom overrides ───────────────────────────────────────────────
+  // OIDC-only mode adds no Telegram columns, so there is nowhere to copy
+  // the phone number to.
+  it("warns when requestPhone has no telegramPhoneNumber column to fill", () => {
+    const oidc = {
+      enabled: true,
+      clientId: "987654321",
+      clientSecret: "s",
+      requestPhone: true,
+    };
 
-  it("respects explicit overrides for all boolean/number options", () => {
-    const config = createPluginConfig({
-      ...BASE,
-      allowUserToLink: false,
-      autoCreateUser: false,
-      maxAuthAge: 300,
-      testMode: true,
-    });
-    expect(config.allowUserToLink).toBe(false);
-    expect(config.autoCreateUser).toBe(false);
-    expect(config.maxAuthAge).toBe(300);
-    expect(config.testMode).toBe(true);
+    expect(warnings({ loginWidget: false, oidc })).toEqual([
+      expect.stringContaining("requestPhone"),
+    ]);
+    expect(
+      warnings({
+        ...BASE,
+        loginWidget: false,
+        miniApp: { enabled: true },
+        oidc,
+      })
+    ).toEqual([]);
   });
 
-  it("passes mapTelegramDataToUser through", () => {
-    const mapper = () => ({ name: "mapped" });
-    const config = createPluginConfig({
-      ...BASE,
-      mapTelegramDataToUser: mapper,
-    });
-    expect(config.mapTelegramDataToUser).toBe(mapper);
+  it("warns when Mini App initData validation is off", () => {
+    expect(
+      warnings({ ...BASE, miniApp: { enabled: true, validateInitData: false } })
+    ).toEqual([
+      expect.stringContaining("anyone can sign in as any Telegram user"),
+    ]);
   });
-
-  // ── testMode + OIDC warning ────────────────────────────────────────
 
   it("warns when testMode and oidc are both enabled", () => {
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    createPluginConfig({
-      ...BASE,
-      testMode: true,
-      oidc: { enabled: true },
-    });
-    expect(spy).toHaveBeenCalledOnce();
-    expect(spy.mock.calls[0]![0]).toContain("testMode is enabled with OIDC");
-    spy.mockRestore();
+    expect(
+      warnings({
+        ...BASE,
+        testMode: true,
+        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
+      })
+    ).toEqual([expect.stringContaining("testMode is enabled with OIDC")]);
   });
 
-  it("does NOT warn when testMode is true but oidc is disabled", () => {
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    createPluginConfig({ ...BASE, testMode: true });
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
-  });
-
-  it("does NOT warn when oidc is enabled but testMode is false", () => {
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    createPluginConfig({ ...BASE, oidc: { enabled: true } });
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+  it("does not warn about testMode when OIDC is disabled", () => {
+    expect(warnings({ ...BASE, testMode: true })).toEqual([]);
   });
 });

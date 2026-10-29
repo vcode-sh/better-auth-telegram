@@ -1,20 +1,13 @@
-import type { BetterAuthPlugin } from "better-auth";
+import type { BetterAuthPluginDBSchema } from "@better-auth/core/db";
 import type { TelegramPluginConfig } from "./plugin-config";
 
 /**
- * Creates the conditional Telegram schema extension.
- *
- * Adds `telegramId`, `telegramUsername`, `telegramPhoneNumber` to the `user` table
- * and `telegramId`, `telegramUsername` to the `account` table — but only when
- * Login Widget or Mini App flows are enabled. OIDC-only setups skip these fields.
+ * The Telegram columns. Built per plugin instance and typed with literal
+ * types (not widened to `BetterAuthPluginDBSchema`), so Better Auth infers
+ * them on `session.user`, server and client, as it does for its own plugins'
+ * schemas.
  */
-export function createTelegramSchema(
-  config: TelegramPluginConfig
-): BetterAuthPlugin["schema"] {
-  if (!(config.widgetEnabled || config.miniAppEnabled)) {
-    return undefined;
-  }
-
+function telegramSchema() {
   return {
     user: {
       fields: {
@@ -22,6 +15,8 @@ export function createTelegramSchema(
           type: "string",
           required: false,
           unique: false,
+          // Every Login Widget / Mini App sign-in looks users up by it.
+          index: true,
           input: false,
         },
         telegramPhoneNumber: {
@@ -52,5 +47,25 @@ export function createTelegramSchema(
         },
       },
     },
-  };
+  } satisfies BetterAuthPluginDBSchema;
+}
+
+export type TelegramSchema = ReturnType<typeof telegramSchema>;
+
+/**
+ * Creates the conditional Telegram schema extension.
+ *
+ * Adds `telegramId`, `telegramUsername`, `telegramPhoneNumber` to the `user` table
+ * and `telegramId`, `telegramUsername` to the `account` table — but only when
+ * Login Widget or Mini App flows are enabled. OIDC-only setups skip these fields.
+ * The type always carries them: they are optional, and simply never set in
+ * OIDC-only mode.
+ */
+export function createTelegramSchema(
+  config: TelegramPluginConfig
+): TelegramSchema | undefined {
+  if (!(config.widgetEnabled || config.miniAppEnabled)) {
+    return;
+  }
+  return telegramSchema();
 }

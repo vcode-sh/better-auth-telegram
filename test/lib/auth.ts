@@ -43,7 +43,8 @@ export const auth = betterAuth({
       },
 
       // OIDC (OpenID Connect) support via oauth.telegram.org
-      // Requires separate bot with Web Login configured in @BotFather
+      // Requires a separate bot switched to OpenID Connect in @BotFather
+      // (your bot > Login Widget); the switch disables its legacy widget
       oidc: {
         enabled: true,
         clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,

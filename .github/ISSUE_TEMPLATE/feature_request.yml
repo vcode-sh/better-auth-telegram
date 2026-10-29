@@ -1,6 +1,6 @@
 name: Feature Request
 description: You want something I haven't built yet. Bold.
-labels: [enhancement]
+labels: [ enhancement ]
 body:
   - type: markdown
     attributes:

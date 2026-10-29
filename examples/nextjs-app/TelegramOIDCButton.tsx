@@ -14,14 +14,17 @@ export function TelegramOIDCButton() {
     setLoading(true);
     setError(null);
 
-    try {
-      await authClient.signInWithTelegramOIDC({
-        callbackURL: "/dashboard",
-      });
-    } catch {
-      setError("Failed to start OIDC flow");
+    const result = await authClient.signInWithTelegramOIDC({
+      callbackURL: "/dashboard",
+      errorCallbackURL: "/login",
+    });
+    if (result.error) {
+      setError(result.error.message ?? "Failed to start OIDC flow");
       setLoading(false);
+      return;
     }
+    // Better Auth's client follows result.data.url to oauth.telegram.org.
+    // A user who declines there sends no callback: keep a way back on /login.
   };
 
   return (

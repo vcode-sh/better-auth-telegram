@@ -1,29 +1,39 @@
-# Dependabot auto-merge -- life's too short to click "merge" on patch bumps.
 name: Dependabot Auto-merge
 
+# This privileged event reads metadata only. Never check out or run PR code here.
 on:
-  pull_request:
+  pull_request_target:
+    types: [ opened, reopened, synchronize ]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   automerge:
-    name: Auto-merge
+    name: Enable auto-merge for development updates
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Fetch Dependabot metadata
+      - name: Read dependency metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v3.1.0
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Auto-merge patch and minor updates -- majors need a human
-      - name: Auto-merge
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr merge --auto --squash "$PR_URL"
+          github-token: ${{ github.token }}
+      # Runtime dependencies, Actions and the Better Auth family need review.
+      # Auto-merge still waits for the repository's CI and review requirements.
+      - name: Enable auto-merge
+        if: >-
+          steps.metadata.outputs.package-ecosystem == 'npm_and_yarn' &&
+          steps.metadata.outputs.dependency-type == 'direct:development' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+           steps.metadata.outputs.update-type == 'version-update:semver-minor') &&
+          !contains(steps.metadata.outputs.dependency-names, 'auth')
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"

@@ -28,7 +28,7 @@ export default function MiniAppPage() {
       // Load telegram-web-app.js if not already present
       if (!document.querySelector('script[src*="telegram-web-app.js"]')) {
         const script = document.createElement("script");
-        script.src = "https://telegram.org/js/telegram-web-app.js";
+        script.src = "https://telegram.org/js/telegram-web-app.js?64";
         script.async = true;
         document.head.appendChild(script);
       }

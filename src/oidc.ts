@@ -1,16 +1,19 @@
-import type { OAuthProvider } from "@better-auth/core/oauth2";
+import {
+  getCurrentAdapter,
+  tryGetCurrentAuthEndpointContext,
+} from "@better-auth/core/context";
+import { APIError } from "@better-auth/core/error";
+import type {
+  OAuth2Tokens,
+  OAuthIdTokenConfig,
+  OAuthProvider,
+} from "@better-auth/core/oauth2";
 import {
   createAuthorizationURL,
   validateAuthorizationCode,
 } from "@better-auth/core/oauth2";
-import { betterFetch } from "@better-fetch/fetch";
-import {
-  decodeJwt,
-  decodeProtectedHeader,
-  importJWK,
-  type JWK,
-  jwtVerify,
-} from "jose";
+import { createPlaceholderEmail } from "@better-auth/core/utils/email";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import {
   TELEGRAM_OIDC_AUTH_ENDPOINT,
   TELEGRAM_OIDC_ISSUER,
@@ -18,116 +21,211 @@ import {
   TELEGRAM_OIDC_PROVIDER_ID,
   TELEGRAM_OIDC_TOKEN_ENDPOINT,
 } from "./constants";
+import { TELEGRAM_ERROR_CODES } from "./error-codes";
+import { rememberVerifiedClaims } from "./telegram-identity";
 import type { TelegramOIDCClaims, TelegramOIDCOptions } from "./types";
 
-/**
- * Fetches a public key from Telegram's JWKS endpoint by key ID
- */
-const SUPPORTED_SIGNING_ALGORITHMS = new Set(["RS256", "ES256", "EdDSA"]);
-
-const getTelegramPublicKey = async (kid: string, algorithm: string) => {
-  const { data } = await betterFetch<{
-    keys: JWK[];
-  }>(TELEGRAM_OIDC_JWKS_URI);
-
-  if (!data?.keys) {
-    throw new Error("Failed to fetch Telegram JWKS");
-  }
-
-  const jwk = data.keys.find((key) => key.kid === kid && key.alg === algorithm);
-  if (!jwk) {
-    throw new Error(`JWK with kid ${kid} and algorithm ${algorithm} not found`);
-  }
-
-  return await importJWK(jwk, algorithm);
-};
+const LOG_PREFIX = "[better-auth-telegram] OIDC:";
 
 /**
- * Builds the scopes array from OIDC options
+ * Algorithms Telegram can sign ID tokens with that Web Crypto can verify.
+ * ES256K (secp256k1) is offered by @BotFather but has no Web Crypto support.
  */
-function buildScopes(options: TelegramOIDCOptions): string[] {
+const SUPPORTED_SIGNING_ALGORITHMS = ["RS256", "ES256", "EdDSA"];
+
+/** Matches Better Auth's own ID token verifier. */
+const ID_TOKEN_CLOCK_TOLERANCE_SECONDS = 30;
+const ID_TOKEN_REQUIRED_CLAIMS = ["iss", "sub", "aud", "exp", "iat"];
+
+/**
+ * The scopes to request, each once. Like Better Auth's own providers,
+ * `scopes` adds to the defaults (`openid`, `profile`) and
+ * `disableDefaultScope` drops `profile`; `openid` is always sent, Telegram
+ * requires it.
+ */
+function buildScopes(
+  options: TelegramOIDCOptions,
+  requestScopes: string[] = []
+): string[] {
   const scopes = new Set<string>(["openid"]);
-
-  if (options.scopes) {
-    for (const scope of options.scopes) {
-      scopes.add(scope);
-    }
-  } else {
+  if (!options.disableDefaultScope) {
     scopes.add("profile");
   }
-
+  for (const scope of [...(options.scopes ?? []), ...requestScopes]) {
+    scopes.add(scope);
+  }
   if (options.requestPhone) {
     scopes.add("phone");
   }
-
   if (options.requestBotAccess) {
     scopes.add("telegram:bot_access");
   }
-
   return Array.from(scopes);
 }
 
+function displayName(claims: TelegramOIDCClaims): string | undefined {
+  if (claims.name) {
+    return claims.name;
+  }
+  const fullName = [claims.given_name, claims.family_name]
+    .filter(Boolean)
+    .join(" ");
+  return fullName || claims.preferred_username;
+}
+
+async function oidcPlaceholderEmail(sub: string): Promise<string> {
+  const email = createPlaceholderEmail({
+    identifier: sub,
+    namespace: TELEGRAM_OIDC_PROVIDER_ID,
+  });
+  const ctx = tryGetCurrentAuthEndpointContext()?.context;
+  if (!ctx) {
+    return email;
+  }
+  const adapter = await getCurrentAdapter(ctx.adapter);
+  // Existence only: Better Auth resolves ownership later and rejects duplicate
+  // identities there. Placeholder selection must not throw ahead of that check.
+  if (
+    await adapter.findOne({
+      model: "account",
+      where: [
+        { field: "providerId", value: TELEGRAM_OIDC_PROVIDER_ID },
+        { field: "accountId", value: sub },
+      ],
+    })
+  ) {
+    return email;
+  }
+  // An unlinked user keeps their email. It cannot prove ownership of a new
+  // OIDC account, even if the app trusts Telegram for email-based linking.
+  if (await ctx.internalAdapter.findUserByEmail(email)) {
+    return createPlaceholderEmail({
+      identifier: `${sub}.${crypto.randomUUID()}`,
+      namespace: TELEGRAM_OIDC_PROVIDER_ID,
+    });
+  }
+  return email;
+}
+
 /**
- * Creates a Telegram OIDC provider for better-auth's social login system.
+ * Creates a Telegram OIDC provider for Better Auth's social login system.
  *
- * Follows the same pattern as Google's provider in better-auth core.
- * Uses standard OAuth 2.0 Authorization Code flow with PKCE
- * via oauth.telegram.org.
+ * Authorization Code flow with PKCE and a nonce via oauth.telegram.org.
+ * The token endpoint is called with HTTP Basic client authentication, and
+ * the returned ID token is verified against Telegram's JWKS (signature,
+ * issuer, audience, expiry, nonce) before any claim is trusted.
  *
- * @param botToken - Bot token from @BotFather (bot ID extracted as client_id)
+ * @param botToken - Bot token from @BotFather (bot ID is the default client_id)
  * @param options - OIDC configuration options
+ * @param logger - Where sign-in diagnostics go; the plugin passes Better
+ *   Auth's logger (`ctx.logger`)
  */
 export function createTelegramOIDCProvider(
   botToken: string,
-  options: TelegramOIDCOptions = {}
+  options: TelegramOIDCOptions = {},
+  logger: { warn: (message: string, ...args: unknown[]) => void } = console
 ): OAuthProvider<TelegramOIDCClaims> {
   const botId = botToken.split(":")[0]!;
 
-  // Client ID and secret come from BotFather's Web Login settings (Bot Settings > Web Login).
-  // Falls back to bot token values for backward compatibility.
+  // Client ID and secret come from @BotFather (your bot > Login Widget).
+  // The client ID defaults to the bot id; there is no default secret —
+  // Telegram rejects the bot token as a client secret.
   const clientId = options.clientId || botId;
-  const clientSecret = options.clientSecret || botToken;
-  if (!(options.clientSecret || botToken)) {
-    console.warn(
-      "[better-auth-telegram] OIDC: clientSecret is required before starting an OIDC login."
-    );
-  } else if (!options.clientSecret) {
-    console.warn(
-      "[better-auth-telegram] OIDC: no clientSecret provided. Using bot token as fallback.",
-      "For OIDC to work, configure Web Login in @BotFather (Bot Settings > Web Login)",
-      "and pass the Client Secret via oidc.clientSecret."
-    );
-  }
+  const clientSecret = options.clientSecret ?? "";
 
   const providerOptions = {
     clientId,
     clientSecret,
+    disableIdTokenSignIn: options.disableIdTokenSignIn,
+    disableSignUp: options.disableSignUp,
   };
 
+  // APIErrors, so the client gets `{ code, message }` instead of an empty 500.
   const requireOIDCCredentials = () => {
     if (!clientId) {
-      throw new Error(
-        "[better-auth-telegram] OIDC: clientId is required before starting an OIDC login."
+      throw APIError.from(
+        "INTERNAL_SERVER_ERROR",
+        TELEGRAM_ERROR_CODES.OIDC_CLIENT_ID_REQUIRED
       );
     }
     if (!clientSecret) {
-      throw new Error(
-        "[better-auth-telegram] OIDC: clientSecret is required before starting an OIDC login."
+      throw APIError.from(
+        "INTERNAL_SERVER_ERROR",
+        TELEGRAM_ERROR_CODES.OIDC_CLIENT_SECRET_REQUIRED
       );
     }
+  };
+
+  // Fetched lazily, cached and rate limited by jose; shared by every request
+  // served by this Better Auth instance.
+  const jwks = createRemoteJWKSet(new URL(TELEGRAM_OIDC_JWKS_URI));
+
+  const verifyIdToken = async (
+    token: string,
+    expectedNonce: string | undefined
+  ): Promise<TelegramOIDCClaims> => {
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer: TELEGRAM_OIDC_ISSUER,
+      audience: clientId,
+      algorithms: SUPPORTED_SIGNING_ALGORITHMS,
+      requiredClaims: ID_TOKEN_REQUIRED_CLAIMS,
+      clockTolerance: ID_TOKEN_CLOCK_TOLERANCE_SECONDS,
+    });
+    // OIDC Core 3.1.3.7: reject a token that also names audiences we don't
+    // trust (jose only checks that ours is among them).
+    if ([payload.aud].flat().some((audience) => audience !== clientId)) {
+      throw new Error("ID token is also issued to another audience");
+    }
+    if (expectedNonce !== undefined && payload.nonce !== expectedNonce) {
+      throw new Error(
+        "ID token nonce does not match the authorization request"
+      );
+    }
+    return payload as unknown as TelegramOIDCClaims;
+  };
+
+  // Client-submitted ID tokens (POST /sign-in/social and /link-social with
+  // `idToken`). Better Auth treats the nonce as optional; Telegram tokens are
+  // bearer credentials, so a token is only accepted together with the nonce
+  // it was issued for.
+  const idToken: OAuthIdTokenConfig = {
+    async verify(token, nonce) {
+      if (!nonce) {
+        return false;
+      }
+      try {
+        await verifyIdToken(token, nonce);
+        return true;
+      } catch {
+        return false;
+      }
+    },
   };
 
   return {
     id: TELEGRAM_OIDC_PROVIDER_ID,
     name: "Telegram",
+    issuer: TELEGRAM_OIDC_ISSUER,
+    requiresIdTokenNonce: true,
+    idToken,
 
-    createAuthorizationURL({ state, codeVerifier, scopes, redirectURI }) {
+    accountSubject({ profile }) {
+      if (typeof profile.sub !== "string" || !profile.sub.trim()) {
+        throw new Error(`${LOG_PREFIX} ID token has no subject`);
+      }
+      return profile.sub;
+    },
+
+    createAuthorizationURL({
+      state,
+      codeVerifier,
+      scopes,
+      redirectURI,
+      idTokenNonce,
+    }) {
       requireOIDCCredentials();
 
-      const _scopes = buildScopes(options);
-      if (scopes) {
-        _scopes.push(...scopes);
-      }
+      const _scopes = buildScopes(options, scopes);
 
       return createAuthorizationURL({
         id: TELEGRAM_OIDC_PROVIDER_ID,
@@ -137,103 +235,85 @@ export function createTelegramOIDCProvider(
         state,
         codeVerifier,
         redirectURI,
+        nonce: idTokenNonce,
       });
     },
 
-    validateAuthorizationCode({ code, codeVerifier, redirectURI }) {
+    async validateAuthorizationCode({ code, codeVerifier, redirectURI }) {
       requireOIDCCredentials();
 
-      return validateAuthorizationCode({
+      const tokens = await validateAuthorizationCode({
         code,
         codeVerifier,
         redirectURI,
         options: providerOptions,
         tokenEndpoint: TELEGRAM_OIDC_TOKEN_ENDPOINT,
+        authentication: "basic",
       });
-    },
 
-    async verifyIdToken(token) {
-      try {
-        const { kid, alg } = decodeProtectedHeader(token);
-        if (!(kid && alg)) {
-          return false;
-        }
-        if (!clientId) {
-          return false;
-        }
-        if (!SUPPORTED_SIGNING_ALGORITHMS.has(alg)) {
-          return false;
-        }
-
-        const publicKey = await getTelegramPublicKey(kid, alg);
-        const { payload } = await jwtVerify(token, publicKey, {
-          algorithms: [alg],
-          issuer: TELEGRAM_OIDC_ISSUER,
-          audience: clientId,
-        });
-
-        return !!payload;
-      } catch {
-        return false;
-      }
-    },
-
-    getUserInfo(token) {
-      if (!token.idToken) {
-        console.warn(
-          "[better-auth-telegram] OIDC getUserInfo: no id_token in token response.",
-          "Token keys:",
-          Object.keys(token).filter((k) => k !== "raw"),
-          "Raw keys:",
-          token.raw ? Object.keys(token.raw) : "none"
+      // Telegram reports token errors with HTTP 200 and an `error` field.
+      const error = tokens.raw?.error;
+      if (error) {
+        throw new Error(
+          `${LOG_PREFIX} token endpoint returned "${String(error)}"`
         );
-        return Promise.resolve(null);
+      }
+      return tokens;
+    },
+
+    async getUserInfo(
+      token: OAuth2Tokens & { expectedIdTokenNonce?: string | undefined }
+    ) {
+      if (!token.idToken) {
+        logger.warn(
+          `${LOG_PREFIX} getUserInfo: no id_token in the token response.`
+        );
+        return null;
       }
 
       let claims: TelegramOIDCClaims;
       try {
-        claims = decodeJwt(token.idToken) as TelegramOIDCClaims;
-      } catch (e) {
-        console.warn(
-          "[better-auth-telegram] OIDC getUserInfo: failed to decode id_token.",
-          e instanceof Error ? e.message : e
+        claims = await verifyIdToken(token.idToken, token.expectedIdTokenNonce);
+      } catch (error) {
+        logger.warn(
+          `${LOG_PREFIX} getUserInfo: rejected id_token.`,
+          error instanceof Error ? error.message : error
         );
-        return Promise.resolve(null);
+        return null;
       }
 
-      if (!claims.sub) {
-        console.warn(
-          "[better-auth-telegram] OIDC getUserInfo: id_token has no sub claim.",
-          "Claims:",
-          Object.keys(claims)
+      if (claims.id === undefined) {
+        logger.warn(
+          `${LOG_PREFIX} the ID token has no profile claims (id, name, username).`,
+          options.disableDefaultScope
+            ? "oidc.disableDefaultScope is set, so the profile scope isn't requested."
+            : "Telegram drops them for bots that sign with EdDSA or ES256K; use RS256 or ES256 in @BotFather (Login Widget > Advanced)."
         );
-        return Promise.resolve(null);
       }
 
-      const userMap = options.mapOIDCProfileToUser
-        ? options.mapOIDCProfileToUser(claims)
-        : undefined;
+      await rememberVerifiedClaims(claims);
 
-      // Telegram OIDC doesn't provide email — generate a placeholder
-      // so Better Auth's callback flow doesn't reject with "email_not_found".
-      // Users can override via mapOIDCProfileToUser if they have a real email.
-      const placeholderEmail = `${claims.sub}@telegram.oidc`;
+      // Telegram verifies no email, so a mapper can't vouch for one:
+      // Better Auth links to an existing user on emailVerified.
+      const {
+        id: _id,
+        emailVerified: _emailVerified,
+        ...mapped
+      } = options.mapOIDCProfileToUser?.(claims) ?? {};
 
-      return Promise.resolve({
+      return {
         user: {
-          id: claims.sub,
-          name: claims.name,
+          name: displayName(claims),
           image: claims.picture,
-          email: placeholderEmail,
+          // Telegram OIDC has no email claim; Better Auth requires one.
+          email: await oidcPlaceholderEmail(claims.sub),
+          ...mapped,
           emailVerified: false,
-          ...userMap,
         },
         data: claims,
-      });
+      };
     },
 
     options: providerOptions,
   };
 }
-
-export { buildScopes };

@@ -1,65 +1,63 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
 export function TelegramLoginButton() {
   const router = useRouter();
+  const container = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Initialize Telegram Login Widget
-    authClient
-      .initTelegramWidget(
-        "telegram-login-container",
-        {
-          size: "large",
-          showUserPhoto: true,
-          cornerRadius: 20,
-          lang: "en",
-        },
-        async (authData) => {
-          setLoading(true);
-          setError(null);
+    if (!container.current) return;
+    const host = document.createElement("div");
+    container.current.appendChild(host);
+    const widget = authClient.initTelegramWidget(
+      host,
+      {
+        size: "large",
+        showUserPhoto: true,
+        cornerRadius: 20,
+        lang: "en",
+      },
+      async (authData) => {
+        setLoading(true);
+        setError(null);
 
-          try {
-            console.log("Telegram auth data received:", authData);
+        try {
+          const result = await authClient.signInWithTelegram(authData);
 
-            const result = await authClient.signInWithTelegram(authData);
-
-            console.log("Sign in result:", result);
-
-            if (result.error) {
-              setError(result.error.message || "Failed to sign in");
-              return;
-            }
-
-            setSuccess(true);
-
-            // Redirect to dashboard
-            setTimeout(() => {
-              router.push("/dashboard");
-              router.refresh();
-            }, 1000);
-          } catch (err) {
-            console.error("Sign in error:", err);
-            setError(
-              err instanceof Error
-                ? err.message
-                : "Failed to sign in with Telegram"
-            );
-          } finally {
-            setLoading(false);
+          if (result.error) {
+            setError(result.error.message || "Failed to sign in");
+            return;
           }
+
+          setSuccess(true);
+
+          router.push("/dashboard");
+          router.refresh();
+        } catch (err) {
+          console.error("Sign in error:", err);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to sign in with Telegram"
+          );
+        } finally {
+          setLoading(false);
         }
-      )
-      .catch((err) => {
-        console.error("Failed to initialize Telegram widget:", err);
-        setError("Failed to load Telegram login widget");
-      });
+      }
+    );
+    widget.catch(() => {
+      if (host.isConnected) setError("Failed to load Telegram login widget");
+    });
+    return () => {
+      host.remove();
+      widget.then((w) => w.destroy()).catch(() => undefined);
+    };
   }, [router]);
 
   return (
@@ -68,7 +66,7 @@ export function TelegramLoginButton() {
         Sign in with Telegram
       </h2>
 
-      <div className="min-h-[50px]" id="telegram-login-container" />
+      <div className="min-h-[50px]" ref={container} />
 
       {loading && (
         <div className="flex items-center space-x-2 text-blue-600">

@@ -15,6 +15,7 @@ export interface TelegramAuthData {
  * User object from Telegram Mini Apps
  */
 export interface TelegramMiniAppUser {
+  added_to_attachment_menu?: boolean;
   allows_write_to_pm?: boolean;
   first_name: string;
   id: number;
@@ -45,16 +46,27 @@ export interface TelegramMiniAppData {
   can_send_after?: number;
   chat?: TelegramMiniAppChat;
   chat_instance?: string;
+  /** Present when the Mini App was opened from a chat join request. */
+  chat_join_request_query_id?: string;
   chat_type?: "sender" | "private" | "group" | "supergroup" | "channel";
   hash: string;
   query_id?: string;
   receiver?: TelegramMiniAppUser;
+  /**
+   * Ed25519 signature for third-party validation without the bot token.
+   * Part of the signed data, so the HMAC `hash` check covers it as well.
+   */
+  signature?: string;
   start_param?: string;
   user?: TelegramMiniAppUser;
 }
 
 /**
- * JWT ID token claims from Telegram OIDC
+ * JWT ID token claims from Telegram OIDC.
+ *
+ * Profile claims (`id`, names, `picture`, `preferred_username`) need the
+ * `profile` scope, and Telegram omits them for bots that sign ID tokens with
+ * EdDSA or ES256K.
  */
 export interface TelegramOIDCClaims {
   aud: string;
@@ -62,13 +74,23 @@ export interface TelegramOIDCClaims {
   family_name?: string;
   given_name?: string;
   iat: number;
-  id?: number;
+  /**
+   * Telegram user id, the same number the Login Widget and Mini Apps report.
+   * Telegram sends it as a string (e.g. `"8306595751"`).
+   */
+  id?: string;
   iss: string;
   name?: string;
+  nonce?: string;
+  /** Digits only, without a leading `+` (requires the `phone` scope). */
   phone_number?: string;
   phone_number_verified?: boolean;
   picture?: string;
   preferred_username?: string;
+  /**
+   * Subject: a user identifier scoped to one bot — the same Telegram user
+   * gets a different `sub` from each bot. Not the Telegram user id.
+   */
   sub: string;
 }
 
@@ -77,21 +99,42 @@ export interface TelegramOIDCClaims {
  */
 export interface TelegramOIDCOptions {
   /**
-   * Client ID from @BotFather's Web Login settings.
-   * If omitted, extracted from the main botToken (first part before colon).
-   * Use this when your OIDC bot is different from your Login Widget bot.
+   * Client ID shown in @BotFather (your bot > Login Widget) — the bot's id.
+   * If omitted, the id part of `botToken` is used.
+   *
+   * Switching a bot to OpenID Connect permanently disables its legacy Login
+   * Widget, so a deployment that also serves the Login Widget needs a second
+   * bot for OIDC: set this to that bot's id.
    */
   clientId?: string;
 
   /**
-   * Client Secret from @BotFather's Web Login settings.
-   * This is NOT your bot token — BotFather provides a separate secret
-   * when you configure Web Login under Bot Settings > Web Login.
-   *
-   * If omitted, falls back to the bot token (deprecated behavior that
-   * won't work with Telegram's official OIDC registration).
+   * Client Secret shown in @BotFather (your bot > Login Widget) after
+   * switching the bot to OpenID Connect. This is NOT the bot token.
+   * Required; OIDC logins fail until it is set.
    */
   clientSecret?: string;
+
+  /**
+   * Don't request the default `profile` scope (`openid` is always sent).
+   * Without it the ID token has no `id`, name or username, so the Telegram
+   * id is not copied onto the user.
+   * @default false
+   */
+  disableDefaultScope?: boolean;
+
+  /**
+   * Reject client-submitted ID tokens (`POST /sign-in/social` or
+   * `/link-social` with `idToken`), leaving only the redirect flow.
+   * @default false
+   */
+  disableIdTokenSignIn?: boolean;
+
+  /**
+   * Only sign in existing users; never create a user from Telegram OIDC.
+   * @default false
+   */
+  disableSignUp?: boolean;
 
   /**
    * Enable Telegram OIDC support
@@ -122,8 +165,8 @@ export interface TelegramOIDCOptions {
   requestPhone?: boolean;
 
   /**
-   * Additional scopes beyond "openid"
-   * @default ["profile"]
+   * Scopes to request on top of the defaults (`openid`, `profile`), as with
+   * Better Auth's built-in providers.
    */
   scopes?: string[];
 }
@@ -191,7 +234,9 @@ export interface TelegramPluginOptions {
     enabled?: boolean;
 
     /**
-     * Validate initData from Mini Apps
+     * Verify the initData signature before signing users in.
+     * Turning this off lets anyone sign in as any Telegram user; only do it
+     * in tests.
      * @default true
      */
     validateInitData?: boolean;
@@ -221,11 +266,11 @@ export interface TelegramPluginOptions {
   oidc?: TelegramOIDCOptions;
 
   /**
-   * Enable Telegram test server mode.
-   * When enabled, the client widget will use Telegram's test environment.
-   * HMAC verification works identically — only the bot token differs.
-   * Note: OIDC (oauth.telegram.org) has no documented test variant;
-   * a warning is logged if both testMode and oidc are enabled.
+   * Marks a deployment that uses a bot from Telegram's test environment.
+   * Purely informational: it is returned by `GET /telegram/config` so the
+   * client can tell, and verification is unchanged (HMAC only depends on the
+   * bot token). Telegram documents no test variant of the Login Widget or of
+   * OIDC (oauth.telegram.org); a warning is logged if OIDC is enabled.
    * @default false
    */
   testMode?: boolean;

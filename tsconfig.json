@@ -16,7 +16,8 @@
     "strictNullChecks": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -12,8 +12,8 @@ export default defineConfig({
       exclude: [
         "src/**/*.test.ts",
         "src/**/*.spec.ts",
-        "src/index.ts", // Server plugin requires Better Auth runtime
         "src/types.ts", // Type definitions only
+        "src/testing/**", // Test harness
         "node_modules/**",
         "dist/**",
       ],
@@ -25,6 +25,7 @@ export default defineConfig({
       },
     },
     include: ["src/**/*.{test,spec}.ts"],
-    exclude: ["node_modules", "dist"],
+    // Real databases: `npm run test:adapters` (vitest.adapters.config.ts).
+    exclude: ["node_modules", "dist", "src/**/*.adapter.test.ts"],
   },
 });

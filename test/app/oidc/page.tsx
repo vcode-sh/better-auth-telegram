@@ -27,9 +27,9 @@ export default function OIDCPage() {
 
   // Check for error in URL params
   const searchParams =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search)
-      : null;
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search);
   const urlError = searchParams?.get("error");
 
   return (

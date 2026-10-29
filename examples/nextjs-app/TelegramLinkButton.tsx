@@ -3,63 +3,68 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authClient } from "../lib/auth-client";
 
 export function TelegramLinkButton() {
+  const container = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    authClient
-      .initTelegramWidget(
-        "telegram-link-container",
-        {
-          size: "medium",
-          showUserPhoto: true,
-          cornerRadius: 10,
-        },
-        async (authData) => {
-          setLoading(true);
-          setError(null);
-          setSuccess(false);
-
-          try {
-            await authClient.linkTelegram(authData);
-            setSuccess(true);
-          } catch (err: any) {
-            setError(err?.message || "Failed to link Telegram account");
-          } finally {
-            setLoading(false);
-          }
+    if (success || !container.current) return;
+    const host = document.createElement("div");
+    container.current.appendChild(host);
+    const widget = authClient.initTelegramWidget(
+      host,
+      {
+        size: "medium",
+        showUserPhoto: true,
+        cornerRadius: 10,
+      },
+      async (authData) => {
+        setLoading(true);
+        setError(null);
+        setSuccess(false);
+        // Actions return { data, error }; a 409 or 401 does not throw.
+        const result = await authClient.linkTelegram(authData);
+        setLoading(false);
+        if (result.error) {
+          setError(result.error.message ?? "Failed to link Telegram account");
+          return;
         }
-      )
-      .catch(() => {
-        setError("Failed to load Telegram widget");
-      });
-  }, []);
+        setSuccess(true);
+      }
+    );
+    widget.catch(() => {
+      if (host.isConnected) setError("Failed to load Telegram widget");
+    });
+    return () => {
+      host.remove();
+      widget.then((w) => w.destroy()).catch(() => undefined);
+    };
+  }, [success]);
 
   const handleUnlink = async () => {
     setLoading(true);
     setError(null);
-
-    try {
-      await authClient.unlinkTelegram();
-      setSuccess(false);
-      window.location.reload();
-    } catch (err: any) {
-      setError(err?.message || "Failed to unlink Telegram account");
-    } finally {
-      setLoading(false);
+    const result = await authClient.unlinkTelegram();
+    setLoading(false);
+    if (result.error) {
+      // e.g. CANNOT_UNLINK_LAST_ACCOUNT, SESSION_NOT_FRESH
+      setError(result.error.message ?? "Failed to unlink Telegram account");
+      return;
     }
+    // useSession() updates by itself; no reload needed.
+    setSuccess(false);
   };
 
   return (
     <div className="flex flex-col space-y-4">
       <h3 className="font-semibold text-lg">Link Telegram Account</h3>
 
-      {!success && <div id="telegram-link-container" />}
+      {!success && <div ref={container} />}
 
       {success && (
         <div className="space-y-2">

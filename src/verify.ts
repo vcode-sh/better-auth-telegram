@@ -3,20 +3,23 @@ import type { TelegramAuthData, TelegramMiniAppData } from "./types";
 
 const encoder = new TextEncoder();
 
-/**
- * Computes HMAC-SHA256 of data using the given key
- */
-async function hmacSha256(key: Uint8Array, data: string): Promise<ArrayBuffer> {
-  const cryptoKey = await globalThis.crypto.subtle.importKey(
+function importHmacKey(key: Uint8Array, usage: "sign" | "verify") {
+  return globalThis.crypto.subtle.importKey(
     "raw",
     key as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    [usage]
   );
+}
+
+/**
+ * Computes HMAC-SHA256 of data using the given key
+ */
+async function hmacSha256(key: Uint8Array, data: string): Promise<ArrayBuffer> {
   return globalThis.crypto.subtle.sign(
     "HMAC",
-    cryptoKey,
+    await importHmacKey(key, "sign"),
     encoder.encode(data) as BufferSource
   );
 }
@@ -31,13 +34,51 @@ async function sha256(data: string): Promise<ArrayBuffer> {
   );
 }
 
+const HEX_SHA256 = /^[0-9a-f]{64}$/u;
+
 /**
- * Converts an ArrayBuffer to a lowercase hex string
+ * Checks a hex-encoded HMAC-SHA256 in constant time (Web Crypto `verify`).
  */
-function bufferToHex(buffer: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+async function verifyHmacHex(
+  key: Uint8Array,
+  data: string,
+  hexSignature: unknown
+): Promise<boolean> {
+  if (typeof hexSignature !== "string" || !HEX_SHA256.test(hexSignature)) {
+    return false;
+  }
+  const signature = new Uint8Array(32);
+  for (let i = 0; i < 32; i += 1) {
+    signature[i] = Number.parseInt(hexSignature.slice(i * 2, i * 2 + 2), 16);
+  }
+  return globalThis.crypto.subtle.verify(
+    "HMAC",
+    await importHmacKey(key, "verify"),
+    signature as BufferSource,
+    encoder.encode(data) as BufferSource
+  );
+}
+
+/** Telegram's servers and ours may disagree slightly about the time. */
+const MAX_CLOCK_SKEW_SECONDS = 60;
+
+/**
+ * `auth_date` must be a Unix time no older than `maxAge` and not in the future.
+ */
+function isFreshAuthDate(authDate: number, maxAge: number): boolean {
+  if (!Number.isSafeInteger(authDate)) {
+    return false;
+  }
+  const age = Math.floor(Date.now() / 1000) - authDate;
+  return age <= maxAge && age >= -MAX_CLOCK_SKEW_SECONDS;
+}
+
+/** Code-unit order, as Telegram's "sorted alphabetically" check string uses. */
+function byKey([a]: [string, unknown], [b]: [string, unknown]): number {
+  if (a < b) {
+    return -1;
+  }
+  return a > b ? 1 : 0;
 }
 
 /**
@@ -52,34 +93,32 @@ export async function verifyTelegramAuth(
   botToken: string,
   maxAge = DEFAULT_MAX_AUTH_AGE
 ): Promise<boolean> {
-  // Extract hash from data
   const { hash, ...dataWithoutHash } = data;
 
-  // Check auth_date is not too old
-  const authDate = dataWithoutHash.auth_date;
-  const currentTime = Math.floor(Date.now() / 1000);
-
-  if (currentTime - authDate > maxAge) {
+  if (!isFreshAuthDate(dataWithoutHash.auth_date, maxAge)) {
     return false;
   }
 
-  // Create data-check-string
-  const dataCheckString = Object.keys(dataWithoutHash)
-    .sort()
-    .map((key) => {
-      const value = dataWithoutHash[key as keyof typeof dataWithoutHash];
-      return `${key}=${value}`;
-    })
+  // Data-check-string: every received field except hash, sorted by key.
+  const entries = Object.entries(dataWithoutHash).map(
+    ([key, value]) => [key, String(value)] as [string, string]
+  );
+  // A line break inside a field would let one signed field be re-split into
+  // several (e.g. a different `id`); Telegram's values never contain one.
+  if (
+    entries.some(([key, value]) => key.includes("\n") || value.includes("\n"))
+  ) {
+    return false;
+  }
+  const dataCheckString = entries
+    .sort(byKey)
+    .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-  // Create secret key: SHA256(bot_token)
+  // Secret key: SHA256(bot_token)
   const secretKey = new Uint8Array(await sha256(botToken));
 
-  // Calculate HMAC-SHA256
-  const hmac = bufferToHex(await hmacSha256(secretKey, dataCheckString));
-
-  // Compare with received hash
-  return hmac === hash;
+  return verifyHmacHex(secretKey, dataCheckString, hash);
 }
 
 /**
@@ -142,40 +181,26 @@ export async function verifyMiniAppInitData(
     return false;
   }
 
-  // Remove hash from params
   params.delete("hash");
 
-  // Check auth_date
   const authDate = params.get("auth_date");
-  if (!authDate) {
+  if (!(authDate && isFreshAuthDate(Number(authDate), maxAge))) {
     return false;
   }
 
-  const authDateNum = Number(authDate);
-  const currentTime = Math.floor(Date.now() / 1000);
-
-  if (currentTime - authDateNum > maxAge) {
-    return false;
-  }
-
-  // Create data-check-string (sorted alphabetically)
+  // Data-check-string: every received field except hash (signature
+  // included), sorted by key.
   const dataCheckString = Array.from(params.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(byKey)
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-  // Create secret key: HMAC-SHA256(key="WebAppData", data=botToken)
+  // Secret key: HMAC-SHA256(key="WebAppData", data=bot_token)
   const secretKey = new Uint8Array(
     await hmacSha256(encoder.encode("WebAppData"), botToken)
   );
 
-  // Calculate HMAC-SHA256
-  const calculatedHash = bufferToHex(
-    await hmacSha256(secretKey, dataCheckString)
-  );
-
-  // Compare with received hash
-  return calculatedHash === hash;
+  return verifyHmacHex(secretKey, dataCheckString, hash);
 }
 
 /**

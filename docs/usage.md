@@ -1,347 +1,342 @@
-# Usage
+# Usage: Login Widget, linking and errors
 
-You've installed a Telegram auth plugin. Congratulations. Now make it do something.
-
-## Client Setup
-
-If you haven't set up the client yet, go read [Installation](./installation.md). We'll wait.
+This page covers the browser side of the plugin: showing the Telegram Login Widget, linking and unlinking Telegram for signed-in users, reading Telegram details from the session, and handling errors. It assumes you finished [Installation](./installation.md) and have an `authClient` like this:
 
 ```ts
+// auth-client.ts
 import { createAuthClient } from "better-auth/client";
 import { telegramClient } from "better-auth-telegram/client";
 
-const authClient = createAuthClient({
-  baseURL: "http://localhost:3000",
+export const authClient = createAuthClient({
   plugins: [telegramClient()],
 });
 ```
 
-## Sign In (Callback Mode)
+For OIDC see [OIDC](./oidc.md); for Mini Apps see [Mini Apps](./miniapps.md).
 
-The widget pops up, user clicks it, Telegram calls you back. The classic.
+## Contents
 
-`initTelegramWidget` fetches the bot config from your server automatically -- you don't need to pass your bot username. One less thing to leak.
+- [How Login Widget sign-in works](#how-login-widget-sign-in-works)
+- [Show the widget (callback mode)](#show-the-widget-callback-mode)
+- [React component](#react-component)
+- [Redirect mode](#redirect-mode)
+- [Widget options](#widget-options)
+- [After sign-in: the session](#after-sign-in-the-session)
+- [Link Telegram to a signed-in user](#link-telegram-to-a-signed-in-user)
+- [Unlink Telegram](#unlink-telegram)
+- [Handle errors](#handle-errors)
+- [Fetch options](#fetch-options)
 
-```tsx
-"use client";
+## How Login Widget sign-in works
 
-import { authClient } from "@/lib/auth-client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+1. Your page shows Telegram's button. The plugin loads Telegram's script and asks your server for the bot username (`GET /api/auth/telegram/config`).
+2. The user clicks it and confirms in Telegram.
+3. Telegram gives your page the user's details (ID, name, username, photo), signed with a key derived from your bot token.
+4. You send those details to your server with `signInWithTelegram()`. The plugin checks the signature and the age of the data, finds or creates the user, and starts a session.
 
-export function TelegramLogin() {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+The browser never sees your bot token. It only forwards what Telegram signed.
 
-  useEffect(() => {
-    authClient.initTelegramWidget(
-      "telegram-login", // container element ID
-      { size: "large", cornerRadius: 20 },
-      async (authData) => {
-        const result = await authClient.signInWithTelegram(authData);
-        if (result.error) {
-          setError(result.error.message);
-        } else {
-          router.push("/dashboard");
-        }
-      }
-    );
-  }, [router]);
+## Show the widget (callback mode)
 
-  return (
-    <div>
-      <div id="telegram-login" />
-      {error && <p className="text-red-500">{error}</p>}
-    </div>
-  );
-}
-```
-
-### Widget Options
-
-All optional. All have sane defaults. Customize if you must.
+In callback mode, Telegram hands the data to a function on your page. This is the most common setup.
 
 ```ts
-authClient.initTelegramWidget("container-id", {
-  size: "large",           // "large" | "medium" | "small" (default: "large")
-  showUserPhoto: true,     // default: true
-  cornerRadius: 20,        // default: 20
-  requestAccess: false,    // request write access (default: false)
-  lang: "en",              // language code
-}, callback);
-```
-
-## Sign In (Redirect Mode)
-
-Prefer redirects? Telegram sends the user to your URL with auth data as query params. Old school. Reliable.
-
-### Step 1: Render the Widget
-
-```tsx
-"use client";
-
-import { authClient } from "@/lib/auth-client";
-import { useEffect } from "react";
-
-export function TelegramLoginRedirect() {
-  useEffect(() => {
-    authClient.initTelegramWidgetRedirect(
-      "telegram-login",
-      "/auth/telegram/callback",
-      { size: "large" }
-    );
-  }, []);
-
-  return <div id="telegram-login" />;
-}
-```
-
-### Step 2: Handle the Callback
-
-Create a page at your redirect URL. Parse the query params, call `signInWithTelegram`.
-
-```tsx
-// app/auth/telegram/callback/page.tsx
-"use client";
-
-import { authClient } from "@/lib/auth-client";
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-
-export default function TelegramCallback() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const authData = {
-      id: Number(searchParams.get("id")),
-      first_name: searchParams.get("first_name")!,
-      last_name: searchParams.get("last_name") || undefined,
-      username: searchParams.get("username") || undefined,
-      photo_url: searchParams.get("photo_url") || undefined,
-      auth_date: Number(searchParams.get("auth_date")),
-      hash: searchParams.get("hash")!,
-    };
-
-    authClient.signInWithTelegram(authData).then((result) => {
-      if (result.error) {
-        setError(result.error.message);
-      } else {
-        router.push("/dashboard");
-      }
-    });
-  }, [searchParams, router]);
-
-  if (error) return <p>Auth failed: {error}</p>;
-  return <p>Authenticating...</p>;
-}
-```
-
-## Link Telegram Account
-
-User already signed in? Let them bolt on Telegram. Same widget, different endpoint.
-
-Requires `allowUserToLink: true` on the server (it's the default, relax).
-
-```tsx
-"use client";
-
-import { authClient } from "@/lib/auth-client";
-import { useEffect, useState } from "react";
-
-export function LinkTelegram() {
-  const [status, setStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    authClient.initTelegramWidget(
-      "telegram-link",
-      { size: "medium" },
-      async (authData) => {
-        const result = await authClient.linkTelegram(authData);
-        setStatus(result.error ? result.error.message : "Linked.");
-      }
-    );
-  }, []);
-
-  return (
-    <div>
-      <div id="telegram-link" />
-      {status && <p>{status}</p>}
-    </div>
-  );
-}
-```
-
-## Unlink Telegram Account
-
-The digital breakup. No widget needed -- just call `unlinkTelegram`.
-
-```tsx
-const result = await authClient.unlinkTelegram();
-
-if (result.error) {
-  console.error("Unlink failed:", result.error.message);
-} else {
-  console.log("Telegram unlinked. Freedom.");
-}
-```
-
-## OIDC (OpenID Connect)
-
-Standard OAuth 2.0 flow via `oauth.telegram.org`. No widgets, no callbacks, no injecting scripts into your DOM. The user clicks a button, gets redirected to Telegram, comes back authenticated. Like every other social login, except it's Telegram and it took them until Bot API 9.5 to ship it.
-
-Enable on server:
-
-```typescript
-telegram({
-  loginWidget: false,
-  oidc: {
-    enabled: true,
-    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
-    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
-    requestPhone: true,  // phone numbers -- the Login Widget's biggest regret
-    mapOIDCProfileToUser: (claims) => ({
-      telegramPhoneNumber: claims.phone_number,
-    }),
-  },
-});
-```
-
-Trigger from client:
-
-```typescript
-await authClient.signInWithTelegramOIDC({
-  callbackURL: "/dashboard",
-});
-```
-
-That's it. Better Auth's social login system handles the PKCE, state tokens, JWT verification, and callback. You don't need to think about any of it. The `telegram-oidc` provider is injected automatically via the `init` hook — no manual provider registration.
-
-### OIDC + Phone Numbers
-
-The `phone` scope gives you what the Login Widget never could. With `requestPhone: true`, Telegram can return `phone_number` and `phone_number_verified` claims. The plugin exposes them to `mapOIDCProfileToUser`; persist the value in a field defined by your user schema.
-
-```typescript
-// With telegramPhoneNumber defined in your user schema and mapped above:
-{
-  name: "John Doe",
-  telegramPhoneNumber: "+1234567890",
-}
-```
-
-### React Example
-
-```tsx
-"use client";
-
-import { authClient } from "@/lib/auth-client";
-
-export function TelegramOIDCLogin() {
-  return (
-    <button
-      onClick={() =>
-        authClient.signInWithTelegramOIDC({
-          callbackURL: "/dashboard",
-        })
-      }
-    >
-      Sign in with Telegram
-    </button>
-  );
-}
-```
-
-No widget scripts, no container elements, no cleanup on unmount. A button. That's it.
-
-## Mini App
-
-Running inside a Telegram Mini App? There's a whole separate flow for that. See [Mini Apps](./miniapps.md).
-
-The short version:
-
-```ts
-// Auto-signin -- grabs initData from Telegram.WebApp automatically
-const result = await authClient.autoSignInFromMiniApp();
-
-// Manual -- pass initData yourself
-const result = await authClient.signInWithMiniApp(
-  window.Telegram.WebApp.initData
-);
-
-// Just validate, don't sign in
-const result = await authClient.validateMiniApp(
-  window.Telegram.WebApp.initData
-);
-```
-
-## Fetch Options
-
-Every method (except `initTelegramWidget` and `initTelegramWidgetRedirect`) accepts an optional second parameter for custom fetch options. Headers, credentials, cache control -- whatever you need.
-
-```ts
-const result = await authClient.signInWithTelegram(authData, {
-  headers: { "x-custom-header": "value" },
-});
-
-await authClient.unlinkTelegram({
-  credentials: "include",
-});
-```
-
-## Error Handling
-
-Every method returns `{ data, error }`. If `error` exists, something went wrong. The `error.message` tells you what. The `error.status` tells you how bad.
-
-```ts
-const result = await authClient.signInWithTelegram(authData);
-
-if (result.error) {
-  // 400 = bad data, 401 = auth failed, 409 = conflict
-  console.error(result.error.status, result.error.message);
-  return;
-}
-
-// result.data has your session
-```
-
-No try/catch needed for normal flows -- errors come back in the result object, not thrown at your face. Network failures are the exception (pun intended).
-
-## Vanilla JS
-
-No React? No problem. Same API, fewer hooks cluttering your life.
-
-```html
-<div id="telegram-login"></div>
-
-<script type="module">
-  import { createAuthClient } from "better-auth/client";
-  import { telegramClient } from "better-auth-telegram/client";
-
-  const authClient = createAuthClient({
-    baseURL: window.location.origin,
-    plugins: [telegramClient()],
-  });
-
-  authClient.initTelegramWidget(
-    "telegram-login",
+// login.ts
+import { authClient } from "./auth-client";
+
+export async function showTelegramLogin() {
+  const widget = await authClient.initTelegramWidget(
+    "telegram-login", // the id of an empty element on your page, or the element itself
     { size: "large" },
-    async (authData) => {
-      const result = await authClient.signInWithTelegram(authData);
-      if (result.error) {
-        alert(result.error.message);
-      } else {
-        window.location.href = "/dashboard";
+    async (telegramData) => {
+      const { error } = await authClient.signInWithTelegram(telegramData);
+      if (error) {
+        console.error("Telegram sign-in failed:", error.message);
+        return;
       }
+      window.location.href = "/dashboard";
     }
   );
-</script>
+  return widget; // widget.destroy() removes the button again
+}
 ```
 
-## Next Steps
+What `initTelegramWidget` does: it loads Telegram's widget script (`https://telegram.org/js/telegram-widget.js?24`), fetches your bot username from the server, **replaces the contents** of the container with the button, and returns a handle with `destroy()`. It throws if the container doesn't exist, the script can't load, or the server has no `botUsername`.
 
-- [Configuration](./configuration.md) -- tweak every knob
-- [Mini Apps](./miniapps.md) -- Telegram Mini App deep dive
-- [API Reference](./api-reference.md) -- every endpoint, documented
-- [Security](./security.md) -- how verification works
-- [Troubleshooting](./troubleshooting.md) -- when things go sideways
+## React component
+
+In React, create the widget in an effect and remove it in the cleanup. Each effect owns its own inner element, so a slow, cancelled initialization cannot remove the next button when React runs effects twice in development.
+
+```tsx
+// TelegramLoginButton.tsx
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { authClient } from "./auth-client";
+
+export function TelegramLoginButton() {
+  const container = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!container.current) {
+      return;
+    }
+    const host = document.createElement("div");
+    container.current.appendChild(host);
+    const widget = authClient.initTelegramWidget(
+      host,
+      { size: "large" },
+      async (telegramData) => {
+        const result = await authClient.signInWithTelegram(telegramData);
+        if (result.error) {
+          setError(result.error.message ?? "Sign-in failed");
+          return;
+        }
+        window.location.href = "/dashboard";
+      }
+    );
+    widget.catch(() => {
+      if (host.isConnected) setError("Could not load the Telegram button");
+    });
+    return () => {
+      host.remove();
+      widget.then((w) => w.destroy()).catch(() => undefined);
+    };
+  }, []);
+
+  return (
+    <div>
+      <div ref={container} />
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+```
+
+With client-side navigation (for example Next.js `router.push("/dashboard")`) instead of `window.location.href`, the page still shows the signed-in user: see [After sign-in: the session](#after-sign-in-the-session).
+
+## Redirect mode
+
+In redirect mode, Telegram sends the browser to a URL of yours, with the user's details in the query string. Use it if you prefer a full page load to a JavaScript callback.
+
+**Step 1: show the widget with a redirect URL.**
+
+```ts
+// login-redirect.ts
+import { authClient } from "./auth-client";
+
+export async function showTelegramLoginRedirect() {
+  return await authClient.initTelegramWidgetRedirect(
+    "telegram-login",
+    `${window.location.origin}/auth/telegram/callback`,
+    { size: "large" }
+  );
+}
+```
+
+**Step 2: on the callback page, read the query string and sign in.**
+
+```ts
+// telegram-callback.ts (runs on /auth/telegram/callback)
+import type { TelegramAuthData } from "better-auth-telegram";
+import { authClient } from "./auth-client";
+
+function readTelegramRedirect(search: string): TelegramAuthData | null {
+  const params = new URLSearchParams(search);
+  const id = params.get("id");
+  const firstName = params.get("first_name");
+  const authDate = params.get("auth_date");
+  const hash = params.get("hash");
+  if (!(id && firstName && authDate && hash)) {
+    return null;
+  }
+  return {
+    id: Number(id),
+    first_name: firstName,
+    auth_date: Number(authDate),
+    hash,
+    last_name: params.get("last_name") ?? undefined,
+    username: params.get("username") ?? undefined,
+    photo_url: params.get("photo_url") ?? undefined,
+  };
+}
+
+export async function finishTelegramRedirect() {
+  const telegramData = readTelegramRedirect(window.location.search);
+  if (!telegramData) {
+    return "Telegram did not send any sign-in data.";
+  }
+  const { error } = await authClient.signInWithTelegram(telegramData);
+  if (error) {
+    return error.message ?? "Sign-in failed";
+  }
+  window.location.href = "/dashboard";
+  return null;
+}
+```
+
+Two details matter here:
+
+- `id` and `auth_date` must be **numbers**. Query strings are always text, and the server answers 400 `INVALID_AUTH_DATA` if they arrive as strings.
+- Send **only the fields Telegram sent**, unchanged. The signature covers exactly those fields, so adding an empty `last_name` or changing a value makes the check fail (401).
+
+## Widget options
+
+The second argument of `initTelegramWidget` and the third of `initTelegramWidgetRedirect`. All are optional.
+
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `size` | `"large" \| "medium" \| "small"` | `"large"` | Button size. |
+| `showUserPhoto` | `boolean` | `true` | Show the user's Telegram photo on the button. |
+| `cornerRadius` | `number` | `20` | Corner radius of the button, in pixels. |
+| `requestAccess` | `boolean` | `false` | Also ask the user to let your bot send them messages. |
+| `lang` | `string` | not set | Button language, for example `"en"` or `"pl"`. Leave it out to use Telegram's default. |
+
+## After sign-in: the session
+
+After a successful `signInWithTelegram`, Better Auth has set the session cookie, and the client tells `useSession()` (and any other session listener) to reload. Your UI updates without a page reload. The same happens after `signInWithMiniApp`, `autoSignInFromMiniApp`, `linkTelegram` and `unlinkTelegram`. To skip that refresh for one call, pass `{ disableSignal: true }` as fetch options.
+
+The result also contains the user and session directly:
+
+```ts
+import type { TelegramAuthData } from "better-auth-telegram";
+import { authClient } from "./auth-client";
+
+export async function signIn(telegramData: TelegramAuthData) {
+  const { data, error } = await authClient.signInWithTelegram(telegramData);
+  if (error) {
+    return null;
+  }
+  // data.user.telegramId: string | null | undefined
+  return data.user;
+}
+```
+
+The Telegram fields are part of the user type everywhere, so TypeScript knows them on the server too:
+
+```ts
+// anywhere on the server
+import { auth } from "./auth";
+
+export async function currentTelegramId(headers: Headers) {
+  const session = await auth.api.getSession({ headers });
+  return session?.user.telegramId ?? null;
+}
+```
+
+## Link Telegram to a signed-in user
+
+A user who signed up another way (email, Google...) can add Telegram as a second sign-in method. Use the same widget, but call `linkTelegram` instead of `signInWithTelegram`:
+
+```ts
+// link-telegram.ts
+import { authClient } from "./auth-client";
+
+export async function showLinkTelegramButton() {
+  return await authClient.initTelegramWidget(
+    "telegram-link",
+    { size: "medium" },
+    async (telegramData) => {
+      const { error } = await authClient.linkTelegram(telegramData);
+      if (error) {
+        console.error("Could not link Telegram:", error.message);
+        return;
+      }
+      console.log("Telegram is now linked to your account.");
+    }
+  );
+}
+```
+
+The user must be signed in. Linking is refused when:
+
+| Status and code | Why |
+|---|---|
+| 401 `UNAUTHORIZED` | Nobody is signed in in this browser (no session cookie reached the server). |
+| 403 `LINKING_DISABLED` | You set `allowUserToLink: false`, or Better Auth's `account.accountLinking.enabled: false`. |
+| 409 `TELEGRAM_ALREADY_LINKED_OTHER` | This Telegram account already belongs to another user. |
+| 409 `TELEGRAM_ALREADY_LINKED_SELF` | It's already linked to this user. Nothing to do. |
+| 409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED` | This user already has a *different* Telegram account. A user can have one Telegram identity; unlink the old one first. |
+
+On success, `user.telegramId` and `user.telegramUsername` are set, and the session cookie is renewed so the session shows them immediately. Your `user.validateUserInfo` hook (if you have one) is asked first, with action `"link-account"`.
+
+## Unlink Telegram
+
+```ts
+// unlink-telegram.ts
+import { authClient } from "./auth-client";
+
+export async function unlinkTelegram() {
+  const { error } = await authClient.unlinkTelegram();
+  if (error?.code === "CANNOT_UNLINK_LAST_ACCOUNT") {
+    return "Add another way to sign in (for example a password) before removing Telegram.";
+  }
+  if (error?.code === "SESSION_NOT_FRESH") {
+    return "For your security, please sign in again, then try once more.";
+  }
+  if (error) {
+    return error.message ?? "Could not unlink Telegram.";
+  }
+  return "Telegram has been removed from your account.";
+}
+```
+
+Two rules protect your users here. They match Better Auth's own `/unlink-account`:
+
+- **A recent sign-in is required.** If the session is older than Better Auth's `session.freshAge` (1 day by default), unlink answers 403 `SESSION_NOT_FRESH`. This stops someone with an old, stolen session from removing the owner's sign-in method.
+- **The last sign-in method stays.** If Telegram is the only way into the account, unlink answers 400 `CANNOT_UNLINK_LAST_ACCOUNT`, so nobody gets locked out. Better Auth's `account.accountLinking.allowUnlinkingAll: true` turns this rule off.
+
+After unlinking, the user can no longer sign in with that Telegram account through the Login Widget or a Mini App: the plugin clears `user.telegramId`, `telegramUsername` and `telegramPhoneNumber`. If another Telegram account of the user (for example an OIDC account for the same person) still proves a Telegram ID, the user keeps that one instead. The same check runs when a Telegram account is removed by Better Auth's `/unlink-account` or any other route.
+
+## Handle errors
+
+Every client action returns `{ data, error }` instead of throwing. When something goes wrong, `data` is `null` and `error` has:
+
+- `status`: the HTTP status, for example `401`.
+- `code`: a stable code such as `INVALID_AUTHENTICATION`. Compare against this.
+- `message`: a readable English message, good for logs.
+
+The plugin's codes are exported as `TELEGRAM_ERROR_CODES` from `better-auth-telegram/client` (no server code included), so you don't have to type strings by hand:
+
+```ts
+import { TELEGRAM_ERROR_CODES } from "better-auth-telegram/client";
+import { authClient } from "./auth-client";
+
+export async function unlinkWithCodes() {
+  const { error } = await authClient.unlinkTelegram();
+  if (error?.code === TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code) {
+    // ask the user to add another sign-in method first
+  }
+}
+```
+
+Some codes come from Better Auth itself, for example `SESSION_NOT_FRESH`, `INVALID_ORIGIN` or `UNAUTHORIZED`. Every code, with its status and meaning, is in the [API reference](./api-reference.md#error-codes); fixes are in [Troubleshooting](./troubleshooting.md).
+
+Two kinds of problems are thrown instead of returned, so wrap those calls in `try`/`catch` if you want to handle them:
+
+- Network failures, when the request never reaches your server (offline, DNS, server down). This is how Better Auth's client works for every action.
+- Problems on the page itself: `initTelegramWidget` and `initTelegramWidgetRedirect` throw when the container is missing, Telegram's script can't load or the server has no `botUsername`; `autoSignInFromMiniApp` throws when the page isn't running inside Telegram.
+
+## Fetch options
+
+Every action that talks to the server takes an optional last argument with fetch options, for example extra headers:
+
+```ts
+import type { TelegramAuthData } from "better-auth-telegram";
+import { authClient } from "./auth-client";
+
+export async function signInWithHeader(telegramData: TelegramAuthData) {
+  return await authClient.signInWithTelegram(telegramData, {
+    headers: { "x-request-source": "landing-page" },
+  });
+}
+```
+
+`initTelegramWidget` and `initTelegramWidgetRedirect` don't take fetch options.
+
+## Next steps
+
+- [Configuration](./configuration.md): change defaults, map Telegram data to your user fields.
+- [Security](./security.md): what the plugin checks, and its known limits.
+- [Troubleshooting](./troubleshooting.md): fixes by symptom.
