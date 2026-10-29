@@ -260,6 +260,25 @@ The Ed25519 `signature` field exists so third parties can validate initData with
 
 All of this runs on Web Crypto API (`crypto.subtle`) — no Node-specific deps, works everywhere.
 
+## Inside Telegram Web and Desktop (iframes and cookies)
+
+Telegram's web clients open Mini Apps in an iframe: "web MTProto clients that need to open a game, open a bot mini app or process a payment in an iframe can use the postMessage API" ([Web events](https://core.telegram.org/api/web-events)). Inside that iframe your site is a third party, and the session cookie Better Auth sets is `SameSite=Lax` by default, which browsers don't send on cross-site subrequests. Safari's ITP blocks third-party cookies outright ([Better Auth: Safari, ITP, and cross-domain setups](https://better-auth.com/docs/concepts/cookies#safari-itp-and-cross-domain-setups)). The likely symptom: `autoSignInFromMiniApp()` answers 200, and the next `getSession()` is signed out. This hasn't been verified live in web.telegram.org yet.
+
+What applies:
+
+- **Cookie attributes** — Better Auth's `advanced.defaultCookieAttributes` sets attributes for all its cookies ([Options](https://better-auth.com/docs/reference/options)). A cookie that works in a cross-site iframe needs `sameSite: "none"` and `secure: true`; `partitioned: true` (CHIPS) keeps it scoped to the Telegram top-level site, which is what browsers that partition third-party cookies allow. `SameSite=None` gives up the browser's own CSRF defence, so keep `trustedOrigins` tight (Better Auth then checks the `Origin` of every cookie-carrying POST, and the plugin's sign-ins check it even without cookies).
+
+  ```typescript
+  betterAuth({
+    advanced: {
+      defaultCookieAttributes: { sameSite: "none", secure: true, partitioned: true },
+    },
+  });
+  ```
+
+- **The `bearer()` plugin** — sign-in responses then carry the session token in a `set-auth-token` header, which the client stores and sends as `Authorization: Bearer …` instead of a cookie ([Bearer plugin](https://better-auth.com/docs/plugins/bearer)). It works with `/telegram/miniapp/signin` like with Better Auth's own sign-ins. Better Auth warns to use it cautiously: a token in JavaScript-readable storage is exposed to XSS.
+- **`crossSubDomainCookies`** — shares cookies across subdomains of one parent domain (`app.example.com` and `api.example.com`; [Cookies](https://better-auth.com/docs/concepts/cookies#cross-subdomain-cookies)). It helps when the Mini App and the auth server are on different subdomains, but it does not make the Telegram Web iframe first-party.
+
 ## Troubleshooting
 
 **"Not running in Telegram Mini App"** — You opened the page in a browser, not in Telegram. Open via `t.me/yourbot/yourapp`.

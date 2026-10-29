@@ -44,11 +44,14 @@ export function createMiniAppEndpoints(config: TelegramPluginConfig) {
       },
       async (ctx) => {
         const initData = readInitData(ctx.body);
-        const botToken = requireBotToken(config);
 
         if (
           config.miniAppValidateInitData &&
-          !(await verifyMiniAppInitData(initData, botToken, config.maxAuthAge))
+          !(await verifyMiniAppInitData(
+            initData,
+            requireBotToken(config),
+            config.maxAuthAge
+          ))
         ) {
           throw APIError.from(
             "UNAUTHORIZED",

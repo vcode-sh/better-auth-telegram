@@ -1,3 +1,4 @@
+import { APIError } from "@better-auth/core/error";
 import type {
   OAuth2Tokens,
   OAuthIdTokenConfig,
@@ -16,6 +17,7 @@ import {
   TELEGRAM_OIDC_PROVIDER_ID,
   TELEGRAM_OIDC_TOKEN_ENDPOINT,
 } from "./constants";
+import { TELEGRAM_ERROR_CODES } from "./error-codes";
 import { rememberVerifiedClaims } from "./telegram-identity";
 import type { TelegramOIDCClaims, TelegramOIDCOptions } from "./types";
 
@@ -32,27 +34,28 @@ const ID_TOKEN_CLOCK_TOLERANCE_SECONDS = 30;
 const ID_TOKEN_REQUIRED_CLAIMS = ["iss", "sub", "aud", "exp", "iat"];
 
 /**
- * Builds the scopes array from OIDC options
+ * The scopes to request, each once. Like Better Auth's own providers,
+ * `scopes` adds to the defaults (`openid`, `profile`) and
+ * `disableDefaultScope` drops `profile`; `openid` is always sent, Telegram
+ * requires it.
  */
-function buildScopes(options: TelegramOIDCOptions): string[] {
+function buildScopes(
+  options: TelegramOIDCOptions,
+  requestScopes: string[] = []
+): string[] {
   const scopes = new Set<string>(["openid"]);
-
-  if (options.scopes) {
-    for (const scope of options.scopes) {
-      scopes.add(scope);
-    }
-  } else {
+  if (!options.disableDefaultScope) {
     scopes.add("profile");
   }
-
+  for (const scope of [...(options.scopes ?? []), ...requestScopes]) {
+    scopes.add(scope);
+  }
   if (options.requestPhone) {
     scopes.add("phone");
   }
-
   if (options.requestBotAccess) {
     scopes.add("telegram:bot_access");
   }
-
   return Array.from(scopes);
 }
 
@@ -76,10 +79,13 @@ function displayName(claims: TelegramOIDCClaims): string | undefined {
  *
  * @param botToken - Bot token from @BotFather (bot ID is the default client_id)
  * @param options - OIDC configuration options
+ * @param logger - Where sign-in diagnostics go; the plugin passes Better
+ *   Auth's logger (`ctx.logger`)
  */
 export function createTelegramOIDCProvider(
   botToken: string,
-  options: TelegramOIDCOptions = {}
+  options: TelegramOIDCOptions = {},
+  logger: { warn: (message: string, ...args: unknown[]) => void } = console
 ): OAuthProvider<TelegramOIDCClaims> {
   const botId = botToken.split(":")[0]!;
 
@@ -94,18 +100,20 @@ export function createTelegramOIDCProvider(
     clientSecret,
     disableIdTokenSignIn: options.disableIdTokenSignIn,
     disableSignUp: options.disableSignUp,
-    overrideUserInfoOnSignIn: options.overrideUserInfoOnSignIn,
   };
 
+  // APIErrors, so the client gets `{ code, message }` instead of an empty 500.
   const requireOIDCCredentials = () => {
     if (!clientId) {
-      throw new Error(
-        `${LOG_PREFIX} clientId is required before starting an OIDC login.`
+      throw APIError.from(
+        "INTERNAL_SERVER_ERROR",
+        TELEGRAM_ERROR_CODES.OIDC_CLIENT_ID_REQUIRED
       );
     }
     if (!clientSecret) {
-      throw new Error(
-        `${LOG_PREFIX} clientSecret is required before starting an OIDC login.`
+      throw APIError.from(
+        "INTERNAL_SERVER_ERROR",
+        TELEGRAM_ERROR_CODES.OIDC_CLIENT_SECRET_REQUIRED
       );
     }
   };
@@ -179,10 +187,7 @@ export function createTelegramOIDCProvider(
     }) {
       requireOIDCCredentials();
 
-      const _scopes = buildScopes(options);
-      if (scopes) {
-        _scopes.push(...scopes);
-      }
+      const _scopes = buildScopes(options, scopes);
 
       return createAuthorizationURL({
         id: TELEGRAM_OIDC_PROVIDER_ID,
@@ -222,7 +227,7 @@ export function createTelegramOIDCProvider(
       token: OAuth2Tokens & { expectedIdTokenNonce?: string | undefined }
     ) {
       if (!token.idToken) {
-        console.warn(
+        logger.warn(
           `${LOG_PREFIX} getUserInfo: no id_token in the token response.`
         );
         return null;
@@ -232,7 +237,7 @@ export function createTelegramOIDCProvider(
       try {
         claims = await verifyIdToken(token.idToken, token.expectedIdTokenNonce);
       } catch (error) {
-        console.warn(
+        logger.warn(
           `${LOG_PREFIX} getUserInfo: rejected id_token.`,
           error instanceof Error ? error.message : error
         );
@@ -240,10 +245,11 @@ export function createTelegramOIDCProvider(
       }
 
       if (claims.id === undefined) {
-        console.warn(
+        logger.warn(
           `${LOG_PREFIX} the ID token has no profile claims (id, name, username).`,
-          "Telegram drops them for bots that sign with EdDSA or ES256K;",
-          "use RS256 or ES256 in @BotFather (Login Widget > Advanced)."
+          options.disableDefaultScope
+            ? "oidc.disableDefaultScope is set, so the profile scope isn't requested."
+            : "Telegram drops them for bots that sign with EdDSA or ES256K; use RS256 or ES256 in @BotFather (Login Widget > Advanced)."
         );
       }
 

@@ -64,9 +64,9 @@ const plugin = telegram({
 | `oidc.clientSecret` | `string` | none (required) | Client Secret from the same page. No bot-token fallback: startup warns and OIDC logins throw until it's set. |
 | `oidc.disableIdTokenSignIn` | `boolean` | `false` | Reject client-submitted ID tokens on `POST /sign-in/social` and `/link-social`. |
 | `oidc.disableSignUp` | `boolean` | `false` | Only sign in existing users; never create one from OIDC. |
-| `oidc.overrideUserInfoOnSignIn` | `boolean` | `false` | Refresh the user's name and photo from the ID token on every sign-in. |
-| `oidc.scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always added; `profile` only when you don't pass a list. |
-| `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. With the Telegram columns present, `phone_number` is copied to `user.telegramPhoneNumber`. |
+| `oidc.scopes` | `string[]` | `[]` | Extra OIDC scopes, added to `openid` and `profile`. |
+| `oidc.disableDefaultScope` | `boolean` | `false` | Don't request `profile` (`openid` is always sent). |
+| `oidc.requestPhone` | `boolean` | `false` | Add `phone` scope. With the Telegram columns present, `phone_number` is copied to `user.telegramPhoneNumber`; in OIDC-only mode there are none (startup warning). |
 | `oidc.requestBotAccess` | `boolean` | `false` | Add `telegram:bot_access` scope. |
 | `oidc.mapOIDCProfileToUser` | `(claims: TelegramOIDCClaims) => UserData` | `name` (or given + family name, or `preferred_username`), `picture`, placeholder email | Customize `name` / `email` / `image`; merged over the defaults. A returned `id` is ignored; `input: false` fields such as `telegramId` are dropped by Better Auth. |
 
@@ -160,6 +160,8 @@ const authClient = createAuthClient({
 
 All action methods accept an optional `fetchOptions?: Record<string, any>` parameter as their last argument for custom headers, cache control, credentials, etc.
 
+Results are `{ data, error }`. `error` is `{ status, statusText, code?, message? }` (`TelegramClientError`); compare `code` with `TELEGRAM_ERROR_CODES` from `better-auth-telegram/client` (a runtime object, no server code) or with Better Auth's codes. `signInWithTelegram`, `signInWithMiniApp`, `autoSignInFromMiniApp`, `linkTelegram` and `unlinkTelegram` refresh `useSession` on success, as Better Auth's own actions do (pass `disableSignal: true` in `fetchOptions` to skip it); so do the generated routes (`authClient.telegram.signin(...)`).
+
 ---
 
 #### `signInWithTelegram(authData, fetchOptions?)`
@@ -175,7 +177,7 @@ const result = await authClient.signInWithTelegram(authData);
 | `authData` | `TelegramAuthData` | Auth data from the Telegram widget |
 | `fetchOptions` | `Record<string, any>` | Optional fetch customization |
 
-**Returns:** The response from `POST /telegram/signin` containing `{ user, session }`.
+**Returns:** The response from `POST /telegram/signin` containing `{ user, session }` (`TelegramSignInResponse`).
 
 ---
 
@@ -228,33 +230,35 @@ const config = await authClient.getTelegramConfig();
 
 ---
 
-#### `initTelegramWidget(containerId, options?, onAuth)`
+#### `initTelegramWidget(container, options?, onAuth)`
 
 Render the Telegram Login Widget with a callback. Loads the widget script (`https://telegram.org/js/telegram-widget.js?24`), fetches `botUsername` from your server, and injects the widget into your DOM. All automatic. You're welcome.
 
 ```typescript
-await authClient.initTelegramWidget(
-  "telegram-login-container",
+const widget = await authClient.initTelegramWidget(
+  "telegram-login-container", // or an element, e.g. a React ref's current
   { size: "large", cornerRadius: 20 },
   async (authData) => {
     const result = await authClient.signInWithTelegram(authData);
   }
 );
+// effect cleanup:
+widget.destroy();
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `containerId` | `string` | **required** | HTML element ID for the widget |
+| `container` | `string \| HTMLElement` | **required** | The element, or its id |
 | `options` | `TelegramWidgetOptions` | `{}` | Widget appearance options |
 | `onAuth` | `(authData: TelegramAuthData) => void \| Promise<void>` | **required** | Callback when user authenticates |
 
-**Returns:** `Promise<void>`
+**Returns:** `Promise<TelegramWidget>`. `destroy()` removes the script, the iframe Telegram rendered for it and the global callback; a widget rendered later into the same container is left alone. Two widgets initialized at once (React strict mode) share one load of Telegram's script.
 
 **Throws:** If the container element doesn't exist or the widget script fails to load.
 
 ---
 
-#### `initTelegramWidgetRedirect(containerId, redirectUrl, options?)`
+#### `initTelegramWidgetRedirect(container, redirectUrl, options?)`
 
 Render the Telegram Login Widget with redirect flow instead of a callback.
 
@@ -268,11 +272,11 @@ await authClient.initTelegramWidgetRedirect(
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `containerId` | `string` | **required** | HTML element ID for the widget |
+| `container` | `string \| HTMLElement` | **required** | The element, or its id |
 | `redirectUrl` | `string` | **required** | URL to redirect after authentication |
 | `options` | `TelegramWidgetOptions` | `{}` | Widget appearance options |
 
-**Returns:** `Promise<void>`
+**Returns:** `Promise<TelegramWidget>` (`destroy()` removes it)
 
 **Throws:** If the container element doesn't exist or the widget script fails to load.
 
@@ -292,7 +296,7 @@ const result = await authClient.signInWithMiniApp(initData);
 | `initData` | `string` | Raw `initData` string from `Telegram.WebApp.initData` |
 | `fetchOptions` | `Record<string, any>` | Optional fetch customization |
 
-**Returns:** The response from `POST /telegram/miniapp/signin` containing `{ user, session }`.
+**Returns:** The response from `POST /telegram/miniapp/signin` containing `{ user, session }` (`TelegramSignInResponse`).
 
 ---
 
@@ -424,9 +428,9 @@ interface TelegramOIDCOptions {
   clientSecret?: string;         // same page; NOT the bot token. Required
   disableIdTokenSignIn?: boolean; // default: false — reject client-submitted ID tokens
   disableSignUp?: boolean;       // default: false — existing users only
-  overrideUserInfoOnSignIn?: boolean; // default: false — refresh name/photo on sign-in
   enabled?: boolean;             // default: false
-  scopes?: string[];             // default: ["openid", "profile"]
+  scopes?: string[];             // added to the defaults (openid, profile)
+  disableDefaultScope?: boolean; // default: false — don't request profile
   requestPhone?: boolean;        // default: false — adds "phone" scope
   requestBotAccess?: boolean;    // default: false — adds "telegram:bot_access" scope
   mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => {
@@ -604,6 +608,8 @@ Fields containing a line break are rejected before the HMAC check.
 | 403 | your code | `user.validateUserInfo` rejected the sign-in, link or sign-up |
 | 403 | `validation_failed` | `user.validateUserInfo` threw (fails closed) |
 | 403 | `USER_CREATION_REJECTED` | A database hook vetoed creating the user |
+| 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | A new user would get an email (from your mapper, or a placeholder left on a user who unlinked Telegram) that another user already has (Better Auth's code, as on `/sign-up/email`) |
+| 401 | `FAILED_TO_CREATE_SESSION` | A database hook vetoed the session (Better Auth's code, as on `/sign-in/email`) |
 | 404 | `USER_CREATION_DISABLED` | No existing account and `autoCreateUser` is `false` |
 | 500 | `BOT_TOKEN_REQUIRED` | `botToken` is not configured |
 | 500 | `ORPHANED_ACCOUNT` | The Telegram account row references a user that no longer exists |
@@ -728,6 +734,8 @@ Same lookup, provisioning, username refresh and origin check as `/telegram/signi
 | 403 | `INVALID_ORIGIN` | Browser request from an origin outside `trustedOrigins`: a Mini App served from another origin than the auth server needs that origin there |
 | 403 | your code / `validation_failed` | `user.validateUserInfo` rejected (or threw) |
 | 403 | `USER_CREATION_REJECTED` | A database hook vetoed creating the user |
+| 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | A new user would get an email (from your mapper, or a placeholder left on a user who unlinked Telegram) that another user already has (Better Auth's code, as on `/sign-up/email`) |
+| 401 | `FAILED_TO_CREATE_SESSION` | A database hook vetoed the session (Better Auth's code, as on `/sign-in/email`) |
 | 404 | `MINI_APP_AUTO_SIGNIN_DISABLED` | No existing account and `autoCreateUser` or `allowAutoSignin` is `false` |
 | 500 | `BOT_TOKEN_REQUIRED` | `botToken` is not configured |
 | 500 | `ORPHANED_ACCOUNT` | The Telegram account row references a user that no longer exists |
@@ -785,7 +793,7 @@ OIDC doesn't register custom endpoints. It injects a `telegram-oidc` social prov
 
 - **`POST /sign-in/social`** with `{ provider: "telegram-oidc", callbackURL: "/dashboard" }` — initiates the OAuth 2.0 Authorization Code flow with PKCE and a nonce
 - **`GET /callback/telegram-oidc`** — handles the OAuth callback: exchanges the code with HTTP Basic client authentication, verifies the ID token (signature against Telegram's cached JWKS using `RS256`, `ES256` or `EdDSA`; `iss`, `aud`, `exp`/`iat` with 30 s tolerance, required claims, nonce), creates/links the user, sets the session. Telegram token errors (HTTP 200 with an `error` field) redirect with `error=invalid_code`; a rejected ID token with `error=unable_to_get_user_info`; `oidc.disableSignUp` with an unknown user with `error=signup_disabled`
-- **`POST /sign-in/social`** with `{ provider: "telegram-oidc", idToken: { token, nonce } }` — signs in with an ID token you already have, verified the same way. The `nonce` the token was issued for is required (Better Auth treats it as optional; the plugin doesn't); forged, nonce-less or mismatched tokens get a 401. Tokens live 30 seconds. Turned off with `oidc.disableIdTokenSignIn`, which also covers `/link-social`
+- **`POST /sign-in/social`** with `{ provider: "telegram-oidc", idToken: { token, nonce } }` — signs in with an ID token you already have, verified the same way. The `nonce` the token carries is required (Better Auth treats it as optional; the plugin doesn't); forged, nonce-less or mismatched tokens get a 401. That refuses tokens issued without a nonce but is not replay protection: the nonce comes from the request body and is inside the token, so a captured token works until it expires (30 s, plus 30 s of clock tolerance). Turned off with `oidc.disableIdTokenSignIn`, which also covers `/link-social`
 
 Provider details for Better Auth 1.7: id `telegram-oidc`, `issuer: "https://oauth.telegram.org"`, `requiresIdTokenNonce: true`, an `idToken.verify` that insists on the nonce, and `accountSubject` = the `sub` claim (so account ids are unchanged from v2).
 
@@ -824,12 +832,19 @@ The `$ERROR_CODES` object exposed by the plugin. Since v1.1.0, each code is a `R
 | `INVALID_MINI_APP_DATA_STRUCTURE` | Invalid Mini App data structure |
 | `NO_USER_IN_INIT_DATA` | No user data in initData |
 | `MINI_APP_AUTO_SIGNIN_DISABLED` | User not found and auto-signin is disabled for Mini Apps |
+| `OIDC_CLIENT_ID_REQUIRED` | Telegram OIDC: oidc.clientId (or botToken) is required before starting an OIDC login |
+| `OIDC_CLIENT_SECRET_REQUIRED` | Telegram OIDC: oidc.clientSecret is required before starting an OIDC login. It is the Client Secret shown in @BotFather (your bot > Login Widget), not the bot token |
 
-`NOT_AUTHENTICATED` is still defined, but no endpoint throws it: a missing session on `/telegram/link` and `/telegram/unlink` is rejected by Better Auth's session middleware with 401 `UNAUTHORIZED`. Better Auth's own codes you may also see: `SESSION_NOT_FRESH` (403, unlink), `validation_failed` (403, a throwing `validateUserInfo`), `INVALID_ORIGIN` (403, sign-in from an untrusted origin) and `BANNED_USER` (403, the admin plugin).
+`NOT_AUTHENTICATED` is still defined, but no endpoint throws it: a missing session on `/telegram/link` and `/telegram/unlink` is rejected by Better Auth's session middleware with 401 `UNAUTHORIZED`. Better Auth's own codes you may also see: `SESSION_NOT_FRESH` (403, unlink), `validation_failed` (403, a throwing `validateUserInfo`), `INVALID_ORIGIN` (403, sign-in from an untrusted origin), `BANNED_USER` (403, the admin plugin), `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (422, a mapper returned an email another user has) and `FAILED_TO_CREATE_SESSION` (401, a database hook vetoed the session).
+
+The same map is exported as `TELEGRAM_ERROR_CODES` from both `better-auth-telegram` and `better-auth-telegram/client` (the client copy pulls in no server code):
 
 ```typescript
+import { TELEGRAM_ERROR_CODES } from "better-auth-telegram/client";
+
 // Matching errors client-side:
-if (error.code === plugin.$ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code) {
+const { error } = await authClient.unlinkTelegram();
+if (error?.code === TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code) {
   // ask the user to add another sign-in method first
 }
 ```
@@ -859,7 +874,7 @@ These live in `src/constants.ts` and are not exported from the package.
 
 ## Rate Limits
 
-Every endpoint is rate-limited because apparently some people can't be trusted with HTTP requests.
+Every endpoint has a rate limit rule because apparently some people can't be trusted with HTTP requests. Better Auth enforces them when its rate limiter is on: by default in production only (`rateLimit.enabled` defaults to `isProduction`), in per-process memory unless `secondaryStorage` or `rateLimit.storage` says otherwise.
 
 | Endpoint | Max Requests | Window |
 |---|---|---|

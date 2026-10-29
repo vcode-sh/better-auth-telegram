@@ -39,3 +39,40 @@ typed(client.signInWithTelegramOIDC);
 export const id: TelegramOIDCClaims["id"] = "8306595751";
 // @ts-expect-error the id claim is a string, never a number
 export const numericId: TelegramOIDCClaims["id"] = 8306595751;
+
+// The Telegram columns are part of the inferred user, on the server...
+type ServerSession = typeof auth.$Infer.Session;
+export function serverFields(session: ServerSession) {
+  return [
+    typed(session.user.telegramId) satisfies string | null | undefined,
+    typed(session.user.telegramUsername) satisfies string | null | undefined,
+    typed(session.user.telegramPhoneNumber) satisfies string | null | undefined,
+  ];
+}
+export async function getSessionFields() {
+  const session = await auth.api.getSession({ headers: new Headers() });
+  return typed(session?.user.telegramId) satisfies string | null | undefined;
+}
+
+// ...and on the client.
+export function clientFields() {
+  const user = client.useSession.get().data?.user;
+  return [
+    typed(user?.telegramId) satisfies string | null | undefined,
+    typed(user?.telegramUsername) satisfies string | null | undefined,
+  ];
+}
+export const clientInferred = (
+  session: typeof client.$Infer.Session
+): string | null | undefined => typed(session.user.telegramPhoneNumber);
+
+// Widgets accept an id (the 2.x signature) or an element, and return a handle.
+export async function widgets(element: HTMLElement) {
+  const widget = await client.initTelegramWidget("login", {}, () => undefined);
+  widget.destroy();
+  await client.initTelegramWidget(element, { size: "small" }, async () => {
+    // onAuth may be async
+  });
+  const redirect = await client.initTelegramWidgetRedirect(element, "/cb");
+  redirect.destroy();
+}

@@ -234,7 +234,7 @@ await authClient.$fetch("/sign-in/social", {
 });
 ```
 
-It's verified against the same JWKS. The `nonce` isn't optional here, even though Better Auth treats it as optional: the plugin only accepts a token together with the nonce it was issued for, and forged, nonce-less or mismatched tokens get a 401. Telegram ID tokens live 30 seconds, so send it right away. Set `oidc.disableIdTokenSignIn: true` to reject ID tokens on `/sign-in/social` and `/link-social` altogether, and `oidc.disableSignUp: true` if OIDC should only sign in existing users.
+It's verified against the same JWKS. The `nonce` isn't optional here, even though Better Auth treats it as optional: the plugin only accepts a token together with the nonce it carries, and forged, nonce-less or mismatched tokens get a 401. The nonce is not replay protection here: Better Auth takes it from the request body and never checks it was issued by your server, and it sits inside the token, so whoever holds a token can resend it. Requiring it only refuses tokens issued without one. A captured token is accepted until it expires: 30 seconds measured live, plus 30 seconds of clock tolerance (the same as Better Auth's own verifier), so up to a minute after it was issued. Set `oidc.disableIdTokenSignIn: true` to reject ID tokens on `/sign-in/social` and `/link-social` altogether, and `oidc.disableSignUp: true` if OIDC should only sign in existing users.
 
 ### OIDC + Phone Numbers
 
@@ -330,12 +330,24 @@ const result = await authClient.signInWithTelegram(authData);
 
 if (result.error) {
   // 400 = bad data, 401 = auth failed, 409 = conflict,
-  // 500 = server misconfigured (missing bot token, schema not migrated)
-  console.error(result.error.status, result.error.message);
+  // 422 = a mapper returned an email another user has,
+  // 500 = server misconfigured (missing bot token or OIDC clientSecret, schema not migrated)
+  console.error(result.error.status, result.error.code, result.error.message);
   return;
 }
 
-// result.data has your session
+// result.data has { user, session }, and useSession() already updated
+```
+
+Compare `error.code` with `TELEGRAM_ERROR_CODES`, which `better-auth-telegram/client` exports without pulling in server code:
+
+```ts
+import { TELEGRAM_ERROR_CODES } from "better-auth-telegram/client";
+
+const { error } = await authClient.unlinkTelegram();
+if (error?.code === TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code) {
+  // ask the user to add another sign-in method first
+}
 ```
 
 No try/catch needed for normal flows -- errors come back in the result object, not thrown at your face. Network failures are the exception (pun intended).

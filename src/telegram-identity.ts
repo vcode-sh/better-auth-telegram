@@ -227,9 +227,10 @@ export function telegramIdentityHooks(
         },
       },
       update: {
-        // Same rule as creation, so an OIDC sign-in that writes the profile
-        // back (`overrideUserInfoOnSignIn`) may keep the user's own
-        // placeholder. Thrown rather than vetoed (`false`): a veto lets
+        // Same rule as creation, so code that writes an OIDC profile back
+        // (Better Auth's `handleOAuthUserInfo` with `selectedUser.profile:
+        // "update"`) may keep the user's own placeholder. Thrown rather than
+        // vetoed (`false`): a veto lets
         // endpoints such as /change-email report success for a change that
         // never happened.
         async before(data) {

@@ -13,32 +13,35 @@ export function TelegramLoginButton() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    authClient
-      .initTelegramWidget(
-        "telegram-login-container",
-        {
-          size: "large",
-          showUserPhoto: true,
-          cornerRadius: 20,
-          lang: "en",
-        },
-        async (authData) => {
-          setLoading(true);
-          setError(null);
-
-          try {
-            await authClient.signInWithTelegram(authData);
-            router.push("/dashboard");
-          } catch {
-            setError("Failed to sign in with Telegram");
-          } finally {
-            setLoading(false);
-          }
+    const widget = authClient.initTelegramWidget(
+      "telegram-login-container",
+      {
+        size: "large",
+        showUserPhoto: true,
+        cornerRadius: 20,
+        lang: "en",
+      },
+      async (authData) => {
+        setLoading(true);
+        setError(null);
+        // Actions return { data, error }; they don't throw for HTTP errors.
+        const result = await authClient.signInWithTelegram(authData);
+        setLoading(false);
+        if (result.error) {
+          setError(result.error.message ?? "Failed to sign in with Telegram");
+          return;
         }
-      )
-      .catch(() => {
-        setError("Failed to load Telegram login widget");
-      });
+        // useSession() has already picked up the new session.
+        router.push("/dashboard");
+      }
+    );
+    widget.catch(() => {
+      setError("Failed to load Telegram login widget");
+    });
+    // React strict mode and HMR re-run effects: remove the old widget.
+    return () => {
+      widget.then((w) => w.destroy()).catch(() => undefined);
+    };
   }, [router]);
 
   return (

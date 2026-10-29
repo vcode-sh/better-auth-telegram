@@ -19,8 +19,11 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 - **Better Auth's account linking settings apply** — with `account.accountLinking.enabled: false`, `/telegram/link` answers 403 `LINKING_DISABLED`. With `enabled: false` or `disableImplicitLinking: true`, a Login Widget or Mini App sign-in that would link itself to an existing user by `telegramId` (for example one created by OIDC) answers 401 `ACCOUNT_NOT_LINKED` instead, as Better Auth's own OAuth sign-in does. New users and returning Telegram users sign in as before.
 - **Login CSRF protection on `/telegram/signin` and `/telegram/miniapp/signin`** — like Better Auth's `/sign-in/email`, a browser request from an origin that isn't in `trustedOrigins` gets 403 `INVALID_ORIGIN`, cookies or not. A Mini App served from another origin than your auth server needs that origin in `trustedOrigins` (it already did for any request carrying cookies). Requests without `Origin` and Fetch Metadata headers, such as server-to-server calls, are unaffected.
 - **`oidc.clientSecret` is required** — the bot-token fallback is gone; Telegram never accepted it.
-- **Client-submitted ID tokens need their nonce** — `POST /sign-in/social` / `/link-social` with `idToken` must include the `nonce` the token was issued for.
+- **Client-submitted ID tokens need their nonce** — `POST /sign-in/social` / `/link-social` with `idToken` must include the `nonce` the token carries. This refuses tokens issued without one; it is not replay protection (a captured token is accepted until it expires, about a minute with clock tolerance). The path stays on by default, as for Better Auth's built-in providers; `oidc.disableIdTokenSignIn` turns it off.
 - **Custom user mappers merge over the defaults** — `mapTelegramDataToUser` and `mapMiniAppDataToUser` no longer replace the default name and image when they omit them.
+- **Mapper output is parsed like a Better Auth OAuth profile** — mappers can no longer set the user `id` or `emailVerified` (a mapper's email was never verified), and `input: false` or unknown fields are dropped, as on Better Auth's OAuth sign-up. A mapper email another user already has answers 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` (before: a 500 on SQL databases).
+- **`oidc.scopes` adds to the defaults** — like Better Auth's built-in providers: `openid` and `profile` are always requested unless the new `oidc.disableDefaultScope` drops `profile`. Before, any `scopes` list replaced `profile`, so `scopes: ["phone"]` silently lost the Telegram id, names and username. Scopes are requested once each, including those passed to the sign-in request.
+- **Sign-in responses are filtered like Better Auth's** — `/telegram/signin` and `/telegram/miniapp/signin` return `user` and `session` through Better Auth's output parsing, so `returned: false` fields no longer leak.
 - **`TelegramOIDCClaims.id` is a `string`** — that is what Telegram sends (`"8306595751"`).
 - **New OIDC users get `<sub>@telegram-oidc.placeholder.invalid`** instead of `<sub>@telegram.oidc`. Existing users keep their stored email.
 - **Tooling** — built with tsdown instead of tsup, TypeScript 7. `jose` is now a dependency instead of being bundled into `dist`.
@@ -34,6 +37,9 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 - **Concurrent first sign-ins** — two simultaneous first sign-ins of the same Telegram user (a double-submitted widget callback, React strict mode running the Mini App auto sign-in twice) created a second account row or answered 500 on a unique-email error. They are now handled one at a time per Better Auth instance, and a server that loses the race against another server signs in as the user that server created.
 - **Session cookie cache after `/telegram/link` and `/telegram/unlink`** — both re-issue the session cookie, so `session.cookieCache` no longer serves the Telegram identity from before the change for up to `maxAge`.
 - **Widget script loaded twice** when two widgets initialized at the same time (React strict mode).
+- **`useSession` after Telegram sign-in, link and unlink** — the client actions (`signInWithTelegram`, `signInWithMiniApp`, `autoSignInFromMiniApp`, `linkTelegram`, `unlinkTelegram`) and the generated routes (`authClient.telegram.signin(...)`) now refresh the session store like Better Auth's own actions; before, the UI stayed signed out (or showed the old Telegram identity) until a reload.
+- **Coded errors instead of empty 500s** — a missing `oidc.clientSecret` (or client id) answers 500 `OIDC_CLIENT_SECRET_REQUIRED` / `OIDC_CLIENT_ID_REQUIRED` with a message; a database hook vetoing the session answers 401 `FAILED_TO_CREATE_SESSION`, as `/sign-in/email` does.
+- **`miniApp.validateInitData: false` no longer needs a bot token** for `/telegram/miniapp/signin` (nothing is verified with it there).
 - **Duplicate account rows** left by older versions no longer break sign-in, and link/create writes run in a transaction.
 - **`testMode` documentation** — it is informational (returned by `GET /telegram/config`) and never switched the widget to a test environment.
 
@@ -51,17 +57,23 @@ Better Auth 1.7 support. Published under the npm dist-tag `next`.
 
 ### Added
 
+- **Inferred Telegram fields** — `session.user.telegramId`, `telegramUsername` and `telegramPhoneNumber` type-check on the server (`auth.$Infer.Session`, `auth.api.getSession`) and the client (`useSession`, `$Infer`). They are optional (`string | null | undefined`); in OIDC-only mode they exist in the types but are never set.
+- **`TELEGRAM_ERROR_CODES`** exported from `better-auth-telegram` and `better-auth-telegram/client` (the client copy pulls in no server code), and as the client plugin's `$ERROR_CODES`. Client actions type `error.code` and their response `data` (`TelegramSignInResponse`, `TelegramLinkResponse`).
+- **Widget helpers for components** — `initTelegramWidget` and `initTelegramWidgetRedirect` accept an element as well as an id and return `{ destroy() }`, which removes the widget, the iframe Telegram rendered and the global callback.
+- **Startup diagnostics through Better Auth's logger** (they used `console.warn`): whitespace around `botToken` is trimmed with a warning, a token that isn't `<digits>:<secret>` is reported, a leading `@` in `botUsername` is stripped, the same-bot warning also catches `oidc.clientId` equal to the widget bot's id, and `oidc.requestPhone` without the Telegram columns (OIDC-only) warns that phone numbers won't be stored. `createTelegramOIDCProvider` takes an optional logger (the plugin passes Better Auth's).
+
 - **Telegram identity on OIDC users** ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)) — when the schema has the Telegram columns, OIDC sign-ups, sign-ins and links copy the verified `id`, `preferred_username` and `phone_number` claims to `telegramId`, `telegramUsername` and `telegramPhoneNumber`, so Login Widget and Mini App sign-ins find users that signed up with OIDC. The reverse direction is still open in #25.
 - **Mini App types** — `signature`, `chat_join_request_query_id`, `user.added_to_attachment_menu`.
 - **Login Widget script** `telegram-widget.js?24`.
 - **Warning** when an OIDC ID token lacks profile claims (Telegram drops them for bots that sign with EdDSA or ES256K).
-- **`oidc.disableIdTokenSignIn`, `oidc.disableSignUp` and `oidc.overrideUserInfoOnSignIn`** options.
+- **`oidc.disableIdTokenSignIn`, `oidc.disableSignUp` and `oidc.disableDefaultScope`** options. (`oidc.overrideUserInfoOnSignIn`, briefly in a 3.0 beta, is gone: Better Auth's override wrote the placeholder email over a real one.)
 - **Error codes** `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`, `CANNOT_UNLINK_LAST_ACCOUNT`, `USER_CREATION_REJECTED`, `ORPHANED_ACCOUNT`, `PLACEHOLDER_EMAIL_RESERVED`, `ACCOUNT_NOT_LINKED`.
 
 ### Changed
 
 - Tests run against a real Better Auth instance (memory adapter and SQLite with Better Auth's own migrations) and a fake oauth.telegram.org modeled on live behavior; mock-only and existence-only tests were removed. An adapter lane (`npm run test:adapters`, its own CI job) runs the core flows on PostgreSQL and MySQL (Kysely), Drizzle and Prisma on PostgreSQL, and MongoDB. HMAC tests use literal vectors computed independently with openssl, including a real-shaped Mini App payload with `signature`. A compiled consumer type test checks the published declarations.
-- CI uses `npm ci`, runs publint and Are The Types Wrong, and no longer auto-merges Better Auth upgrades.
+- CI uses `npm ci`, runs publint and Are The Types Wrong, and no longer auto-merges Better Auth upgrades. It tests Node 22 and 24, and a non-blocking job runs the suite against `better-auth@beta`.
+- **`engines.node` is `>=22`** (it was `>=24` in this beta); `dist/` uses nothing newer.
 - Prereleases publish to the `next` dist-tag.
 
 ## [2.0.1] - 2026-07-29

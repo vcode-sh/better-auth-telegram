@@ -449,6 +449,22 @@ describe("Mini App request validation", () => {
     expect(response.json.code).toBe("INVALID_MINI_APP_DATA_STRUCTURE");
   });
 
+  // Without signature checks the bot token has no use on this route.
+  it("signs in without a bot token when validation is off", async () => {
+    const { client } = createMemoryAuth({
+      botToken: "",
+      loginWidget: false,
+      miniApp: { enabled: true, validateInitData: false },
+    });
+
+    const response = await client.post("/telegram/miniapp/signin", {
+      initData: `user=${encodeURIComponent('{"id":7,"first_name":"Ann"}')}&auth_date=1&hash=x`,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.json.user.telegramId).toBe("7");
+  });
+
   it("answers 404 when auto sign-up from Mini Apps is disabled", async () => {
     const { client, db } = createMemoryAuth(
       miniApp({ allowAutoSignin: false })
@@ -575,6 +591,21 @@ describe("Telegram account bookkeeping", () => {
 
     expect(response.status).toBe(409);
     expect(response.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
+  });
+});
+
+describe("a database hook vetoing the session", () => {
+  it("answers 401 FAILED_TO_CREATE_SESSION without a session cookie", async () => {
+    const { client } = createMemoryAuth(
+      {},
+      { databaseHooks: { session: { create: { before: async () => false } } } }
+    );
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(401);
+    expect(response.json.code).toBe("FAILED_TO_CREATE_SESSION");
+    expect(client.hasSession()).toBe(false);
   });
 });
 
@@ -725,6 +756,70 @@ describe("maxAuthAge reaches the sign-in endpoints", () => {
       expect(oldest.status).toBe(200);
     }
   );
+});
+
+// Better Auth's OAuth sign-up drops `id`, `email`, `emailVerified` and
+// `input: false` fields from provider profiles (link-account.mjs,
+// db/schema.mjs parseAdditionalUserInputFromProviderProfile).
+describe("what user mappers can set", () => {
+  it("neither the user id nor emailVerified", async () => {
+    const { client, db } = createMemoryAuth({
+      mapTelegramDataToUser: () => ({
+        id: "chosen-id",
+        email: "ann@example.com",
+        emailVerified: true,
+      }),
+    });
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(200);
+    expect(db.user[0]!.id).not.toBe("chosen-id");
+    expect(db.user[0]).toMatchObject({
+      email: "ann@example.com",
+      emailVerified: false,
+    });
+  });
+
+  // The user who unlinked keeps the placeholder email (unique), so a new
+  // user can't take it.
+  it("answers 422 when the Telegram user's placeholder belongs to a user who unlinked them", async () => {
+    const { client, rows } = await createSqliteAuth(
+      {},
+      { account: { accountLinking: { allowUnlinkingAll: true } } }
+    );
+    await client.post("/telegram/signin", await widgetUser());
+    await client.post("/telegram/unlink", {});
+    client.clearCookies();
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(422);
+    expect(response.json.code).toBe("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL");
+    expect(rows("user")).toHaveLength(1);
+  });
+
+  // Better Auth's /sign-up/email answers 422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL.
+  it("answers 422 instead of a bare 500 for an email another user has", async () => {
+    const { auth, client, rows } = await createSqliteAuth(
+      { mapTelegramDataToUser: () => ({ email: "ann@example.com" }) },
+      { emailAndPassword: { enabled: true } }
+    );
+    await createClient(auth).post("/sign-up/email", {
+      email: "ann@example.com",
+      password: "correct-horse-battery",
+      name: "Ann",
+    });
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(422);
+    expect(response.json.code).toBe("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL");
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account").map((account) => account.providerId)).toEqual([
+      "credential",
+    ]);
+  });
 });
 
 describe("user mappers merge over the defaults", () => {

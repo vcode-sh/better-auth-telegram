@@ -1,9 +1,15 @@
 import type { GenericEndpointContext } from "@better-auth/core";
 import { runWithTransaction } from "@better-auth/core/context";
+import { BASE_ERROR_CODES } from "@better-auth/core/error";
 import { createPlaceholderEmail } from "@better-auth/core/utils/email";
 import type { Account, Session, User } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
+import {
+  parseAdditionalUserInputFromProviderProfile,
+  parseSessionOutput,
+  parseUserOutput,
+} from "better-auth/db";
 import { ERROR_CODES, PLUGIN_ID } from "./constants";
 import { reconcileTelegramIdentity } from "./telegram-identity";
 
@@ -262,8 +268,23 @@ async function findOrCreate(
     throw APIError.from("NOT_FOUND", options.notFound);
   }
 
+  const email = signUpEmail(options.userData, identity);
+  if (await internalAdapter.findUserByEmail(email)) {
+    // Either another server just created this Telegram user (sign in as
+    // them), or a mapper returned someone else's email: refuse it like
+    // Better Auth's /sign-up/email does.
+    const created = await findTelegramAccount(ctx, identity.telegramId);
+    if (created) {
+      return await signInWithAccount(ctx, created, identity, method);
+    }
+    throw APIError.from(
+      "UNPROCESSABLE_ENTITY",
+      BASE_ERROR_CODES.USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL
+    );
+  }
+
   try {
-    return await createTelegramUser(ctx, options);
+    return await createTelegramUser(ctx, options, email);
   } catch (error) {
     // Another server created this Telegram user a moment earlier, and the
     // database refused our copy (unique email): sign in as that user.
@@ -277,26 +298,50 @@ async function findOrCreate(
   }
 }
 
-/** Creates the user and their `telegram` account, in a transaction. */
+/** A mapper's email, or the placeholder (Better Auth's user.email is required). */
+function signUpEmail(userData: UserData, identity: TelegramIdentity): string {
+  return (
+    userData.email ??
+    createPlaceholderEmail({
+      identifier: identity.telegramId,
+      namespace: PLUGIN_ID,
+    })
+  );
+}
+
+/**
+ * Creates the user and their `telegram` account, in a transaction. Mapper
+ * output goes through Better Auth's provider-profile parsing, as OAuth
+ * sign-ups do: no `id`, no `emailVerified` (nothing verified the mapper's
+ * email), no `input: false` or unknown fields.
+ */
 async function createTelegramUser(
   ctx: GenericEndpointContext,
-  options: Parameters<typeof findOrCreateTelegramUser>[1]
+  options: Parameters<typeof findOrCreateTelegramUser>[1],
+  email: string
 ): Promise<TelegramUser> {
   const { identity, method } = options;
   const { internalAdapter } = ctx.context;
+  const {
+    id: _id,
+    email: _email,
+    emailVerified: _emailVerified,
+    name,
+    image,
+    ...profile
+  } = options.userData;
   return await runWithTransaction(ctx.context.adapter, async () => {
     const user = (await internalAdapter.createUser(
       {
-        ...options.userData,
-        name: options.userData.name ?? "",
-        // Telegram has no email; Better Auth's user.email is required.
-        email:
-          options.userData.email ??
-          createPlaceholderEmail({
-            identifier: identity.telegramId,
-            namespace: PLUGIN_ID,
-          }),
-        emailVerified: options.userData.emailVerified ?? false,
+        ...parseAdditionalUserInputFromProviderProfile(
+          ctx.context.options,
+          profile,
+          "create"
+        ),
+        name: name ?? "",
+        image,
+        email,
+        emailVerified: false,
         telegramId: identity.telegramId,
         telegramUsername: identity.username,
       },
@@ -311,14 +356,28 @@ async function createTelegramUser(
   });
 }
 
-/** Creates a session for `user` and sets the session cookie. */
+/**
+ * Creates a session for `user`, sets the session cookie and answers with
+ * both, filtered like Better Auth's own sign-in responses (no
+ * `returned: false` fields).
+ */
 export async function startSession(
   ctx: GenericEndpointContext,
   user: TelegramUser
 ) {
   const session = await ctx.context.internalAdapter.createSession(user.id);
+  if (!session) {
+    // A database hook vetoed it; Better Auth's /sign-in/email answers the same.
+    throw APIError.from(
+      "UNAUTHORIZED",
+      BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION
+    );
+  }
   await setSessionCookie(ctx, { session, user });
-  return ctx.json({ user, session });
+  return ctx.json({
+    user: parseUserOutput(ctx.context.options, user),
+    session: parseSessionOutput(ctx.context.options, session),
+  });
 }
 
 /**

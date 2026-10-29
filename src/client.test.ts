@@ -23,7 +23,8 @@ const bob: TelegramAuthData = { ...ann, id: 43, first_name: "Bob" };
 let $fetch: ReturnType<typeof vi.fn>;
 
 function actions() {
-  return telegramClient().getActions($fetch as any);
+  const $store = { notify: vi.fn(), listen: vi.fn(), atoms: {} };
+  return telegramClient().getActions($fetch as any, $store);
 }
 
 function addContainer(id: string) {
@@ -176,6 +177,83 @@ describe("initTelegramWidget", () => {
     } finally {
       process.off("unhandledRejection", unhandled);
     }
+  });
+});
+
+describe("widget containers and teardown (React refs, StrictMode, HMR)", () => {
+  /**
+   * What telegram-widget.js?24 does: inserts its iframe before the script
+   * and keeps it on the script as `_iframe`.
+   */
+  function telegramRendersIframe(container: HTMLElement) {
+    const script = container.querySelector("script")!;
+    const iframe = document.createElement("iframe");
+    iframe.id = "telegram-login-test_bot";
+    container.insertBefore(iframe, script);
+    (script as any)._iframe = iframe;
+  }
+
+  it("renders into an element passed instead of an id", async () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+
+    await actions().initTelegramWidget(element, {}, () => {});
+    await actions().initTelegramWidgetRedirect(element, "/cb", {});
+
+    const scripts = element.querySelectorAll("script");
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]!.getAttribute("data-auth-url")).toBe("/cb");
+  });
+
+  it("destroy() removes the widget and its global callback", async () => {
+    const container = document.getElementById("telegram-login")!;
+    const onAuth = vi.fn();
+
+    const widget = await actions().initTelegramWidget(
+      "telegram-login",
+      {},
+      onAuth
+    );
+    const callbackName = widgetScript()
+      .getAttribute("data-onauth")!
+      .replace(/\(user\)$/u, "");
+    telegramRendersIframe(container);
+    widget.destroy();
+
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(callbackName in window).toBe(false);
+  });
+
+  it("destroy() of the redirect widget removes it too", async () => {
+    const container = document.getElementById("telegram-login")!;
+
+    const widget = await actions().initTelegramWidgetRedirect(
+      "telegram-login",
+      "/cb",
+      {}
+    );
+    telegramRendersIframe(container);
+    widget.destroy();
+
+    expect(container.children).toHaveLength(0);
+  });
+
+  it("destroy() leaves a widget rendered later into the same container alone", async () => {
+    const container = document.getElementById("telegram-login")!;
+    const first = await actions().initTelegramWidget(
+      "telegram-login",
+      {},
+      () => {}
+    );
+    telegramRendersIframe(container);
+    await actions().initTelegramWidget("telegram-login", {}, () => {});
+    telegramRendersIframe(container);
+
+    first.destroy();
+
+    expect(container.querySelectorAll("script")).toHaveLength(1);
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
   });
 });
 

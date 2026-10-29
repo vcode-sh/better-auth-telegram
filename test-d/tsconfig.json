@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "files": ["consumer.ts"]
+  "files": ["consumer.ts", "snippets.ts"]
 }

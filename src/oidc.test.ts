@@ -27,7 +27,7 @@ describe("client credentials", () => {
     const provider = createTelegramOIDCProvider(BOT_TOKEN, {});
 
     expect(() => provider.createAuthorizationURL(authorizationRequest)).toThrow(
-      "clientSecret is required"
+      "oidc.clientSecret is required"
     );
   });
 
@@ -37,7 +37,7 @@ describe("client credentials", () => {
     });
 
     expect(() => provider.createAuthorizationURL(authorizationRequest)).toThrow(
-      "clientId is required"
+      "oidc.clientId (or botToken) is required"
     );
   });
 });
@@ -114,8 +114,26 @@ describe("getUserInfo", () => {
     expect(result).not.toBeNull();
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("no profile claims"),
-      expect.stringContaining("EdDSA"),
-      expect.stringContaining("RS256 or ES256")
+      expect.stringMatching(/EdDSA.*RS256 or ES256/u)
     );
+  });
+
+  it("logs to the logger it is given (the plugin passes Better Auth's)", async () => {
+    const logger = { warn: vi.fn() };
+    const console = vi.spyOn(globalThis.console, "warn");
+
+    await createTelegramOIDCProvider(
+      BOT_TOKEN,
+      { clientSecret: CLIENT_SECRET, disableDefaultScope: true },
+      logger
+    ).getUserInfo({
+      idToken: await telegram.sign({ sub: "12224742808376279442" }),
+    });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("no profile claims"),
+      expect.stringContaining("disableDefaultScope")
+    );
+    expect(console).not.toHaveBeenCalled();
   });
 });

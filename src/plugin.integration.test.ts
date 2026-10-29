@@ -58,6 +58,44 @@ describe("routes per mode", () => {
   });
 });
 
+describe("configuration warnings", () => {
+  it("go to Better Auth's logger, not straight to the console", async () => {
+    const console = vi
+      .spyOn(globalThis.console, "warn")
+      .mockImplementation(() => undefined);
+    const logs: [string, string][] = [];
+    const { auth } = createMemoryAuth(
+      { botToken: "not-a-token", botUsername: "@test_bot" },
+      {
+        logger: {
+          log: (level, message) => {
+            logs.push([level, message]);
+          },
+        },
+      }
+    );
+
+    await auth.$context;
+
+    expect(logs).toEqual([
+      ["warn", expect.stringContaining("doesn't look like a bot token")],
+      ["warn", expect.stringContaining('botUsername "@test_bot"')],
+    ]);
+    expect(console).not.toHaveBeenCalled();
+  });
+
+  it("stay quiet with logger.disabled", async () => {
+    const console = vi
+      .spyOn(globalThis.console, "warn")
+      .mockImplementation(() => undefined);
+    const { auth } = createMemoryAuth({ botToken: "not-a-token" });
+
+    await auth.$context;
+
+    expect(console).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /telegram/config", () => {
   it("exposes exactly the five documented fields and no secret", async () => {
     const clientSecret = "oidc-client-secret-value";

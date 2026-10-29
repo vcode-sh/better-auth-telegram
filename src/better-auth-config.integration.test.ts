@@ -8,7 +8,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
-import { admin, multiSession } from "better-auth/plugins";
+import { admin, bearer, multiSession } from "better-auth/plugins";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { telegram } from "./index";
 import {
@@ -346,6 +346,55 @@ describe('advanced.database.generateId: "serial" (numeric ids)', () => {
   });
 });
 
+// Better Auth filters its own sign-in responses through parseUserOutput /
+// parseSessionOutput (api/routes/sign-in.mjs), hiding `returned: false`.
+describe("fields marked returned: false", () => {
+  const hidden = {
+    user: {
+      additionalFields: {
+        secretNote: {
+          type: "string",
+          required: false,
+          defaultValue: "s3cret",
+          returned: false,
+        },
+      },
+    },
+    session: {
+      additionalFields: {
+        deviceSecret: {
+          type: "string",
+          required: false,
+          defaultValue: "d3vice",
+          returned: false,
+        },
+      },
+    },
+  } as const;
+
+  it.each([
+    ["/telegram/signin", async () => await signWidgetData({ id: 42 })],
+    [
+      "/telegram/miniapp/signin",
+      async () => ({ initData: await signInitData({ id: 42 }) }),
+    ],
+  ] as const)("stay out of the %s response", async (path, body) => {
+    const { client, db } = createMemoryAuth(
+      { miniApp: { enabled: true } },
+      hidden as any
+    );
+
+    const response = await client.post(path, await body());
+
+    expect(response.status).toBe(200);
+    expect(db.user[0]!.secretNote).toBe("s3cret");
+    expect(response.text).not.toContain("s3cret");
+    expect(response.text).not.toContain("d3vice");
+    expect(response.json.user.telegramId).toBe("42");
+    expect(response.json.session.token).toBeTypeOf("string");
+  });
+});
+
 describe("admin plugin", () => {
   it("keeps banned users out of the Login Widget, the Mini App and OIDC", async () => {
     const { client, db } = createMemoryAuth(
@@ -375,6 +424,34 @@ describe("admin plugin", () => {
     expect(location).toContain("error=BANNED_USER");
     expect(client.hasSession()).toBe(false);
     expect(db.session).toHaveLength(sessionsBefore);
+  });
+});
+
+// docs/miniapps.md recommends it where third-party cookies don't work
+// (Mini Apps in Telegram Web's iframe).
+describe("bearer plugin", () => {
+  it("hands out the session token on Telegram sign-ins, and accepts it back", async () => {
+    const { auth } = createMemoryAuth(
+      { miniApp: { enabled: true } },
+      { plugins: [bearer()] }
+    );
+    const signIn = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/telegram/miniapp/signin`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: BASE_URL },
+        body: JSON.stringify({ initData: await signInitData({ id: 42 }) }),
+      })
+    );
+    const token = signIn.headers.get("set-auth-token");
+
+    const session = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/get-session`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(token).toBeTruthy();
+    expect((await session.json()).user.telegramId).toBe("42");
   });
 });
 

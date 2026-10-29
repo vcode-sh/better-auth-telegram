@@ -209,9 +209,10 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     expect(db.user).toHaveLength(1);
   });
 
-  // Telegram's docs don't say what the callback carries when the user
-  // declines; OAuth 2.0 (RFC 6749 §4.1.2.1) says `error=access_denied`.
-  it("sends a user who declines in Telegram to errorCallbackURL, creating nothing", async () => {
+  // Defensive coverage of the generic OAuth error path (RFC 6749 §4.1.2.1)
+  // only: measured live on 2026-10-29, declining in the Telegram app sends no
+  // callback at all, and oauth.telegram.org shows its account picker again.
+  it("sends an OAuth error callback to errorCallbackURL, creating nothing", async () => {
     const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
     const start = await client.post("/sign-in/social", {
       provider: "telegram-oidc",
@@ -243,37 +244,41 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     expect(db.account).toHaveLength(1);
   });
 
-  // Catches: the option not reaching Better Auth, and the placeholder-email
-  // guard refusing the owner's own placeholder when Better Auth writes the
-  // profile back (sign-in fails, or the refresh is silently dropped).
-  it("refreshes a changed Telegram name and photo with overrideUserInfoOnSignIn", async () => {
-    const { client, db } = createMemoryAuth({
-      loginWidget: false,
-      oidc: {
-        ...oidc().oidc,
-        overrideUserInfoOnSignIn: true,
-      },
-    });
+  // An app may let Telegram users add a real email (password login, magic
+  // links). Better Auth's `overrideUserInfoOnSignIn` writes the provider's
+  // email back on every redirect-flow sign-in (callback.mjs, the only route
+  // that reads it; link-account.mjs), which would replace it with the
+  // placeholder. The plugin never passes that option on, even when a 3.0
+  // beta configuration still carries it.
+  it.each([
+    ["default options", {}],
+    ["the removed beta option", { overrideUserInfoOnSignIn: true }],
+  ])(
+    "keeps a real verified email across OIDC sign-ins (%s)",
+    async (_label, extra) => {
+      const { client, db } = createMemoryAuth({
+        loginWidget: false,
+        oidc: { ...oidc().oidc, ...(extra as object) },
+      });
+      await signInWithTelegramOIDC(client, telegramMock);
+      db.user[0]!.email = "ann@example.com";
+      db.user[0]!.emailVerified = true;
+      client.clearCookies();
 
-    await signInWithTelegramOIDC(client, telegramMock);
-    client.clearCookies();
-    const { location } = await signInWithTelegramOIDC(
-      client,
-      telegramMock,
-      telegramClaims({
-        name: "Ann Renamed",
-        picture: "https://t.me/i/userpic/320/new.jpg",
-      })
-    );
+      const { location } = await signInWithTelegramOIDC(
+        client,
+        telegramMock,
+        telegramClaims({ name: "Ann Renamed" })
+      );
 
-    expect(location).toBe("/dashboard");
-    expect(db.user).toHaveLength(1);
-    expect(db.user[0]).toMatchObject({
-      name: "Ann Renamed",
-      image: "https://t.me/i/userpic/320/new.jpg",
-      email: "12224742808376279442@telegram-oidc.placeholder.invalid",
-    });
-  });
+      expect(location).toBe("/dashboard");
+      expect(db.user).toHaveLength(1);
+      expect(db.user[0]).toMatchObject({
+        email: "ann@example.com",
+        emailVerified: true,
+      });
+    }
+  );
 
   it("signs in with an ID token that has only sub (EdDSA / ES256K bots drop profile claims)", async () => {
     const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
@@ -576,12 +581,25 @@ describe("the authorization request sent to Telegram", () => {
       { scopes: ["telegram:bot_access"] },
       ["openid", "profile", "telegram:bot_access"],
     ],
-    ["openid even when custom scopes omit it", { scopes: [] }, {}, ["openid"]],
+    // Like Better Auth's own providers, `scopes` adds to the defaults and
+    // `disableDefaultScope` removes them (core social-providers/google.mjs).
     [
-      "each scope once",
-      { scopes: ["openid", "phone"], requestPhone: true },
+      "profile on top of custom scopes",
+      { scopes: ["phone"] },
       {},
-      ["openid", "phone"],
+      ["openid", "phone", "profile"],
+    ],
+    [
+      "only openid with disableDefaultScope",
+      { disableDefaultScope: true },
+      {},
+      ["openid"],
+    ],
+    [
+      "each scope once, also from the sign-in request",
+      { scopes: ["openid", "phone"], requestPhone: true },
+      { scopes: ["profile", "phone"] },
+      ["openid", "phone", "profile"],
     ],
   ])("asks for %s", async (_case, oidcOptions, body, expected) => {
     const url = await authorizationURL(oidcOptions, body);
@@ -696,6 +714,26 @@ describe("a separate OIDC bot (oidc.clientId)", () => {
 
     expect((await signIn(BOT_ID)).status).toBe(401);
     expect((await signIn(OIDC_BOT_ID)).status).toBe(200);
+  });
+});
+
+describe("missing OIDC credentials at request time", () => {
+  it("answers 500 with a code that names the missing clientSecret", async () => {
+    const { client } = createMemoryAuth({
+      loginWidget: false,
+      oidc: { enabled: true },
+    });
+
+    const response = await client.post("/sign-in/social", {
+      provider: "telegram-oidc",
+      callbackURL: "/dashboard",
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.json).toMatchObject({
+      code: "OIDC_CLIENT_SECRET_REQUIRED",
+    });
+    expect(response.json.message).toContain("clientSecret");
   });
 });
 

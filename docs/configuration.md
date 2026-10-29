@@ -116,9 +116,10 @@ telegram({
     enabled: true,
     clientId: process.env.TELEGRAM_OIDC_CLIENT_ID!,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET!,
-    requestPhone: true,        // get phone numbers via the `phone` scope
+    // requestPhone needs the Telegram columns, which OIDC-only mode doesn't
+    // add: enable the Mini App or the Login Widget to store phone numbers.
     requestBotAccess: false,   // request bot access via `telegram:bot_access` scope
-    scopes: ["openid", "profile"],  // default scopes
+    scopes: [],                // extra scopes, added to openid + profile
     mapOIDCProfileToUser: (claims) => ({
       name: claims.preferred_username ?? claims.name,
     }),
@@ -133,9 +134,9 @@ telegram({
 | `clientSecret` | `string` | none (required) | Client Secret from the same page. There is no bot-token fallback any more (Telegram never accepted it): startup warns and OIDC logins throw until it's set. |
 | `disableIdTokenSignIn` | `boolean` | `false` | Reject client-submitted ID tokens (`POST /sign-in/social` or `/link-social` with `idToken`), leaving only the redirect flow. |
 | `disableSignUp` | `boolean` | `false` | Only sign in existing users; never create a user from Telegram OIDC (Better Auth redirects with `error=signup_disabled`). |
-| `overrideUserInfoOnSignIn` | `boolean` | `false` | Update the user's name and photo from the ID token on every sign-in, so Telegram profile changes show up. Leave it off if users can edit those fields in your app. |
-| `scopes` | `string[]` | `["openid", "profile"]` | OIDC scopes to request. `openid` is always included regardless; `profile` only when you don't pass your own list. |
-| `requestPhone` | `boolean` | `false` | Add the `phone` scope. When the Telegram columns exist, `phone_number` (digits only, no `+`) is copied to `user.telegramPhoneNumber`. |
+| `scopes` | `string[]` | `[]` | Extra OIDC scopes, added to the defaults (`openid`, `profile`), as with Better Auth's built-in providers. |
+| `disableDefaultScope` | `boolean` | `false` | Don't request `profile` (`openid` is always sent). Without it the ID token has no `id`, name or username, so no `telegramId` is copied. |
+| `requestPhone` | `boolean` | `false` | Add the `phone` scope. When the Telegram columns exist, `phone_number` (digits only, no `+`) is copied to `user.telegramPhoneNumber`. In OIDC-only mode there is no such column; the plugin warns at startup. |
 | `requestBotAccess` | `boolean` | `false` | Add the `telegram:bot_access` scope. Lets your bot send messages to the user. |
 | `mapOIDCProfileToUser` | `function` | `name` (or given + family name, or username), `picture`, placeholder email | Customize `name`, `email` and `image` from `TelegramOIDCClaims`; merged over the defaults. Any `id` it returns is ignored. Returning `telegramId` / `telegramPhoneNumber` does nothing: they're `input: false` and Better Auth drops them. |
 

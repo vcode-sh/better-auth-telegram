@@ -6,7 +6,7 @@
  */
 import { createAuthClient } from "better-auth/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { telegramClient } from "./client";
+import { TELEGRAM_ERROR_CODES, telegramClient } from "./client";
 import {
   BASE_URL,
   createMemoryAuth,
@@ -110,6 +110,19 @@ describe("client actions against the real server", () => {
     ]);
   });
 
+  it("reports server errors with the codes the client entry exports", async () => {
+    const { client } = setup();
+    await client.signInWithTelegram((await signWidgetData({ id: 42 })) as any);
+
+    const { error } = await client.unlinkTelegram();
+
+    expect(error?.status).toBe(400);
+    expect(error?.code).toBe(
+      TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code
+    );
+    expect(error?.code).toBe("CANNOT_UNLINK_LAST_ACCOUNT");
+  });
+
   it("getTelegramConfig returns the server's bot username", async () => {
     const { client } = setup();
 
@@ -162,6 +175,79 @@ describe("client actions against the real server", () => {
     expect((data as any).url).toMatch(
       /^https:\/\/oauth\.telegram\.org\/auth\?/u
     );
+  });
+});
+
+// Better Auth refreshes `useSession` only for its own routes and for plugin
+// `atomListeners` (client/config.mjs `matchesSessionSignal`); actions that
+// call `$fetch` themselves must notify `$sessionSignal`, as oauth-popup does.
+describe("the session store follows Telegram sign-in, link and unlink", () => {
+  /**
+   * Mounts `useSession` as a component would. Outside a browser the atom
+   * skips its first fetch on mount, so load it explicitly.
+   */
+  async function watchSession(client: Setup["client"]) {
+    const unsubscribe = client.useSession.subscribe(() => undefined);
+    await client.useSession.get().refetch();
+    return {
+      telegramId: () => client.useSession.get().data?.user.telegramId ?? null,
+      unsubscribe,
+    };
+  }
+
+  const settles = (assertion: () => void) =>
+    vi.waitFor(assertion, { timeout: 2000, interval: 20 });
+
+  it.each<[string, (client: Setup["client"]) => Promise<unknown>]>([
+    [
+      "signInWithTelegram",
+      async (client) =>
+        client.signInWithTelegram((await signWidgetData({ id: 42 })) as any),
+    ],
+    [
+      "signInWithMiniApp",
+      async (client) =>
+        client.signInWithMiniApp(await signInitData({ id: 42 })),
+    ],
+    [
+      "autoSignInFromMiniApp",
+      async (client) => {
+        vi.stubGlobal("window", {
+          Telegram: { WebApp: { initData: await signInitData({ id: 42 }) } },
+          location: { hash: "" },
+        });
+        return client.autoSignInFromMiniApp();
+      },
+    ],
+    [
+      "the generated route client.telegram.signin",
+      async (client) =>
+        (client as any).telegram.signin(await signWidgetData({ id: 42 })),
+    ],
+  ])("%s signs the session in", async (_action, signIn) => {
+    const { client } = setup();
+    const session = await watchSession(client);
+
+    await signIn(client);
+
+    await settles(() => expect(session.telegramId()).toBe("42"));
+    session.unsubscribe();
+  });
+
+  it("linkTelegram and unlinkTelegram update session.user", async () => {
+    const { client, signUp } = setup();
+    const session = await watchSession(client);
+    await signUp();
+    // Sign-up refreshes the store itself; let that refresh land first.
+    await settles(() =>
+      expect(client.useSession.get().data?.user.email).toBe("ann@example.com")
+    );
+
+    await client.linkTelegram((await signWidgetData({ id: 42 })) as any);
+    await settles(() => expect(session.telegramId()).toBe("42"));
+    await client.unlinkTelegram();
+    await settles(() => expect(session.telegramId()).toBeNull());
+    session.unsubscribe();
   });
 });
 

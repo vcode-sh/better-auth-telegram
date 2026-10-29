@@ -358,7 +358,7 @@ The OAuth callback failed. The `error` query parameter on the redirect tells you
 
 ### ID Token Sign-in Returns 401
 
-`POST /sign-in/social` with `idToken` needs the token **and** the `nonce` it was issued for: `idToken: { token, nonce }`. Better Auth treats the nonce as optional; the plugin doesn't. Also check the token isn't older than 30 seconds (Telegram's lifetime) and was issued for your `oidc.clientId`. A 404 instead means `oidc.disableIdTokenSignIn` is on.
+`POST /sign-in/social` with `idToken` needs the token **and** the `nonce` it carries: `idToken: { token, nonce }`. Better Auth treats the nonce as optional; the plugin doesn't. Also check the token was issued less than a minute ago (Telegram's 30-second lifetime plus 30 seconds of clock tolerance) and for your `oidc.clientId`. A 404 instead means `oidc.disableIdTokenSignIn` is on.
 
 ### `/account-info` Fails for Telegram OIDC
 
@@ -384,9 +384,13 @@ Known limitation. With Better Auth's `oauth-proxy` plugin, the claims are verifi
 
 Known limitation (issue #25, the reverse direction). Better Auth matches OAuth accounts by provider account id and then by verified email only, and a widget user has neither: a different provider, and an unverified placeholder email. The other direction works: once an OIDC user exists (and the Telegram columns exist), a Login Widget or Mini App sign-in finds them via `telegramId`. Until then, let signed-in widget users link OIDC through Better Auth's account linking.
 
+### User Declined in Telegram and Nothing Happened
+
+That's how Telegram behaves (measured 2026-10-29): declining the login request in the Telegram app sends no callback to your app, neither `error=access_denied` nor a redirect. The browser stays on oauth.telegram.org, which shows its account picker ("Continue with Telegram") again; your server only ever sees the earlier `POST /sign-in/social`. An app can't detect a decline, so don't build UI that waits for an error callback: keep a "Back" or "Try another way" link on your own page instead. If a callback does arrive with an OAuth `error`, Better Auth sends the browser to `errorCallbackURL?error=<value>`.
+
 ### "Phone number not populated"
 
-You need `requestPhone: true` in your OIDC config **and** the user needs to consent to sharing their phone number during the OAuth flow. If they decline, you get everything except the phone.
+You need `requestPhone: true` in your OIDC config, the Telegram columns (the Login Widget or the Mini App enabled; OIDC-only mode has no `telegramPhoneNumber` column and the plugin warns at startup), **and** the user's consent in Telegram's separate phone dialog. What Telegram sends when a user declines only that dialog hasn't been verified; a token without `phone_number` leaves the stored number as it is.
 
 ```typescript
 oidc: {
@@ -472,6 +476,9 @@ Every error this plugin can throw, mapped to what actually went wrong:
 | `Invalid Mini App data structure` | 400 | Parsed initData has wrong structure. |
 | `No user data in initData` | 400 | initData has no `user` object. |
 | `User not found and auto-signin is disabled for Mini Apps` | 404 | `autoCreateUser` or `miniApp.allowAutoSignin` is `false`, no existing account. |
+| `Telegram OIDC: oidc.clientSecret is required ...` (`OIDC_CLIENT_SECRET_REQUIRED`) | 500 | `POST /sign-in/social` without `oidc.clientSecret` configured. |
+| `Telegram OIDC: oidc.clientId (or botToken) is required ...` (`OIDC_CLIENT_ID_REQUIRED`) | 500 | Neither `oidc.clientId` nor `botToken` is set. |
+| `User already exists. Use another email.` (`USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`, from Better Auth) | 422 | Your mapper returned an email another user has, or a user who unlinked Telegram kept its placeholder email. |
 
 `Not authenticated` (`NOT_AUTHENTICATED`) is still in `$ERROR_CODES` but no endpoint throws it.
 

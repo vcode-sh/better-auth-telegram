@@ -116,6 +116,14 @@ export interface TelegramOIDCOptions {
   clientSecret?: string;
 
   /**
+   * Don't request the default `profile` scope (`openid` is always sent).
+   * Without it the ID token has no `id`, name or username, so the Telegram
+   * id is not copied onto the user.
+   * @default false
+   */
+  disableDefaultScope?: boolean;
+
+  /**
    * Reject client-submitted ID tokens (`POST /sign-in/social` or
    * `/link-social` with `idToken`), leaving only the redirect flow.
    * @default false
@@ -145,14 +153,6 @@ export interface TelegramOIDCOptions {
   };
 
   /**
-   * Update the user's name and photo from the ID token on every sign-in
-   * (Better Auth's `overrideUserInfoOnSignIn`), so Telegram profile changes
-   * show up. Off by default: an app may let users edit those fields.
-   * @default false
-   */
-  overrideUserInfoOnSignIn?: boolean;
-
-  /**
    * Request bot access (adds "telegram:bot_access" scope)
    * @default false
    */
@@ -165,8 +165,8 @@ export interface TelegramOIDCOptions {
   requestPhone?: boolean;
 
   /**
-   * Additional scopes beyond "openid"
-   * @default ["profile"]
+   * Scopes to request on top of the defaults (`openid`, `profile`), as with
+   * Better Auth's built-in providers.
    */
   scopes?: string[];
 }

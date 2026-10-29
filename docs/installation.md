@@ -4,7 +4,7 @@ You want Telegram auth in your app. Bold choice. Let's get it done without a twe
 
 ## Prerequisites
 
-- Node.js >= 24 (Bun works too)
+- Node.js >= 22 (Bun works too)
 - A [Better Auth](https://www.better-auth.com/) project on `better-auth` / `@better-auth/core` `>=1.7.12 <1.8.0` (1.6 is out: advisory GHSA-965c-763c-88jm is fixed only in 1.7.7; 1.7.12 enforces the ID token nonce on every callback route)
 - A Telegram account (shocking, I know)
 
@@ -24,7 +24,7 @@ The v3 beta is on the `next` dist-tag: `npm install better-auth-telegram@next`.
 2. Send `/newbot`, follow the prompts
 3. Save the **bot token** -- you'll need it
 4. Note the **bot username** (without the `@`)
-5. Send `/setdomain` to BotFather, pick your bot, enter your domain
+5. For the legacy Login Widget: send `/setdomain` to BotFather, pick your bot, enter your domain. OIDC doesn't use `/setdomain`; it uses the Allowed URLs in BotFather > your bot > Login Widget ([README](../README.md#prerequisites))
 
 Telegram demands HTTPS and a public domain. `localhost` won't cut it -- see [Local Development](#local-development-ngrok) below.
 

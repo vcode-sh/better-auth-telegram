@@ -12,47 +12,47 @@ export function TelegramLinkButton() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    authClient
-      .initTelegramWidget(
-        "telegram-link-container",
-        {
-          size: "medium",
-          showUserPhoto: true,
-          cornerRadius: 10,
-        },
-        async (authData) => {
-          setLoading(true);
-          setError(null);
-          setSuccess(false);
-
-          try {
-            await authClient.linkTelegram(authData);
-            setSuccess(true);
-          } catch (err: any) {
-            setError(err?.message || "Failed to link Telegram account");
-          } finally {
-            setLoading(false);
-          }
+    const widget = authClient.initTelegramWidget(
+      "telegram-link-container",
+      {
+        size: "medium",
+        showUserPhoto: true,
+        cornerRadius: 10,
+      },
+      async (authData) => {
+        setLoading(true);
+        setError(null);
+        setSuccess(false);
+        // Actions return { data, error }; a 409 or 401 does not throw.
+        const result = await authClient.linkTelegram(authData);
+        setLoading(false);
+        if (result.error) {
+          setError(result.error.message ?? "Failed to link Telegram account");
+          return;
         }
-      )
-      .catch(() => {
-        setError("Failed to load Telegram widget");
-      });
+        setSuccess(true);
+      }
+    );
+    widget.catch(() => {
+      setError("Failed to load Telegram widget");
+    });
+    return () => {
+      widget.then((w) => w.destroy()).catch(() => undefined);
+    };
   }, []);
 
   const handleUnlink = async () => {
     setLoading(true);
     setError(null);
-
-    try {
-      await authClient.unlinkTelegram();
-      setSuccess(false);
-      window.location.reload();
-    } catch (err: any) {
-      setError(err?.message || "Failed to unlink Telegram account");
-    } finally {
-      setLoading(false);
+    const result = await authClient.unlinkTelegram();
+    setLoading(false);
+    if (result.error) {
+      // e.g. CANNOT_UNLINK_LAST_ACCOUNT, SESSION_NOT_FRESH
+      setError(result.error.message ?? "Failed to unlink Telegram account");
+      return;
     }
+    // useSession() updates by itself; no reload needed.
+    setSuccess(false);
   };
 
   return (

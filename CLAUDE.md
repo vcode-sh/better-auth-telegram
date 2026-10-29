@@ -79,7 +79,7 @@ Single test file: `npx vitest run src/verify.test.ts`
 
 **Dev:** Biome 2.6 via ultracite 8, tsdown, TypeScript 7, Vitest 5, happy-dom
 
-**Node:** >= 24.0.0
+**Node:** >= 22.0.0 (`engines.node`, tested on 22 and 24 in CI); 24 for development (`.nvmrc`)
 
 ## Review Guidelines
 
@@ -87,7 +87,7 @@ Single test file: `npx vitest run src/verify.test.ts`
 - `botToken` must never leak to client-side code. Server plugin only.
 - All endpoints use `createAuthEndpoint()` from `better-auth/api`. Follow that pattern.
 - Write users/accounts through `ctx.context.internalAdapter`, never raw `ctx.context.adapter.create` (that skips `databaseHooks` and `validateUserInfo`). Reads via `adapter.findOne` are fine.
-- Telegram facts verified live (2026-10-29): OIDC `sub` is per bot (use the `id` claim, a string, for the Telegram user id); switching a bot to OIDC permanently disables its legacy Login Widget; BotFather rejects localhost redirect URIs; ID tokens live 30 s; token errors come back as HTTP 200.
+- Telegram facts verified live (2026-10-29): OIDC `sub` is per bot (use the `id` claim, a string, for the Telegram user id); switching a bot to OIDC permanently disables its legacy Login Widget; BotFather rejects localhost redirect URIs; ID tokens live 30 s; token errors come back as HTTP 200; declining the OIDC login in the Telegram app sends no callback at all (oauth.telegram.org shows its account picker again).
 - Session-protected endpoints use `sessionMiddleware`. Don't forget it for authenticated routes.
 - Type guards (`validateTelegramAuthData`, `validateMiniAppData`) run before processing. Don't skip validation.
 - Mini App endpoints are conditionally registered (`miniApp.enabled`). Test both enabled and disabled paths.
