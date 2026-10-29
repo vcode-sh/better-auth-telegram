@@ -29,6 +29,9 @@ export const TELEGRAM_ERROR_CODES = defineErrorCodes({
   CANNOT_UNLINK_LAST_ACCOUNT:
     "Cannot unlink Telegram: it is the only way to sign in to this account",
   USER_CREATION_REJECTED: "User creation was rejected",
+  ACCOUNT_CREATION_REJECTED: "Telegram account creation was rejected",
+  ACCOUNT_UNLINK_REJECTED: "Telegram account removal was rejected",
+  IDENTITY_UPDATE_REJECTED: "Telegram identity update was rejected",
   ORPHANED_ACCOUNT: "Telegram account references a user that does not exist",
   INIT_DATA_REQUIRED: "initData is required and must be a string",
   INVALID_MINI_APP_INIT_DATA: "Invalid Mini App initData",

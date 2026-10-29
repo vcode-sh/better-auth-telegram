@@ -83,6 +83,40 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     );
   });
 
+  it.each([{ trustedProviders: [] }, { trustedProviders: ["telegram-oidc"] }])(
+    "creates a new OIDC user after unlinking, with $trustedProviders trusted",
+    async ({ trustedProviders }) => {
+      const { client, db } = createMemoryAuth(
+        { loginWidget: false, ...oidc() },
+        {
+          account: {
+            accountLinking: {
+              allowUnlinkingAll: true,
+              trustedProviders,
+              requireLocalEmailVerified: false,
+            },
+          },
+        }
+      );
+      await signInWithTelegramOIDC(client, telegramMock);
+      const oldUserId = db.user[0]!.id;
+      const unlink = await client.post("/unlink-account", {
+        accountId: db.account[0]!.id,
+      });
+      expect(unlink.status).toBe(200);
+      client.clearCookies();
+
+      const { location } = await signInWithTelegramOIDC(client, telegramMock);
+
+      expect(location).toBe("/dashboard");
+      expect(db.user).toHaveLength(2);
+      expect(db.account[0]!.userId).not.toBe(oldUserId);
+      expect(db.user[1]!.email).toMatch(
+        /^12224742808376279442\.[\w-]+@telegram-oidc\.placeholder\.invalid$/u
+      );
+    }
+  );
+
   it("works on a SQL database with the schema Better Auth generates", async () => {
     const { client, rows } = await createSqliteAuth(oidc());
 

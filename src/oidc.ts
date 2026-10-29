@@ -1,3 +1,4 @@
+import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
 import { APIError } from "@better-auth/core/error";
 import type {
   OAuth2Tokens,
@@ -67,6 +68,32 @@ function displayName(claims: TelegramOIDCClaims): string | undefined {
     .filter(Boolean)
     .join(" ");
   return fullName || claims.preferred_username;
+}
+
+async function oidcPlaceholderEmail(sub: string): Promise<string> {
+  const email = createPlaceholderEmail({
+    identifier: sub,
+    namespace: TELEGRAM_OIDC_PROVIDER_ID,
+  });
+  const ctx = tryGetCurrentAuthEndpointContext()?.context;
+  if (
+    !ctx ||
+    (await ctx.internalAdapter.findAccountByKey({
+      providerId: TELEGRAM_OIDC_PROVIDER_ID,
+      accountId: sub,
+    }))
+  ) {
+    return email;
+  }
+  // An unlinked user keeps their email. It cannot prove ownership of a new
+  // OIDC account, even if the app trusts Telegram for email-based linking.
+  if (await ctx.internalAdapter.findUserByEmail(email)) {
+    return createPlaceholderEmail({
+      identifier: `${sub}.${crypto.randomUUID()}`,
+      namespace: TELEGRAM_OIDC_PROVIDER_ID,
+    });
+  }
+  return email;
 }
 
 /**
@@ -268,10 +295,7 @@ export function createTelegramOIDCProvider(
           name: displayName(claims),
           image: claims.picture,
           // Telegram OIDC has no email claim; Better Auth requires one.
-          email: createPlaceholderEmail({
-            identifier: claims.sub,
-            namespace: TELEGRAM_OIDC_PROVIDER_ID,
-          }),
+          email: await oidcPlaceholderEmail(claims.sub),
           ...mapped,
           emailVerified: false,
         },

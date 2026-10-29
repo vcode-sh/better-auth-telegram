@@ -10,7 +10,7 @@ import {
   parseSessionOutput,
   parseUserOutput,
 } from "better-auth/db";
-import { ERROR_CODES, PLUGIN_ID } from "./constants";
+import { ERROR_CODES, PLUGIN_ID, TELEGRAM_OIDC_PROVIDER_ID } from "./constants";
 import { reconcileTelegramIdentity } from "./telegram-identity";
 
 /** A Telegram user proven by a verified Login Widget or Mini App payload. */
@@ -59,6 +59,24 @@ function findUserByTelegramId(ctx: GenericEndpointContext, telegramId: string) {
     model: "user",
     where: [{ field: "telegramId", value: telegramId }],
   });
+}
+
+async function hasLinkedTelegramIdentity(
+  ctx: GenericEndpointContext,
+  userId: string,
+  telegramId: string
+) {
+  // A vetoed identity update can leave stale profile fields after an unlink.
+  // Only a linked account, never the cached profile field alone, grants access.
+  const accounts = (await ctx.context.internalAdapter.findAccounts(
+    userId
+  )) as TelegramAccount[];
+  return accounts.some(
+    (account) =>
+      (account.providerId === PLUGIN_ID && account.accountId === telegramId) ||
+      (account.providerId === TELEGRAM_OIDC_PROVIDER_ID &&
+        account.telegramId === telegramId)
+  );
 }
 
 /**
@@ -144,18 +162,18 @@ async function refreshIdentity(
   );
 }
 
-/** Telegram ids with a sign-in or link in progress, per Better Auth instance. */
+/** Identity and user operations in progress, per Better Auth instance. */
 const inProgress = new WeakMap<object, Map<string, Promise<unknown>>>();
 
 /**
- * Runs `task` once every earlier task for the same Telegram id on this
+ * Runs `task` once every earlier task for the same operation key on this
  * Better Auth instance has settled. A double-submitted first sign-in (React
  * strict mode, a double click) would otherwise create the user twice, or
  * link a second account to the user the first request just created.
  */
 async function oneAtATime<T>(
   ctx: GenericEndpointContext,
-  telegramId: string,
+  operationKey: string,
   task: () => Promise<T>
 ): Promise<T> {
   const key = ctx.context.adapter;
@@ -164,17 +182,17 @@ async function oneAtATime<T>(
     tasks = new Map();
     inProgress.set(key, tasks);
   }
-  const current = (tasks.get(telegramId) ?? Promise.resolve()).then(task);
+  const current = (tasks.get(operationKey) ?? Promise.resolve()).then(task);
   const settled = current.then(
     () => undefined,
     () => undefined
   );
-  tasks.set(telegramId, settled);
+  tasks.set(operationKey, settled);
   try {
     return await current;
   } finally {
-    if (tasks.get(telegramId) === settled) {
-      tasks.delete(telegramId);
+    if (tasks.get(operationKey) === settled) {
+      tasks.delete(operationKey);
     }
   }
 }
@@ -222,7 +240,7 @@ export async function findOrCreateTelegramUser(
     notFound: (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
   }
 ): Promise<TelegramUser> {
-  return await oneAtATime(ctx, options.identity.telegramId, () =>
+  return await oneAtATime(ctx, `telegram:${options.identity.telegramId}`, () =>
     findOrCreate(ctx, options)
   );
 }
@@ -240,7 +258,10 @@ async function findOrCreate(
   }
 
   const existingUser = await findUserByTelegramId(ctx, identity.telegramId);
-  if (existingUser) {
+  if (
+    existingUser &&
+    (await hasLinkedTelegramIdentity(ctx, existingUser.id, identity.telegramId))
+  ) {
     // Another server's first sign-in may have committed this user (and, in
     // the same transaction, the account) since the lookup above.
     const committed = await findTelegramAccount(ctx, identity.telegramId);
@@ -256,12 +277,25 @@ async function findOrCreate(
       throw APIError.from("UNAUTHORIZED", ERROR_CODES.ACCOUNT_NOT_LINKED);
     }
     await assertValidUserInfo(ctx, existingUser, "link-account", method);
-    return await runWithTransaction(ctx.context.adapter, async () => {
-      const linked = (await internalAdapter.linkAccount(
-        accountData(existingUser.id, identity)
-      )) as TelegramAccount;
-      return await refreshIdentity(ctx, existingUser, linked, identity);
-    });
+    return await oneAtATime(ctx, `user:${existingUser.id}`, () =>
+      runWithTransaction(ctx.context.adapter, async () => {
+        const linked = await internalAdapter.linkAccount(
+          accountData(existingUser.id, identity)
+        );
+        if (!linked) {
+          throw APIError.from(
+            "FORBIDDEN",
+            ERROR_CODES.ACCOUNT_CREATION_REJECTED
+          );
+        }
+        return await refreshIdentity(
+          ctx,
+          existingUser,
+          linked as TelegramAccount,
+          identity
+        );
+      })
+    );
   }
 
   if (!options.allowCreate) {
@@ -365,7 +399,12 @@ async function createTelegramUser(
       // A database hook vetoed the creation.
       throw APIError.from("FORBIDDEN", ERROR_CODES.USER_CREATION_REJECTED);
     }
-    await internalAdapter.createAccount(accountData(user.id, identity));
+    const account = await internalAdapter.createAccount(
+      accountData(user.id, identity)
+    );
+    if (!account) {
+      throw APIError.from("FORBIDDEN", ERROR_CODES.ACCOUNT_CREATION_REJECTED);
+    }
     return user;
   });
 }
@@ -418,7 +457,11 @@ export async function linkTelegramAccount(
   user: TelegramUser,
   identity: TelegramIdentity
 ) {
-  await oneAtATime(ctx, identity.telegramId, () => link(ctx, user, identity));
+  // Lock identity first, then user: distinct identities must not both link
+  // before either request has persisted this user's current identity.
+  await oneAtATime(ctx, `telegram:${identity.telegramId}`, () =>
+    oneAtATime(ctx, `user:${user.id}`, () => link(ctx, user, identity))
+  );
 }
 
 async function link(
@@ -459,13 +502,19 @@ async function link(
   );
 
   await runWithTransaction(ctx.context.adapter, async () => {
-    await ctx.context.internalAdapter.linkAccount(
+    const linked = await ctx.context.internalAdapter.linkAccount(
       accountData(user.id, identity)
     );
-    await ctx.context.internalAdapter.updateUser(user.id, {
+    if (!linked) {
+      throw APIError.from("FORBIDDEN", ERROR_CODES.ACCOUNT_CREATION_REJECTED);
+    }
+    const updated = await ctx.context.internalAdapter.updateUser(user.id, {
       telegramId: identity.telegramId,
       telegramUsername: identity.username ?? null,
     });
+    if (!updated) {
+      throw APIError.from("FORBIDDEN", ERROR_CODES.IDENTITY_UPDATE_REJECTED);
+    }
   });
 }
 
@@ -479,6 +528,12 @@ export async function unlinkTelegramAccount(
   ctx: GenericEndpointContext,
   userId: string
 ) {
+  return await oneAtATime(ctx, `user:${userId}`, () =>
+    runWithTransaction(ctx.context.adapter, () => unlink(ctx, userId))
+  );
+}
+
+async function unlink(ctx: GenericEndpointContext, userId: string) {
   const { internalAdapter } = ctx.context;
   const accounts = await internalAdapter.findAccounts(userId);
   // Every row: a duplicate (left by v2 or a cross-server race) would keep
@@ -499,6 +554,10 @@ export async function unlinkTelegramAccount(
   await Promise.all(
     telegramAccounts.map((account) => internalAdapter.deleteAccount(account.id))
   );
+  const remaining = await internalAdapter.findAccounts(userId);
+  if (remaining.some((account) => account.providerId === PLUGIN_ID)) {
+    throw APIError.from("FORBIDDEN", ERROR_CODES.ACCOUNT_UNLINK_REJECTED);
+  }
   // The hook also runs this; calling it here keeps the response consistent
   // even when the delete hook is deferred until after a transaction.
   await reconcileTelegramIdentity(ctx.context, userId);

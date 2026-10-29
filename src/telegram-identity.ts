@@ -80,7 +80,12 @@ async function isAllowedPlaceholder(user: Record<string, unknown>) {
     );
   }
   const claims = await currentClaims();
-  return claims !== null && placeholder.identifier === claims.sub.toLowerCase();
+  const subject = claims?.sub.toLowerCase();
+  return (
+    subject !== undefined &&
+    (placeholder.identifier === subject ||
+      placeholder.identifier.startsWith(`${subject}.`))
+  );
 }
 
 /**
@@ -201,11 +206,14 @@ export async function reconcileTelegramIdentity(
     return;
   }
   const [next] = proving;
-  await ctx.internalAdapter.updateUser(userId, {
+  const updated = await ctx.internalAdapter.updateUser(userId, {
     telegramId: next?.telegramId ?? null,
     telegramUsername: next?.telegramUsername ?? null,
     telegramPhoneNumber: null,
   });
+  if (!updated) {
+    throw APIError.from("FORBIDDEN", ERROR_CODES.IDENTITY_UPDATE_REJECTED);
+  }
 }
 
 /**
