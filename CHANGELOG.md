@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **OIDC sessions lacked the Telegram identity** — the plugin copies `telegramId`, `telegramUsername` and `telegramPhoneNumber` onto the user after Better Auth has read it to issue the session. With `session.cookieCache`, the first OIDC session served the user without them until the cache expired; in stateless mode (no database) it never got them; the `/sign-in/social` ID token response lacked them too. A returning user's changed username or phone number, and the first OIDC sign-in that links an existing user by email, had the same delay. When the plugin changed the signed-in user, it now issues the session cookie (and `newSession`, and the ID token response's `user`) again with the stored user, like Better Auth's `/update-user`. A session cookie an earlier after hook removed stays removed. Keep framework cookie plugins such as `nextCookies()` last in `plugins`, as Better Auth requires.
 
+Thanks to @parmetra for [#53](https://github.com/vcode-sh/better-auth-telegram/issues/53): decoding the session JWT after an OIDC sign-in is what exposed both problems.
+
 ## [3.0.0] - 2026-10-29
 
 Better Auth 1.7 support. Stable release under the npm dist-tag `latest`.
