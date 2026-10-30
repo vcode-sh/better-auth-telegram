@@ -99,7 +99,7 @@
     "mongodb": "7.7.0",
     "mysql2": "3.24.6",
     "pg": "8.23.1",
-    "prisma": "6.19.3",
+    "prisma": "7.10.1",
     "publint": "0.3.25",
     "tsdown": "0.23.3",
     "typescript": "7.0.2",
