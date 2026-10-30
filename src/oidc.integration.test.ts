@@ -1185,12 +1185,18 @@ describe("oidc.updateUserInfoOnSignIn", () => {
         oidc: {
           ...oidc().oidc,
           updateUserInfoOnSignIn: true,
-          mapOIDCProfileToUser: () => ({ joinedAt: new Date(0) }),
+          mapOIDCProfileToUser: () => ({
+            joinedAt: new Date(0),
+            settings: { theme: "dark" },
+          }),
         },
       },
       {
         user: {
-          additionalFields: { joinedAt: { type: "date", required: false } },
+          additionalFields: {
+            joinedAt: { type: "date", required: false },
+            settings: { type: "json", required: false },
+          },
         },
         databaseHooks: { user: { update: { before } } },
       }
