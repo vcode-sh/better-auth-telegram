@@ -85,7 +85,7 @@
     "@better-auth/mongo-adapter": "1.7.14",
     "@better-auth/prisma-adapter": "1.7.14",
     "@biomejs/biome": "2.6.4",
-    "@prisma/client": "6.19.3",
+    "@prisma/client": "7.10.1",
     "@types/node": "^24.13.3",
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.0.5",
