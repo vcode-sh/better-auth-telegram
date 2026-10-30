@@ -138,7 +138,7 @@ A new OIDC user gets:
 - **email**: the placeholder `<sub>@telegram-oidc.placeholder.invalid`, unverified ([why](./installation.md#placeholder-emails)).
 - an **account** with provider ID `telegram-oidc` and account ID `sub`.
 
-When the Login Widget or Mini App is also enabled, the Telegram columns exist and the plugin copies more details from the verified ID token after each OIDC sign-up, sign-in and link:
+When the Login Widget or Mini App is also enabled, the Telegram columns exist and the plugin copies more details from the verified ID token after each OIDC sign-up, sign-in and link. When that changes the signed-in user, the plugin issues the new session cookie again with the stored user, so the session (including `session.cookieCache` and stateless mode) carries the new values right away. Framework cookie plugins such as `nextCookies()` must come last in `plugins`, as Better Auth requires, so they forward that cookie:
 
 | ID token claim | Copied to |
 |---|---|
@@ -172,7 +172,7 @@ export const telegramPlugin = telegram({
 });
 ```
 
-The mapper runs on every sign-in attempt; its profile values are stored for new users. The result is merged over the defaults above. Both `id` and `emailVerified` are ignored, and a mapper email stays unverified: Telegram verifies no email address. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself.
+The mapper runs on every sign-in attempt; its profile values are stored for new users. To keep returning users up to date as well, set `updateUserInfoOnSignIn: true`: once Better Auth has allowed a sign-in (your `validateUserInfo` included), the plugin writes `name`, `image` and the mapper's other fields onto the user. It never changes the email or `emailVerified`. Better Auth's own `overrideUserInfoOnSignIn` would write the placeholder email back over a real one, so the plugin doesn't support it and warns at startup if it is set. Like that option, it also applies when the first OIDC sign-in links an existing user by email. If the update fails (a hook refuses it, or a field's validator rejects a mapped value), the plugin logs a warning and the user signs in with the stored profile. The result is merged over the defaults above. Both `id` and `emailVerified` are ignored, and a mapper email stays unverified: Telegram verifies no email address. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself.
 
 If an OIDC account was unlinked, the old user keeps their email. A later sign-in uses a new reserved placeholder (`<sub>.<random>@telegram-oidc.placeholder.invalid`) for a new user, so the old email neither blocks sign-in nor reconnects the detached account. A custom mapper email still follows your Better Auth account-linking policy.
 

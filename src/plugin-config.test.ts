@@ -173,4 +173,34 @@ describe("createPluginConfig", () => {
   it("does not warn about testMode when OIDC is disabled", () => {
     expect(warnings({ ...BASE, testMode: true })).toEqual([]);
   });
+
+  // Removed in 3.0 (it wrote the placeholder email back over a real one); a
+  // 3.0 beta configuration that still sets it must not fail silently.
+  it("warns that oidc.overrideUserInfoOnSignIn is ignored", () => {
+    expect(
+      warnings({
+        ...BASE,
+        loginWidget: false,
+        oidc: {
+          enabled: true,
+          clientSecret: "s",
+          overrideUserInfoOnSignIn: true,
+        } as never,
+      })
+    ).toEqual([expect.stringContaining("updateUserInfoOnSignIn")]);
+  });
+
+  it("does not warn about overrideUserInfoOnSignIn: false", () => {
+    expect(
+      warnings({
+        ...BASE,
+        loginWidget: false,
+        oidc: {
+          enabled: true,
+          clientSecret: "s",
+          overrideUserInfoOnSignIn: false,
+        } as never,
+      })
+    ).toEqual([]);
+  });
 });

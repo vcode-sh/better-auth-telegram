@@ -8,7 +8,10 @@ import {
 import { createTelegramOIDCProvider } from "./oidc";
 import { createPluginConfig } from "./plugin-config";
 import { createTelegramSchema, type TelegramSchema } from "./schema";
-import { telegramIdentityHooks } from "./telegram-identity";
+import {
+  refreshSessionAfterOIDC,
+  telegramIdentityHooks,
+} from "./telegram-identity";
 import type { TelegramPluginOptions } from "./types";
 import { createWidgetEndpoints, getWidgetRateLimits } from "./widget-endpoints";
 
@@ -76,6 +79,8 @@ export const telegram = (options: TelegramPluginOptions) => {
         options: {
           databaseHooks: telegramIdentityHooks(ctx, {
             identityFields: config.widgetEnabled || config.miniAppEnabled,
+            updateUserInfo:
+              config.oidcEnabled && !!config.oidc?.updateUserInfoOnSignIn,
           }),
         },
       };
@@ -89,6 +94,10 @@ export const telegram = (options: TelegramPluginOptions) => {
       ...(config.widgetEnabled ? createWidgetEndpoints(config) : {}),
       ...(config.miniAppEnabled ? createMiniAppEndpoints(config) : {}),
       ...createConfigEndpoint(config),
+    },
+
+    hooks: {
+      after: config.oidcEnabled ? [refreshSessionAfterOIDC] : [],
     },
 
     $ERROR_CODES: ERROR_CODES,

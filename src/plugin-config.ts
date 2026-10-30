@@ -140,6 +140,16 @@ export function createPluginConfig(
     );
   }
 
+  // Not in the types since 3.0; a 3.0 beta configuration may still set it.
+  const { overrideUserInfoOnSignIn } = (oidc ?? {}) as {
+    overrideUserInfoOnSignIn?: unknown;
+  };
+  if (overrideUserInfoOnSignIn) {
+    warn(
+      "OIDC: overrideUserInfoOnSignIn is not supported and is ignored (it would write the placeholder email over a real one). Use oidc.updateUserInfoOnSignIn to update returning users' profile without touching their email."
+    );
+  }
+
   if (testMode && oidcEnabled) {
     warn(
       "testMode is enabled with OIDC. Telegram's OIDC endpoint (oauth.telegram.org) has no documented test variant — OIDC authentication may not work with test server bot tokens."

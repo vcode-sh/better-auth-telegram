@@ -3,9 +3,13 @@
  * Telegram OIDC against a real Better Auth instance and a fake
  * oauth.telegram.org (see src/testing/harness.ts).
  */
+import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
+import { deleteSessionCookie } from "better-auth/cookies";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BOT_ID,
+  baseOptions,
   createClient,
   createMemoryAuth,
   createSqliteAuth,
@@ -909,5 +913,333 @@ describe("social provider registration", () => {
     });
 
     expect(response.status).toBe(404);
+  });
+});
+
+// Better Auth issues the session (and its cookie cache, `newSession`, the ID
+// token sign-in response) with the user it read before the session existed.
+// Catches: Telegram fields written after that read, which a cookie cache
+// keeps serving stale until `maxAge` — and in stateless mode until the next
+// sign-in.
+describe("the session issued by an OIDC sign-in", () => {
+  const cookieCache = {
+    session: { cookieCache: { enabled: true, maxAge: 300 } },
+  };
+
+  it("carries the Telegram identity of a new user", async () => {
+    const { client } = createMemoryAuth(
+      { oidc: { ...oidc().oidc, requestPhone: true } },
+      cookieCache
+    );
+
+    await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ phone_number: "48572068680" })
+    );
+    const session = await client.get("/get-session");
+
+    expect(session.json.user).toMatchObject({
+      telegramId: "8306595751",
+      telegramUsername: "ann",
+      telegramPhoneNumber: "48572068680",
+    });
+  });
+
+  // No database: the cookie is the session, there is nothing to refresh from.
+  it("carries the Telegram identity in stateless mode", async () => {
+    const auth = betterAuth(baseOptions(oidc(), {}));
+    const client = createClient(auth);
+
+    await signInWithTelegramOIDC(client, telegramMock);
+    const session = await client.get("/get-session");
+
+    expect(session.json.user.telegramId).toBe("8306595751");
+  });
+
+  it("carries a username that changed since the last sign-in", async () => {
+    const { client } = createMemoryAuth(oidc(), cookieCache);
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ preferred_username: "ann_renamed" })
+    );
+    const session = await client.get("/get-session");
+
+    expect(session.json.user.telegramUsername).toBe("ann_renamed");
+  });
+
+  it("answers a client-submitted ID token with the Telegram identity", async () => {
+    const { client } = createMemoryAuth(oidc(), cookieCache);
+    const token = await telegramMock.sign({
+      ...telegramClaims(),
+      nonce: "n-1",
+    });
+
+    const response = await client.post("/sign-in/social", {
+      provider: "telegram-oidc",
+      idToken: { token, nonce: "n-1" },
+    });
+    const session = await client.get("/get-session");
+
+    expect(response.json.user.telegramId).toBe("8306595751");
+    expect(session.json.user.telegramId).toBe("8306595751");
+  });
+
+  it("carries the identity when the first sign-in links a user by email", async () => {
+    const { client, db } = createMemoryAuth(
+      {
+        oidc: {
+          ...oidc().oidc,
+          mapOIDCProfileToUser: () => ({ email: "ann@example.com" }),
+        },
+      },
+      { ...linkingOptions, ...cookieCache }
+    );
+    await signUp(client);
+    db.user[0]!.emailVerified = true;
+    client.clearCookies();
+
+    const { location } = await signInWithTelegramOIDC(client, telegramMock);
+    const session = await client.get("/get-session");
+
+    expect(location).toBe("/dashboard");
+    expect(session.json.user.telegramId).toBe("8306595751");
+  });
+
+  it("sends the session cookies once", async () => {
+    const { client } = createMemoryAuth(oidc(), cookieCache);
+
+    const { callback } = await signInWithTelegramOIDC(client, telegramMock);
+    const names = callback.headers
+      .getSetCookie()
+      .map((cookie) => cookie.slice(0, cookie.indexOf("=")));
+
+    expect(names.filter((name) => name.includes("session_data"))).toHaveLength(
+      1
+    );
+    expect(names.filter((name) => name.includes("session_token"))).toHaveLength(
+      1
+    );
+  });
+
+  // An app's after hook may end the session it was just given.
+  it("does not bring back a session cookie an earlier hook removed", async () => {
+    const { client } = createMemoryAuth(oidc(), {
+      ...cookieCache,
+      hooks: {
+        after: createAuthMiddleware((ctx) => {
+          if (ctx.path.startsWith("/callback/") && ctx.context.newSession) {
+            deleteSessionCookie(ctx);
+          }
+          return Promise.resolve();
+        }),
+      },
+    });
+
+    await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(client.hasSession()).toBe(false);
+  });
+
+  it("still never copies the identity onto a user another Telegram id owns", async () => {
+    const { client, db } = createMemoryAuth(oidc(), cookieCache);
+    await client.post(
+      "/telegram/signin",
+      await signWidgetData({ id: 8_306_595_751 })
+    );
+    client.clearCookies();
+
+    await signInWithTelegramOIDC(client, telegramMock);
+    const session = await client.get("/get-session");
+
+    expect(db.user).toHaveLength(2);
+    expect(session.json.user.telegramId ?? null).toBeNull();
+  });
+});
+
+// #53: the mapper's values only land on new users unless the app opts in.
+describe("oidc.updateUserInfoOnSignIn", () => {
+  const nicknameUser = {
+    user: {
+      additionalFields: { nickname: { type: "string", required: false } },
+    },
+    session: { cookieCache: { enabled: true, maxAge: 300 } },
+  } as const;
+  const withMapper = (extra: Record<string, unknown> = {}) => ({
+    loginWidget: false,
+    oidc: {
+      ...oidc().oidc,
+      mapOIDCProfileToUser: (claims: { preferred_username?: string }) => ({
+        nickname: claims.preferred_username,
+      }),
+      ...extra,
+    },
+  });
+
+  async function signInTwice(extra: Record<string, unknown>) {
+    const { client, db } = createMemoryAuth(withMapper(extra), nicknameUser);
+    await signInWithTelegramOIDC(client, telegramMock);
+    db.user[0]!.email = "ann@example.com";
+    db.user[0]!.emailVerified = true;
+    client.clearCookies();
+    const { location } = await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ name: "Ann Renamed", preferred_username: "ann_new" })
+    );
+    const session = await client.get("/get-session");
+    return { db, location, session };
+  }
+
+  it("is off by default: returning users keep the values they signed up with", async () => {
+    const { db } = await signInTwice({});
+
+    expect(db.user[0]).toMatchObject({ name: "Ann Example", nickname: "ann" });
+  });
+
+  it("writes the mapped profile onto returning users and their session", async () => {
+    const { db, location, session } = await signInTwice({
+      updateUserInfoOnSignIn: true,
+    });
+
+    expect(location).toBe("/dashboard");
+    expect(db.user[0]).toMatchObject({
+      name: "Ann Renamed",
+      nickname: "ann_new",
+    });
+    expect(session.json.user).toMatchObject({
+      name: "Ann Renamed",
+      nickname: "ann_new",
+    });
+  });
+
+  it("signs in with the stored profile when a hook refuses the update", async () => {
+    const { client, db } = createMemoryAuth(
+      withMapper({ updateUserInfoOnSignIn: true }),
+      {
+        ...nicknameUser,
+        databaseHooks: { user: { update: { before: async () => false } } },
+      }
+    );
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    const { location } = await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ name: "Ann Renamed" })
+    );
+
+    expect(location).toBe("/dashboard");
+    expect(db.user[0]!.name).toBe("Ann Example");
+  });
+
+  it("signs in with the stored profile when a field validator refuses it", async () => {
+    const shortText = {
+      "~standard": {
+        version: 1 as const,
+        vendor: "test",
+        validate: (value: unknown) =>
+          String(value).length > 4
+            ? { issues: [{ message: "too long" }] }
+            : { value },
+      },
+    };
+    const { client, db } = createMemoryAuth(
+      withMapper({ updateUserInfoOnSignIn: true }),
+      {
+        ...nicknameUser,
+        user: {
+          additionalFields: {
+            nickname: {
+              type: "string",
+              required: false,
+              validator: { input: shortText },
+            },
+          },
+        },
+      }
+    );
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    const { location } = await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ preferred_username: "ann_new" })
+    );
+
+    expect(location).toBe("/dashboard");
+    expect(db.user[0]!.nickname).toBe("ann");
+  });
+
+  it("writes nothing when the profile is unchanged", async () => {
+    const before = vi.fn();
+    const { client } = createMemoryAuth(
+      {
+        loginWidget: false,
+        oidc: {
+          ...oidc().oidc,
+          updateUserInfoOnSignIn: true,
+          mapOIDCProfileToUser: () => ({ joinedAt: new Date(0) }),
+        },
+      },
+      {
+        user: {
+          additionalFields: { joinedAt: { type: "date", required: false } },
+        },
+        databaseHooks: { user: { update: { before } } },
+      }
+    );
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(before).not.toHaveBeenCalled();
+  });
+
+  // Better Auth writes its own profile updates only after validateUserInfo
+  // allowed the sign-in (link-account.mjs).
+  it("leaves a user the app refuses to sign in untouched", async () => {
+    const { client, db } = createMemoryAuth(
+      withMapper({ updateUserInfoOnSignIn: true }),
+      {
+        ...nicknameUser,
+        user: {
+          ...nicknameUser.user,
+          validateUserInfo: ({ source }: { source: { action: string } }) =>
+            source.action === "sign-in" ? { error: "banned" } : undefined,
+        },
+      }
+    );
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+
+    const { location } = await signInWithTelegramOIDC(
+      client,
+      telegramMock,
+      telegramClaims({ name: "Ann Renamed", preferred_username: "ann_new" })
+    );
+
+    expect(location).toContain("error=banned");
+    expect(db.user[0]).toMatchObject({ name: "Ann Example", nickname: "ann" });
+  });
+
+  // Better Auth's overrideUserInfoOnSignIn would put the placeholder back.
+  it("never changes the email or its verification", async () => {
+    const { db } = await signInTwice({
+      updateUserInfoOnSignIn: true,
+      mapOIDCProfileToUser: () => ({ email: "mapped@example.com" }),
+    });
+
+    expect(db.user[0]).toMatchObject({
+      email: "ann@example.com",
+      emailVerified: true,
+    });
   });
 });

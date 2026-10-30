@@ -230,6 +230,7 @@ interface TelegramOIDCOptions {
   disableSignUp?: boolean; // default false
   disableIdTokenSignIn?: boolean; // default false
   mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => UserData;
+  updateUserInfoOnSignIn?: boolean; // default false: also update returning users (never the email)
 }
 ```
 
