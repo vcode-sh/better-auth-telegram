@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { generateDrizzleSchema, generatePrismaSchema } from "auth/api";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
@@ -227,26 +228,34 @@ function prismaLane(url: string | undefined): AdapterLane {
     const plain = baseOptions({ miniApp: { enabled: true } }, {});
     mkdirSync(GENERATED_DIR, { recursive: true });
     const schemaFile = join(GENERATED_DIR, "schema.prisma");
-    // The generator edits an existing file; start from none, like a new app.
-    rmSync(schemaFile, { force: true });
+    const clientDir = join(GENERATED_DIR, "prisma-client");
+    // The generator edits an existing file. Start from what `prisma init`
+    // writes for a new Prisma 7 app: the `prisma-client` generator needs an
+    // output directory, and the URL lives outside the schema.
+    rmSync(clientDir, { recursive: true, force: true });
+    writeFileSync(
+      schemaFile,
+      `generator client {\n  provider = "prisma-client"\n  output   = "./prisma-client"\n}\n\ndatasource db {\n  provider = "postgresql"\n}\n`
+    );
     const generated = await generatePrismaSchema({
       adapter: prismaAdapter({}, { provider: "postgresql" })(plain),
       options: plain,
       file: schemaFile,
     });
     writeFileSync(schemaFile, generated.code!);
-    const env = { ...process.env, DATABASE_URL: databaseURL };
     const prisma = (...args: string[]) =>
       execFileSync("npx", ["prisma", ...args, `--schema=${schemaFile}`], {
-        env,
         stdio: "pipe",
       });
-    prisma("db", "push", "--skip-generate", "--accept-data-loss");
+    // A database created for this run: nothing to lose, so no
+    // --accept-data-loss.
+    prisma("db", "push", `--url=${databaseURL}`);
     prisma("generate");
     // This schema's client only exists after generate; a clean checkout's
     // type-check must not depend on a previously generated database client.
-    const clientModule = "@prisma/client";
-    const { PrismaClient } = await import(clientModule);
+    const { PrismaClient } = await import(
+      pathToFileURL(join(clientDir, "client.ts")).href
+    );
     return { PrismaClient, databaseURL };
   };
   return {
@@ -257,7 +266,9 @@ function prismaLane(url: string | undefined): AdapterLane {
     async create(pluginOptions = {}, authOptions = {}) {
       ready ??= prepare();
       const { PrismaClient, databaseURL } = await ready;
-      const prisma = new PrismaClient({ datasourceUrl: databaseURL });
+      const prisma = new PrismaClient({
+        adapter: new PrismaPg({ connectionString: databaseURL }),
+      });
       // Children first: session and account reference user.
       await prisma.$transaction([
         prisma.session.deleteMany(),
