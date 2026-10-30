@@ -169,6 +169,16 @@ export interface TelegramOIDCOptions {
    * Better Auth's built-in providers.
    */
   scopes?: string[];
+
+  /**
+   * Write the profile (`name`, `image` and the fields returned by
+   * `mapOIDCProfileToUser`) onto returning users on every OIDC sign-in, not
+   * just when the user is created. The email and its verification are never
+   * changed, unlike Better Auth's `overrideUserInfoOnSignIn`, which would
+   * put the placeholder email back over a real one.
+   * @default false
+   */
+  updateUserInfoOnSignIn?: boolean;
 }
 
 /**

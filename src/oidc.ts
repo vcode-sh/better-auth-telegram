@@ -291,8 +291,6 @@ export function createTelegramOIDCProvider(
         );
       }
 
-      await rememberVerifiedClaims(claims);
-
       // Telegram verifies no email, so a mapper can't vouch for one:
       // Better Auth links to an existing user on emailVerified.
       const {
@@ -301,17 +299,17 @@ export function createTelegramOIDCProvider(
         ...mapped
       } = options.mapOIDCProfileToUser?.(claims) ?? {};
 
-      return {
-        user: {
-          name: displayName(claims),
-          image: claims.picture,
-          // Telegram OIDC has no email claim; Better Auth requires one.
-          email: await oidcPlaceholderEmail(claims.sub),
-          ...mapped,
-          emailVerified: false,
-        },
-        data: claims,
+      const user = {
+        name: displayName(claims),
+        image: claims.picture,
+        // Telegram OIDC has no email claim; Better Auth requires one.
+        email: await oidcPlaceholderEmail(claims.sub),
+        ...mapped,
+        emailVerified: false,
       };
+      await rememberVerifiedClaims(claims, user);
+
+      return { user, data: claims };
     },
 
     options: providerOptions,

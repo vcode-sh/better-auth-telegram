@@ -5,6 +5,19 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-10-30
+
+### Added
+
+- **`oidc.updateUserInfoOnSignIn`** ([#53](https://github.com/vcode-sh/better-auth-telegram/issues/53)) — writes `name`, `image` and the fields returned by `mapOIDCProfileToUser` onto returning users at every OIDC sign-in, not only when the user is created. It runs once Better Auth has allowed the sign-in (`validateUserInfo` included) and, unlike Better Auth's `overrideUserInfoOnSignIn`, never touches the email or `emailVerified`. If the update fails (a hook refuses it, or a field validator rejects a mapped value), a warning is logged and the sign-in continues with the stored profile.
+- **Startup warning for `oidc.overrideUserInfoOnSignIn`** — the option was removed in 3.0.0 and has been ignored silently since.
+
+### Fixed
+
+- **OIDC sessions lacked the Telegram identity** — the plugin copies `telegramId`, `telegramUsername` and `telegramPhoneNumber` onto the user after Better Auth has read it to issue the session. With `session.cookieCache`, the first OIDC session served the user without them until the cache expired; in stateless mode (no database) it never got them; the `/sign-in/social` ID token response lacked them too. A returning user's changed username or phone number, and the first OIDC sign-in that links an existing user by email, had the same delay. When the plugin changed the signed-in user, it now issues the session cookie (and `newSession`, and the ID token response's `user`) again with the stored user, like Better Auth's `/update-user`. A session cookie an earlier after hook removed stays removed. Keep framework cookie plugins such as `nextCookies()` last in `plugins`, as Better Auth requires.
+
+Thanks to @parmetra for [#53](https://github.com/vcode-sh/better-auth-telegram/issues/53): decoding the session JWT after an OIDC sign-in is what exposed both problems.
+
 ## [3.0.0] - 2026-10-29
 
 Better Auth 1.7 support. Stable release under the npm dist-tag `latest`.

@@ -207,7 +207,7 @@ For different origins you also need CORS in your server framework (allow your fr
 
 ### Telegram fields in the session are out of date
 
-**Why:** with Better Auth's `session.cookieCache` on, the session comes from a cookie until the cache expires. The plugin's `/telegram/link` and `/telegram/unlink` renew the cookie right away, but Better Auth's `/link-social` and `/unlink-account` don't.
+**Why:** with Better Auth's `session.cookieCache` on, the session comes from a cookie until the cache expires. Sign-ins (all three methods) and the plugin's `/telegram/link` and `/telegram/unlink` issue it with current values, but Better Auth's `/link-social` and `/unlink-account` don't renew it. (Before 3.1.0, the first OIDC session lacked `telegramId`, `telegramUsername` and `telegramPhoneNumber`, and in stateless mode it never got them.)
 
 **Fix:** wait for the cache to expire, or ask for a fresh session: `authClient.getSession({ query: { disableCookieCache: true } })`.
 
@@ -349,6 +349,15 @@ Check all of these:
 4. The bot signs with RS256 or ES256 (EdDSA and ES256K get no phone number).
 
 Returning `telegramPhoneNumber` from `mapOIDCProfileToUser` does nothing; the plugin fills it itself.
+
+### Fields from `mapOIDCProfileToUser` are missing
+
+Check these:
+
+1. **The user existed before.** Mapped values are stored when the user is created. Set `oidc.updateUserInfoOnSignIn: true` to also write them at every sign-in.
+2. **The field is declared on the server**, in `betterAuth({ user: { additionalFields } })`. Declaring it only on the client (`inferAdditionalFields`) isn't enough: Better Auth drops unknown fields.
+3. **The field accepts input.** Fields with `input: false` are dropped, like on any OAuth sign-up.
+4. **`oidc.overrideUserInfoOnSignIn` is ignored** (the plugin warns at startup). Use `updateUserInfoOnSignIn`.
 
 ### ID-token sign-in answers 401 or 404
 
