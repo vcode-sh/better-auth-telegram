@@ -297,7 +297,7 @@ export function createTelegramOIDCProvider(
         id: _id,
         emailVerified: _emailVerified,
         ...mapped
-      } = options.mapOIDCProfileToUser?.(claims) ?? {};
+      } = (await options.mapOIDCProfileToUser?.(claims)) ?? {};
 
       const user = {
         name: displayName(claims),

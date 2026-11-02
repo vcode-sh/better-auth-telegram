@@ -4,7 +4,7 @@
  * oauth.telegram.org (see src/testing/harness.ts).
  */
 import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { deleteSessionCookie } from "better-auth/cookies";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -21,6 +21,7 @@ import {
   type TestClient,
   telegramClaims,
 } from "./testing/harness";
+import type { TelegramOIDCClaims } from "./types";
 
 let telegramMock: TelegramOIDCMock;
 
@@ -1247,5 +1248,116 @@ describe("oidc.updateUserInfoOnSignIn", () => {
       email: "ann@example.com",
       emailVerified: true,
     });
+  });
+});
+
+// #53: Better Auth's own providers await mapProfileToUser, so apps write
+// async mappers (a database lookup, say). Catches: the mapper's Promise
+// spread as if it were the profile, which dropped every mapped field and let
+// a rejection escape instead of refusing the sign-in.
+describe("an async mapOIDCProfileToUser", () => {
+  const appUser = {
+    user: {
+      additionalFields: {
+        user_id: { type: "number", required: true },
+        telegram_id: { type: "string", required: false },
+      },
+    },
+  } as const;
+  const asyncMapper = (
+    map: (claims: TelegramOIDCClaims) => Promise<Record<string, unknown>>
+  ) => ({
+    loginWidget: false,
+    oidc: { ...oidc().oidc, mapOIDCProfileToUser: map },
+  });
+  const lookUpAppUser = async (claims: TelegramOIDCClaims) => {
+    await Promise.resolve();
+    return { user_id: 42, telegram_id: claims.id, name: "Ann From The App" };
+  };
+
+  it("creates the user with the mapped fields", async () => {
+    const { client, db } = createMemoryAuth(
+      asyncMapper(lookUpAppUser),
+      appUser
+    );
+
+    const { location } = await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(location).toBe("/dashboard");
+    expect(db.user[0]).toMatchObject({
+      user_id: 42,
+      telegram_id: "8306595751",
+      name: "Ann From The App",
+    });
+  });
+
+  // The setup from #53: no database, the JWT cookie is the session.
+  it("puts the mapped fields into a stateless JWT session", async () => {
+    const auth = betterAuth(
+      baseOptions(asyncMapper(lookUpAppUser), {
+        ...appUser,
+        session: {
+          cookieCache: {
+            enabled: true,
+            maxAge: 300,
+            strategy: "jwt",
+            refreshCache: true,
+          },
+        },
+      })
+    );
+    const client = createClient(auth);
+
+    const { location } = await signInWithTelegramOIDC(client, telegramMock);
+    const session = await client.get("/get-session");
+
+    expect(location).toBe("/dashboard");
+    expect(session.json.user).toMatchObject({
+      user_id: 42,
+      telegram_id: "8306595751",
+      name: "Ann From The App",
+    });
+  });
+
+  it("refuses the sign-in when the mapper throws", async () => {
+    const { client, db } = createMemoryAuth(
+      asyncMapper(async () => {
+        await Promise.resolve();
+        throw new APIError("FORBIDDEN", { message: "USER_NOT_REGISTERED" });
+      }),
+      appUser
+    );
+
+    const { callback } = await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(callback.status).toBe(403);
+    expect(callback.text).toContain("USER_NOT_REGISTERED");
+    expect(client.hasSession()).toBe(false);
+    expect(db.user).toHaveLength(0);
+  });
+
+  it("updates returning users with oidc.updateUserInfoOnSignIn", async () => {
+    let appUserId = 42;
+    const { client, db } = createMemoryAuth(
+      {
+        loginWidget: false,
+        oidc: {
+          ...oidc().oidc,
+          updateUserInfoOnSignIn: true,
+          mapOIDCProfileToUser: async () => {
+            await Promise.resolve();
+            return { user_id: appUserId };
+          },
+        },
+      },
+      appUser
+    );
+    await signInWithTelegramOIDC(client, telegramMock);
+    client.clearCookies();
+    appUserId = 43;
+
+    await signInWithTelegramOIDC(client, telegramMock);
+
+    expect(db.user[0]!.user_id).toBe(43);
   });
 });

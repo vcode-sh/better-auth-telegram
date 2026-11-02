@@ -5,6 +5,14 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-11-02
+
+### Fixed
+
+- **Async `mapOIDCProfileToUser` was ignored** ([#53](https://github.com/vcode-sh/better-auth-telegram/issues/53)) — the plugin called the mapper without awaiting it, so an `async` mapper (one that looks the user up in a database, say) lost every field it returned: `name`, `image` and `user.additionalFields` values never reached the user or the session, and a required additional field failed the sign-in with `MISSING_FIELD`. An `APIError` thrown by an async mapper didn't stop the sign-in either; it became an unhandled rejection. The mapper is now awaited, as Better Auth's built-in providers await `mapProfileToUser`, and its type allows a `Promise`. The return type is exported as `TelegramOIDCMappedUser`.
+
+Thanks to @parmetra for following up on [#53](https://github.com/vcode-sh/better-auth-telegram/issues/53) with the full configuration; the async mapper in it is what showed the bug.
+
 ## [3.1.0] - 2026-10-30
 
 ### Added

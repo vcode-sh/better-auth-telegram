@@ -95,6 +95,17 @@ export interface TelegramOIDCClaims {
 }
 
 /**
+ * User fields returned by `mapOIDCProfileToUser`: the profile plus any
+ * `user.additionalFields`.
+ */
+export interface TelegramOIDCMappedUser {
+  email?: string;
+  image?: string;
+  name?: string;
+  [key: string]: any;
+}
+
+/**
  * Configuration options for Telegram OIDC authentication
  */
 export interface TelegramOIDCOptions {
@@ -143,14 +154,14 @@ export interface TelegramOIDCOptions {
   enabled?: boolean;
 
   /**
-   * Custom function to map OIDC claims to user object
+   * Maps the verified ID token claims to the user Better Auth creates (and,
+   * with `updateUserInfoOnSignIn`, updates). May be async, like Better Auth's
+   * `mapProfileToUser`; throw an `APIError` to refuse the sign-in. `id` and
+   * `emailVerified` are ignored.
    */
-  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => {
-    name?: string;
-    email?: string;
-    image?: string;
-    [key: string]: any;
-  };
+  mapOIDCProfileToUser?: (
+    claims: TelegramOIDCClaims
+  ) => TelegramOIDCMappedUser | Promise<TelegramOIDCMappedUser>;
 
   /**
    * Request bot access (adds "telegram:bot_access" scope)

@@ -229,7 +229,7 @@ interface TelegramOIDCOptions {
   requestBotAccess?: boolean; // default false: adds "telegram:bot_access"
   disableSignUp?: boolean; // default false
   disableIdTokenSignIn?: boolean; // default false
-  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => UserData;
+  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => UserData | Promise<UserData>; // throw APIError to refuse sign-in
   updateUserInfoOnSignIn?: boolean; // default false: also update returning users (never the email)
 }
 ```

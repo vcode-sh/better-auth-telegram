@@ -5,6 +5,7 @@
 // through their effect bodies with minimal hook stubs.
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { createAuthClient } from "better-auth/client";
 import { toNextJsHandler } from "better-auth/next-js";
 import { type TelegramAuthData, telegram } from "better-auth-telegram";
@@ -262,6 +263,27 @@ export const oidcMapper = telegram({
     mapOIDCProfileToUser: (claims) => ({
       name: claims.preferred_username ?? claims.name,
     }),
+  },
+});
+
+// docs/oidc.md "What gets stored" (async mapper)
+declare function findMemberByTelegramId(
+  id: string | undefined
+): Promise<{ id: string; name: string } | undefined>;
+export const membersOnly = telegram({
+  loginWidget: false,
+  oidc: {
+    enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
+    // memberId is declared in betterAuth({ user: { additionalFields } })
+    mapOIDCProfileToUser: async (claims) => {
+      const member = await findMemberByTelegramId(claims.id);
+      if (!member) {
+        throw new APIError("FORBIDDEN", { message: "NOT_A_MEMBER" });
+      }
+      return { memberId: member.id, name: member.name };
+    },
   },
 });
 

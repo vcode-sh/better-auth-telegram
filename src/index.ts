@@ -26,6 +26,7 @@ export type {
   TelegramMiniAppData,
   TelegramMiniAppUser,
   TelegramOIDCClaims,
+  TelegramOIDCMappedUser,
   TelegramOIDCOptions,
   TelegramPluginOptions,
 } from "./types";
