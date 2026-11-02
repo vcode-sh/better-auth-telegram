@@ -102,7 +102,7 @@
     "pg": "8.23.1",
     "prisma": "7.10.1",
     "publint": "0.3.25",
-    "tsdown": "0.23.3",
+    "tsdown": "0.23.4",
     "typescript": "7.0.2",
     "ultracite": "8.1.0",
     "vitest": "5.0.5"
