@@ -196,12 +196,12 @@ interface TelegramPluginOptions {
   allowUserToLink?: boolean; // default true
   autoCreateUser?: boolean; // default true
   maxAuthAge?: number; // seconds, default 86400
-  mapTelegramDataToUser?: (data: TelegramAuthData) => UserData;
+  mapTelegramDataToUser?: (data: TelegramAuthData) => UserData | Promise<UserData>;
   miniApp?: {
     enabled?: boolean; // default false
     validateInitData?: boolean; // default true
     allowAutoSignin?: boolean; // default true
-    mapMiniAppDataToUser?: (data: TelegramMiniAppUser) => UserData;
+    mapMiniAppDataToUser?: (data: TelegramMiniAppUser) => UserData | Promise<UserData>;
   };
   oidc?: TelegramOIDCOptions;
   testMode?: boolean; // default false
@@ -229,7 +229,7 @@ interface TelegramOIDCOptions {
   requestBotAccess?: boolean; // default false: adds "telegram:bot_access"
   disableSignUp?: boolean; // default false
   disableIdTokenSignIn?: boolean; // default false
-  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => UserData;
+  mapOIDCProfileToUser?: (claims: TelegramOIDCClaims) => UserData | Promise<UserData>; // throw APIError to refuse sign-in
   updateUserInfoOnSignIn?: boolean; // default false: also update returning users (never the email)
 }
 ```

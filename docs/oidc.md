@@ -174,6 +174,30 @@ export const telegramPlugin = telegram({
 
 The mapper runs on every sign-in attempt; its profile values are stored for new users. To keep returning users up to date as well, set `updateUserInfoOnSignIn: true`: once Better Auth has allowed a sign-in (your `validateUserInfo` included), the plugin writes `name`, `image` and the mapper's other fields onto the user. It never changes the email or `emailVerified`. Better Auth's own `overrideUserInfoOnSignIn` would write the placeholder email back over a real one, so the plugin doesn't support it and warns at startup if it is set. Like that option, it also applies when the first OIDC sign-in links an existing user by email. If the update fails (a hook refuses it, or a field's validator rejects a mapped value), the plugin logs a warning and the user signs in with the stored profile. The result is merged over the defaults above. Both `id` and `emailVerified` are ignored, and a mapper email stays unverified: Telegram verifies no email address. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself.
 
+The mapper may be async, as with Better Auth's `mapProfileToUser`, so it can look the user up in your own data. Throwing an `APIError` refuses the sign-in: no user, account or session is created. As with Better Auth's built-in providers, the callback then answers with that error's status (here 403) instead of redirecting to `errorCallbackURL`.
+
+```ts
+import { APIError } from "better-auth/api";
+import { telegram } from "better-auth-telegram";
+
+export const membersOnly = telegram({
+  loginWidget: false,
+  oidc: {
+    enabled: true,
+    clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
+    clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
+    // memberId is declared in betterAuth({ user: { additionalFields } })
+    mapOIDCProfileToUser: async (claims) => {
+      const member = await findMemberByTelegramId(claims.id);
+      if (!member) {
+        throw new APIError("FORBIDDEN", { message: "NOT_A_MEMBER" });
+      }
+      return { memberId: member.id, name: member.name };
+    },
+  },
+});
+```
+
 If an OIDC account was unlinked, the old user keeps their email. A later sign-in uses a new reserved placeholder (`<sub>.<random>@telegram-oidc.placeholder.invalid`) for a new user, so the old email neither blocks sign-in nor reconnects the detached account. A custom mapper email still follows your Better Auth account-linking policy.
 
 ## Phone numbers

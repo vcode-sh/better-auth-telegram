@@ -81,7 +81,7 @@ export function createMiniAppEndpoints(config: TelegramPluginConfig) {
               ? `${miniAppUser.first_name} ${miniAppUser.last_name}`
               : miniAppUser.first_name,
             image: miniAppUser.photo_url,
-            ...config.mapMiniAppDataToUser?.(miniAppUser),
+            ...(await config.mapMiniAppDataToUser?.(miniAppUser)),
           },
           allowCreate: config.autoCreateUser && config.miniAppAllowAutoSignin,
           method: "telegram-mini-app",

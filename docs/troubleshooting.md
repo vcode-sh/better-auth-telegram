@@ -358,6 +358,7 @@ Check these:
 2. **The field is declared on the server**, in `betterAuth({ user: { additionalFields } })`. Declaring it only on the client (`inferAdditionalFields`) isn't enough: Better Auth drops unknown fields.
 3. **The field accepts input.** Fields with `input: false` are dropped, like on any OAuth sign-up.
 4. **`oidc.overrideUserInfoOnSignIn` is ignored** (the plugin warns at startup). Use `updateUserInfoOnSignIn`.
+5. **The mapper is async and the plugin is older than 3.1.1.** Before 3.1.1 an async mapper (OIDC, Login Widget or Mini App) lost every field it returned, and an error it threw didn't stop the sign-in. Upgrade.
 
 ### ID-token sign-in answers 401 or 404
 
