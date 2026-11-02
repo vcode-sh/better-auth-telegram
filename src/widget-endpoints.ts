@@ -68,7 +68,7 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
               ? `${data.first_name} ${data.last_name}`
               : data.first_name,
             image: data.photo_url,
-            ...config.mapTelegramDataToUser?.(data),
+            ...(await config.mapTelegramDataToUser?.(data)),
           },
           allowCreate: config.autoCreateUser,
           method: "telegram-login-widget",

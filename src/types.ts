@@ -95,10 +95,11 @@ export interface TelegramOIDCClaims {
 }
 
 /**
- * User fields returned by `mapOIDCProfileToUser`: the profile plus any
- * `user.additionalFields`.
+ * User fields returned by a user mapper (`mapTelegramDataToUser`,
+ * `mapMiniAppDataToUser`, `mapOIDCProfileToUser`): the profile plus any
+ * `user.additionalFields`. A mapper may return it in a Promise.
  */
-export interface TelegramOIDCMappedUser {
+export interface TelegramMappedUser {
   email?: string;
   image?: string;
   name?: string;
@@ -161,7 +162,7 @@ export interface TelegramOIDCOptions {
    */
   mapOIDCProfileToUser?: (
     claims: TelegramOIDCClaims
-  ) => TelegramOIDCMappedUser | Promise<TelegramOIDCMappedUser>;
+  ) => TelegramMappedUser | Promise<TelegramMappedUser>;
 
   /**
    * Request bot access (adds "telegram:bot_access" scope)
@@ -228,14 +229,13 @@ export interface TelegramPluginOptions {
   loginWidget?: boolean;
 
   /**
-   * Custom function to map Telegram data to user object
+   * Maps the verified Login Widget data to the user the plugin creates. May
+   * be async; throw an `APIError` to refuse the sign-in. `id` and
+   * `emailVerified` are ignored.
    */
-  mapTelegramDataToUser?: (data: TelegramAuthData) => {
-    name?: string;
-    email?: string;
-    image?: string;
-    [key: string]: any;
-  };
+  mapTelegramDataToUser?: (
+    data: TelegramAuthData
+  ) => TelegramMappedUser | Promise<TelegramMappedUser>;
 
   /**
    * Maximum age of auth_date in seconds
@@ -269,14 +269,13 @@ export interface TelegramPluginOptions {
     allowAutoSignin?: boolean;
 
     /**
-     * Custom function to map Mini App user data to user object
+     * Maps the verified Mini App user to the user the plugin creates. May be
+     * async; throw an `APIError` to refuse the sign-in. `id` and
+     * `emailVerified` are ignored.
      */
-    mapMiniAppDataToUser?: (data: TelegramMiniAppUser) => {
-      name?: string;
-      email?: string;
-      image?: string;
-      [key: string]: any;
-    };
+    mapMiniAppDataToUser?: (
+      data: TelegramMiniAppUser
+    ) => TelegramMappedUser | Promise<TelegramMappedUser>;
   };
 
   /**

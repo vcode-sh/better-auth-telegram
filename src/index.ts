@@ -22,11 +22,11 @@ export type { TelegramPluginConfig } from "./plugin-config";
 export type {
   TelegramAccountRecord,
   TelegramAuthData,
+  TelegramMappedUser,
   TelegramMiniAppChat,
   TelegramMiniAppData,
   TelegramMiniAppUser,
   TelegramOIDCClaims,
-  TelegramOIDCMappedUser,
   TelegramOIDCOptions,
   TelegramPluginOptions,
 } from "./types";

@@ -1,10 +1,5 @@
 import { DEFAULT_MAX_AUTH_AGE, ERROR_CODES } from "./constants";
-import type {
-  TelegramAuthData,
-  TelegramMiniAppUser,
-  TelegramOIDCOptions,
-  TelegramPluginOptions,
-} from "./types";
+import type { TelegramOIDCOptions, TelegramPluginOptions } from "./types";
 
 /**
  * Resolved configuration for the Telegram plugin.
@@ -15,18 +10,10 @@ export interface TelegramPluginConfig {
   autoCreateUser: boolean;
   botToken: string;
   botUsername: string;
-  mapMiniAppDataToUser?: (data: TelegramMiniAppUser) => {
-    name?: string;
-    email?: string;
-    image?: string;
-    [key: string]: any;
-  };
-  mapTelegramDataToUser?: (data: TelegramAuthData) => {
-    name?: string;
-    email?: string;
-    image?: string;
-    [key: string]: any;
-  };
+  mapMiniAppDataToUser?: NonNullable<
+    TelegramPluginOptions["miniApp"]
+  >["mapMiniAppDataToUser"];
+  mapTelegramDataToUser?: TelegramPluginOptions["mapTelegramDataToUser"];
   maxAuthAge: number;
   miniAppAllowAutoSignin: boolean;
   miniAppEnabled: boolean;

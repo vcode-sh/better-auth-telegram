@@ -161,6 +161,7 @@ export const auth = betterAuth({
 
 Rules, so there are no surprises:
 
+- **Mappers may be async**, so they can look the user up in your own data. Throw an `APIError` from `better-auth/api` to refuse the sign-in: nothing is created and the endpoint answers with the error's status. For OIDC that answer comes from the callback URL instead of a redirect to `errorCallbackURL`, as with Better Auth's built-in providers. See the [OIDC example](./oidc.md#what-gets-stored).
 - **Mappers run on every sign-in attempt.** Keep them safe to call again. Their mapped profile values are stored when a user is created; returning users keep their name, image and email. Verified Telegram identity fields are refreshed separately. For OIDC, `oidc.updateUserInfoOnSignIn: true` writes the name, image and mapped fields onto returning users too (never the email).
 - **Only known fields are kept.** Mapper output is filtered like a Better Auth OAuth profile: fields that aren't in your user schema, or that users may not set (`input: false`), are dropped. That includes the plugin's own `telegramId`, `telegramUsername` and `telegramPhoneNumber`, which the plugin fills itself.
 - **The Login Widget and Mini App mappers can't set `id` or `emailVerified`.** An email from a mapper is stored as unverified, because Telegram didn't verify it.

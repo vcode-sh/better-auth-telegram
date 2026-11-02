@@ -2,6 +2,7 @@
 /**
  * Login Widget and Mini App flows against a real Better Auth instance.
  */
+import { APIError } from "better-auth/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createClient,
@@ -914,5 +915,91 @@ describe("user mappers merge over the defaults", () => {
       name: "Ann Example",
       image: "https://t.me/i/userpic/320/ann.svg",
     });
+  });
+});
+
+// #53: apps write async mappers (a database lookup, say), as Better Auth
+// allows for mapProfileToUser. Catches: the mapper's Promise spread as if it
+// were the profile, which dropped every mapped field and let a rejection
+// escape instead of refusing the sign-in.
+describe("async user mappers", () => {
+  const appUser = {
+    user: {
+      additionalFields: { memberId: { type: "number", required: true } },
+    },
+  } as const;
+  const lookUp = async (id: number) => {
+    await Promise.resolve();
+    return { memberId: id * 10, name: "Ann From The App" };
+  };
+  const refuse = async (): Promise<Record<string, unknown>> => {
+    await Promise.resolve();
+    throw new APIError("FORBIDDEN", { message: "NOT_A_MEMBER" });
+  };
+
+  it("creates a Login Widget user with the mapped fields", async () => {
+    const { client, db } = createMemoryAuth(
+      { mapTelegramDataToUser: (data) => lookUp(data.id) },
+      appUser
+    );
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(200);
+    expect(db.user[0]).toMatchObject({
+      memberId: 420,
+      name: "Ann From The App",
+    });
+  });
+
+  it("refuses a Login Widget sign-in when the mapper throws", async () => {
+    const { client, db } = createMemoryAuth(
+      { mapTelegramDataToUser: refuse },
+      appUser
+    );
+
+    const response = await client.post("/telegram/signin", await widgetUser());
+
+    expect(response.status).toBe(403);
+    expect(response.text).toContain("NOT_A_MEMBER");
+    expect(client.hasSession()).toBe(false);
+    expect(db.user).toHaveLength(0);
+  });
+
+  it("creates a Mini App user with the mapped fields", async () => {
+    const { client, db } = createMemoryAuth(
+      {
+        miniApp: {
+          enabled: true,
+          mapMiniAppDataToUser: (user) => lookUp(user.id),
+        },
+      },
+      appUser
+    );
+
+    const response = await client.post("/telegram/miniapp/signin", {
+      initData: await signInitData({ id: 7 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(db.user[0]).toMatchObject({
+      memberId: 70,
+      name: "Ann From The App",
+    });
+  });
+
+  it("refuses a Mini App sign-in when the mapper throws", async () => {
+    const { client, db } = createMemoryAuth(
+      { miniApp: { enabled: true, mapMiniAppDataToUser: refuse } },
+      appUser
+    );
+
+    const response = await client.post("/telegram/miniapp/signin", {
+      initData: await signInitData({ id: 7 }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(client.hasSession()).toBe(false);
+    expect(db.user).toHaveLength(0);
   });
 });
