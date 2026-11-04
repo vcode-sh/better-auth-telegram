@@ -62,10 +62,12 @@ describe("OIDC links a proven Telegram identity", () => {
         account: { accountLinking },
       });
       await miniAppUser(client);
+      const sessionsBefore = db.session.length;
       const { callback } = await signInWithTelegramOIDC(client, provider);
       expect(callback.status).toBe(401);
       expect(callback.json.code).toBe("ACCOUNT_NOT_LINKED");
       expect(client.hasSession()).toBe(false);
+      expect(db.session).toHaveLength(sessionsBefore);
       expect(db.account).toHaveLength(1);
       expect(db.user).toHaveLength(1);
     }
@@ -84,13 +86,44 @@ describe("OIDC links a proven Telegram identity", () => {
         },
       });
       await miniAppUser(client);
+      const sessionsBefore = db.session.length;
       const { callback } = await signInWithTelegramOIDC(client, provider);
       expect(callback.status).toBe(403);
       expect(callback.json.code).toBe("APP_REFUSED");
       expect(client.hasSession()).toBe(false);
+      expect(db.session).toHaveLength(sessionsBefore);
       expect(db.account).toHaveLength(1);
     }
   );
+
+  it("fails closed before linking when the application policy service throws", async () => {
+    const { client, db } = createMemoryAuth(config(), {
+      user: {
+        validateUserInfo: ({ source }) => {
+          if (source.method === "oauth") {
+            throw new Error("policy service unavailable");
+          }
+        },
+      },
+    });
+    await miniAppUser(client);
+    const before = structuredClone({
+      users: db.user,
+      accounts: db.account,
+      sessions: db.session,
+    });
+
+    const { callback } = await signInWithTelegramOIDC(client, provider);
+
+    expect(callback.status).toBe(403);
+    expect(callback.json.code).toBe("validation_failed");
+    expect(client.hasSession()).toBe(false);
+    expect({
+      users: db.user,
+      accounts: db.account,
+      sessions: db.session,
+    }).toEqual(before);
+  });
 
   it("does not persist a link when an account creation hook refuses it", async () => {
     const { client, db } = createMemoryAuth(config(), {
@@ -115,27 +148,31 @@ describe("OIDC links a proven Telegram identity", () => {
     expect(db.account).toHaveLength(1);
   });
 
-  it("rejects an account hook that changes the authentication binding before it writes", async () => {
-    const { client, db } = createMemoryAuth(config(), {
-      databaseHooks: {
-        account: {
-          create: {
-            before: async (account) => {
-              await Promise.resolve();
-              if (account.providerId === "telegram-oidc") {
-                return { data: { ...account, accountId: "another-sub" } };
-              }
+  it.each(["accountId", "providerId", "userId"] as const)(
+    "rejects an account hook that changes %s without persisting the binding",
+    async (field) => {
+      const { client, db } = createMemoryAuth(config(), {
+        databaseHooks: {
+          account: {
+            create: {
+              before: async (account) => {
+                await Promise.resolve();
+                if (account.providerId === "telegram-oidc") {
+                  return { data: { ...account, [field]: "another-binding" } };
+                }
+              },
             },
           },
         },
-      },
-    });
-    await miniAppUser(client);
-    const { callback } = await signInWithTelegramOIDC(client, provider);
-    expect(callback.status).toBe(409);
-    expect(client.hasSession()).toBe(false);
-    expect(db.account).toHaveLength(1);
-  });
+      });
+      await miniAppUser(client);
+      const { callback } = await signInWithTelegramOIDC(client, provider);
+      expect(callback.status).toBe(409);
+      expect(callback.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
+      expect(client.hasSession()).toBe(false);
+      expect(db.account).toHaveLength(1);
+    }
+  );
 
   it("rechecks linked proof after application account hooks", async () => {
     const { client, db } = createMemoryAuth(config(), {
@@ -178,6 +215,7 @@ describe("OIDC links a proven Telegram identity", () => {
     });
     const { callback } = await signInWithTelegramOIDC(client, provider);
     expect(callback.status).toBe(409);
+    expect(callback.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
     expect(client.hasSession()).toBe(false);
     expect(db.account).toHaveLength(1);
   });
@@ -227,7 +265,7 @@ describe("OIDC links a proven Telegram identity", () => {
     });
     const original = await miniAppUser(client);
     const other = createClient(auth);
-    await other.post("/sign-up/email", {
+    const signedUp = await other.post("/sign-up/email", {
       email: "another@example.com",
       password: "correct-horse-battery",
       name: "Other",
@@ -243,6 +281,13 @@ describe("OIDC links a proven Telegram identity", () => {
     const linked = db.account.find(
       (account) => account.providerId === "telegram-oidc"
     )!;
+    expect(linked).toMatchObject({
+      userId: signedUp.json.user.id,
+      accountId: "12224742808376279442",
+    });
     expect(linked.userId).not.toBe(original.id);
+    expect((await other.get("/get-session")).json.user.id).toBe(
+      signedUp.json.user.id
+    );
   });
 });

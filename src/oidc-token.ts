@@ -40,11 +40,19 @@ export function createTelegramIdTokenVerifier(clientId: string) {
       requiredClaims: ID_TOKEN_REQUIRED_CLAIMS,
       clockTolerance: ID_TOKEN_CLOCK_TOLERANCE_SECONDS,
     });
+    // JOSE checks presence, not the subject's type. Reject unusable identities
+    // before mappers or cross-flow linking can perform application work.
+    if (typeof payload.sub !== "string" || !payload.sub.trim()) {
+      throw new Error("ID token has no subject");
+    }
     // OIDC Core 3.1.3.7: reject a token that also names audiences we don't
     // trust (jose only checks that ours is among them).
     if ([payload.aud].flat().some((audience) => audience !== clientId)) {
       throw new Error("ID token is also issued to another audience");
     }
+    // Only this client is trusted; expose the public string claim even when
+    // the issuer encoded that same audience as a one-element array.
+    payload.aud = clientId;
     if (expectedNonce !== undefined && payload.nonce !== expectedNonce) {
       throw new Error(
         "ID token nonce does not match the authorization request"

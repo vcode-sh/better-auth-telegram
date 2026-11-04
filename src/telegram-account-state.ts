@@ -1,11 +1,8 @@
 import type { GenericEndpointContext } from "@better-auth/core";
+import { getCurrentAdapter } from "@better-auth/core/context";
 import type { Account, User } from "better-auth";
 import { APIError } from "better-auth/api";
-import {
-  type ERROR_CODES,
-  PLUGIN_ID,
-  TELEGRAM_OIDC_PROVIDER_ID,
-} from "./constants";
+import { ERROR_CODES, PLUGIN_ID, TELEGRAM_OIDC_PROVIDER_ID } from "./constants";
 
 /** A Telegram user proven by a verified Login Widget or Mini App payload. */
 export interface TelegramIdentity {
@@ -84,21 +81,39 @@ export async function hasLinkedTelegramIdentity(
   );
 }
 
-/**
- * Looks the account up with `findOne` rather than Better Auth's
- * `findAccountByKey`, which throws when older versions left duplicate rows.
- */
-export function findTelegramAccount(
+/** Same-owner legacy duplicates are harmless; different owners are ambiguous. */
+export async function findTelegramAccount(
   ctx: GenericEndpointContext,
   telegramId: string
 ) {
-  return ctx.context.adapter.findOne<TelegramAccount>({
+  const adapter = await getCurrentAdapter(ctx.context.adapter);
+  const where = [
+    { field: "providerId", value: PLUGIN_ID },
+    { field: "accountId", value: telegramId },
+  ];
+  const [account, duplicate] = await adapter.findMany<TelegramAccount>({
     model: "account",
-    where: [
-      { field: "providerId", value: PLUGIN_ID },
-      { field: "accountId", value: telegramId },
-    ],
+    where,
+    limit: 2,
   });
+  if (!(account && duplicate)) {
+    return account ?? null;
+  }
+  // The common single-row case needs one read. Same-owner legacy duplicates
+  // need a separate check: the first two rows could hide a third owner.
+  if (
+    duplicate.userId !== account.userId ||
+    (await adapter.findOne({
+      model: "account",
+      where: [
+        ...where,
+        { field: "userId", value: account.userId, operator: "ne" },
+      ],
+    }))
+  ) {
+    throw APIError.from("CONFLICT", ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER);
+  }
+  return account;
 }
 
 /**

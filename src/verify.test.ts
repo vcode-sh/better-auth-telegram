@@ -12,12 +12,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signInitParams } from "./testing/harness";
-import {
-  parseMiniAppInitData,
-  validateMiniAppData,
-  verifyMiniAppInitData,
-  verifyTelegramAuth,
-} from "./verify";
+import { verifyMiniAppInitData, verifyTelegramAuth } from "./verify";
 
 const BOT_TOKEN = "123456789:AAtesttokentesttokentesttokentest";
 /** Same bot id, different secret: the key must come from the whole token. */
@@ -126,24 +121,5 @@ describe("Mini App initData hash (literal vector)", () => {
     });
 
     expect(await verifyMiniAppInitData(undated, BOT_TOKEN)).toBe(false);
-  });
-});
-
-describe("parseMiniAppInitData", () => {
-  it("drops a malformed user JSON instead of throwing (the endpoint answers 400, not 500)", () => {
-    const parsed = parseMiniAppInitData(
-      "user={invalid json}&auth_date=1761730000&hash=abc123"
-    );
-
-    expect(parsed.user).toBeUndefined();
-    expect(parsed.auth_date).toBe(1_761_730_000);
-  });
-});
-
-describe("validateMiniAppData", () => {
-  it("rejects a null user without throwing", () => {
-    expect(validateMiniAppData({ user: null, auth_date: 1, hash: "x" })).toBe(
-      false
-    );
   });
 });

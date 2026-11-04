@@ -103,8 +103,14 @@ describe("oidc.updateUserInfoOnSignIn", () => {
       telegramClaims({ name: "Ann Renamed" })
     );
 
+    const session = await client.get("/get-session");
     expect(location).toBe("/dashboard");
     expect(db.user[0]!.name).toBe("Ann Example");
+    expect(session.json.user).toMatchObject({
+      id: db.user[0]!.id,
+      name: "Ann Example",
+      nickname: "ann",
+    });
   });
 
   it("signs in with the stored profile when a field validator refuses it", async () => {
@@ -139,24 +145,32 @@ describe("oidc.updateUserInfoOnSignIn", () => {
     const { location } = await signInWithTelegramOIDC(
       client,
       telegramMock,
-      telegramClaims({ preferred_username: "ann_new" })
+      telegramClaims({ name: "Ann Renamed", preferred_username: "ann_new" })
     );
 
+    const session = await client.get("/get-session");
     expect(location).toBe("/dashboard");
-    expect(db.user[0]!.nickname).toBe("ann");
+    expect(db.user[0]).toMatchObject({ name: "Ann Example", nickname: "ann" });
+    expect(session.json.user).toMatchObject({
+      id: db.user[0]!.id,
+      name: "Ann Example",
+      nickname: "ann",
+    });
   });
 
-  it("writes nothing when the profile is unchanged", async () => {
+  it("updates changed structured profile values but skips equivalent values", async () => {
     const before = vi.fn();
-    const { client } = createMemoryAuth(
+    let joinedAt = "2026-01-01T00:00:00.000Z";
+    let theme = "dark";
+    const { client, db } = createMemoryAuth(
       {
         loginWidget: false,
         oidc: {
           ...oidc().oidc,
           updateUserInfoOnSignIn: true,
           mapOIDCProfileToUser: () => ({
-            joinedAt: new Date(0),
-            settings: { theme: "dark" },
+            joinedAt: new Date(joinedAt),
+            settings: { theme },
           }),
         },
       },
@@ -171,11 +185,32 @@ describe("oidc.updateUserInfoOnSignIn", () => {
       }
     );
     await signInWithTelegramOIDC(client, telegramMock);
+    const userId = db.user[0]!.id;
     client.clearCookies();
 
-    await signInWithTelegramOIDC(client, telegramMock);
+    const unchanged = await signInWithTelegramOIDC(client, telegramMock);
+    const unchangedSession = await client.get("/get-session");
 
+    expect(unchanged.location).toBe("/dashboard");
+    expect(unchangedSession.json.user).toMatchObject({
+      id: userId,
+      joinedAt: "2026-01-01T00:00:00.000Z",
+      settings: { theme: "dark" },
+    });
     expect(before).not.toHaveBeenCalled();
+
+    joinedAt = "2026-02-01T00:00:00.000Z";
+    theme = "light";
+    client.clearCookies();
+    const changed = await signInWithTelegramOIDC(client, telegramMock);
+    const changedSession = await client.get("/get-session");
+
+    expect(changed.location).toBe("/dashboard");
+    expect(changedSession.json.user).toMatchObject({
+      id: userId,
+      joinedAt: "2026-02-01T00:00:00.000Z",
+      settings: { theme: "light" },
+    });
   });
 
   // Better Auth writes its own profile updates only after validateUserInfo

@@ -42,9 +42,19 @@ describe.each(adapterLanes())("$name", (lane) => {
   });
 
   afterEach(async () => {
-    telegramMock.restore();
-    await Promise.all(opened.map((harness) => harness.close()));
+    telegramMock?.restore();
+    const closing = opened;
     opened = [];
+    const results = await Promise.allSettled(
+      closing.map((harness) => harness.close())
+    );
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length) {
+      throw new AggregateError(
+        failures.map((result) => result.reason),
+        "Adapter fixture cleanup failed"
+      );
+    }
   });
 
   const open = async (authOptions = {}, pluginOptions = {}) => {
@@ -108,21 +118,32 @@ describe.each(adapterLanes())("$name", (lane) => {
       });
     });
 
-    test("signs a Mini App user into the Login Widget user", async () => {
+    test("selects the matching Widget user for Mini App sign-in among different users", async () => {
       const { client, rows } = await open();
-      await client.post(
+      const unrelated = await client.post(
+        "/telegram/signin",
+        await signWidgetData({ id: 17, first_name: "Other" })
+      );
+      client.clearCookies();
+      const widget = await client.post(
         "/telegram/signin",
         await signWidgetData({ id: TELEGRAM_ID })
       );
+      expect([unrelated.status, widget.status]).toEqual([200, 200]);
+      expect(widget.json.user.id).not.toBe(unrelated.json.user.id);
       client.clearCookies();
 
       const response = await client.post("/telegram/miniapp/signin", {
         initData: await signInitData({ id: TELEGRAM_ID }),
       });
+      const session = await client.get("/get-session");
 
       expect(response.status).toBe(200);
-      expect(await rows("user")).toHaveLength(1);
-      expect(await rows("account")).toHaveLength(1);
+      expect(response.json.user.id).toBe(widget.json.user.id);
+      expect(response.json.session.userId).toBe(widget.json.user.id);
+      expect(session.json.user.id).toBe(widget.json.user.id);
+      expect(await rows("user")).toHaveLength(2);
+      expect(await rows("account")).toHaveLength(2);
     });
 
     test("copies the Telegram identity from OIDC, so the Mini App finds that user", async () => {
@@ -153,12 +174,37 @@ describe.each(adapterLanes())("$name", (lane) => {
       ]);
     });
 
+    test("stores an opaque OIDC subject without using it as an email local part", async () => {
+      const { client, rows } = await open();
+      const sub = "urn:telegram:user:42";
+      const { location } = await signInWithTelegramOIDC(
+        client,
+        telegramMock,
+        telegramClaims({ sub })
+      );
+      const session = await client.get("/get-session");
+
+      expect(location).toBe("/dashboard");
+      const [user] = await rows("user");
+      expect(session.json.user.id).toBe(user!.id);
+      const [local, domain] = user!.email.split("@");
+      expect(local.length).toBeLessThanOrEqual(64);
+      expect(domain).toBe("telegram-oidc.placeholder.invalid");
+      expect(await rows("account")).toEqual([
+        expect.objectContaining({
+          providerId: "telegram-oidc",
+          accountId: sub,
+          userId: user!.id,
+        }),
+      ]);
+    });
+
     test.each(["Login Widget", "Mini App"])(
       "signs the existing %s user in through OIDC without changing their email",
       async (method) => {
         const mappedEmail = () => ({ email: "ann@example.com" });
         const { client, rows } = await open(
-          {},
+          { account: { accountLinking: {} } },
           {
             mapTelegramDataToUser: mappedEmail,
             miniApp: {
@@ -212,7 +258,9 @@ describe.each(adapterLanes())("$name", (lane) => {
     );
 
     test("links concurrent first OIDC sign-ins to one existing Mini App user", async () => {
-      const { auth, client, rows } = await open();
+      const { auth, client, rows } = await open({
+        account: { accountLinking: {} },
+      });
       const first = await client.post("/telegram/miniapp/signin", {
         initData: await signInitData({ id: TELEGRAM_ID }),
       });
@@ -264,6 +312,60 @@ describe.each(adapterLanes())("$name", (lane) => {
       }
     );
 
+    // Drizzle/Prisma defaults do not roll back a write after a later guard throws.
+    // Check durable rows, with a valid second owner so foreign keys cannot hide a bad link.
+    test.each(["accountId", "providerId", "userId"] as const)(
+      "rejects account hooks changing OIDC %s without persisting a binding",
+      async (field) => {
+        let otherUserId = "";
+        const { auth, client, rows } = await open({
+          databaseHooks: {
+            account: {
+              create: {
+                before: (account: {
+                  providerId: string;
+                  [key: string]: unknown;
+                }) => {
+                  if (account.providerId === "telegram-oidc") {
+                    const replacement =
+                      field === "userId" ? otherUserId : "different-binding";
+                    return { data: { ...account, [field]: replacement } };
+                  }
+                },
+              },
+            },
+          },
+        });
+        const original = await client.post("/telegram/miniapp/signin", {
+          initData: await signInitData({ id: TELEGRAM_ID }),
+        });
+        expect(original.status).toBe(200);
+        const other = createClient(auth);
+        await signUp(other);
+        const otherSession = await other.get("/get-session");
+        expect(otherSession.status).toBe(200);
+        otherUserId = otherSession.json.user.id;
+        expect(otherUserId).not.toBe(original.json.user.id);
+        const before = {
+          users: await rows("user"),
+          accounts: await rows("account"),
+          sessions: await rows("session"),
+        };
+        client.clearCookies();
+
+        const { callback } = await signInWithTelegramOIDC(client, telegramMock);
+
+        expect(callback.status).toBe(409);
+        expect(callback.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
+        expect(client.hasSession()).toBe(false);
+        expect({
+          users: await rows("user"),
+          accounts: await rows("account"),
+          sessions: await rows("session"),
+        }).toEqual(before);
+      }
+    );
+
     test("links and unlinks Telegram, and unlinking revokes the telegramId sign-in", async () => {
       const { auth, client, rows } = await open();
       await signUp(client);
@@ -276,17 +378,31 @@ describe.each(adapterLanes())("$name", (lane) => {
       const unlink = await client.post("/telegram/unlink", {});
       // Unlinked: the Telegram user signs up anew instead of into Ann.
       const stranger = createClient(auth);
-      await stranger.post(
+      const newSignIn = await stranger.post(
         "/telegram/signin",
         await signWidgetData({ id: TELEGRAM_ID })
       );
+      const newSession = await stranger.get("/get-session");
 
-      expect([link.status, unlink.status]).toEqual([200, 200]);
+      expect([link.status, unlink.status, newSignIn.status]).toEqual([
+        200, 200, 200,
+      ]);
       expect(linked.telegramId).toBe("8306595751");
       const users = await rows("user");
       const ann = users.find((user) => user.email === "ann@example.com")!;
       expect(ann.telegramId ?? null).toBeNull();
       expect(users).toHaveLength(2);
+      expect(newSignIn.json.user.id).not.toBe(ann.id);
+      expect(newSession.json.user.id).toBe(newSignIn.json.user.id);
+      const accounts = await rows("account");
+      expect(
+        accounts
+          .filter((account) => account.userId === ann.id)
+          .map((account) => account.providerId)
+      ).toEqual(["credential"]);
+      expect(
+        accounts.find((account) => account.providerId === "telegram")?.userId
+      ).toBe(newSignIn.json.user.id);
     });
 
     test("clears telegramId when the OIDC account is unlinked through Better Auth", async () => {
@@ -358,8 +474,12 @@ describe.each(adapterLanes())("$name", (lane) => {
       expect(responses.map((response) => response.status)).toEqual([
         200, 200, 200, 200,
       ]);
-      expect(await first.rows("user")).toHaveLength(1);
+      const users = await first.rows("user");
+      expect(users).toHaveLength(1);
       expect(await first.rows("account")).toHaveLength(1);
+      expect(responses.map((response) => response.json.session.userId)).toEqual(
+        new Array(4).fill(users[0]!.id)
+      );
     });
   });
 
@@ -391,7 +511,9 @@ describe.each(adapterLanes())("$name", (lane) => {
             await signWidgetData({ id: TELEGRAM_ID })
           );
 
-          expect(self.status).toBe(200);
+          expect([self.status, foreign.status, again.status]).toEqual([
+            200, 409, 409,
+          ]);
           expect(foreign.json.code).toBe("TELEGRAM_ALREADY_LINKED_OTHER");
           expect(again.json.code).toBe("TELEGRAM_ALREADY_LINKED_SELF");
           expect(providers(await rows("account"))).toEqual([

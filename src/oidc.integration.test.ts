@@ -20,6 +20,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   telegramMock.restore();
+  vi.useRealTimers();
 });
 
 async function signUp(client: TestClient) {
@@ -54,17 +55,8 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
       name: "Ann Example",
       image: "https://t.me/i/userpic/320/ann.jpg",
       emailVerified: false,
+      email: "12224742808376279442@telegram-oidc.placeholder.invalid",
     });
-  });
-
-  it("gives users a non-routable placeholder email derived from sub", async () => {
-    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
-
-    await signInWithTelegramOIDC(client, telegramMock);
-
-    expect(db.user[0]!.email).toBe(
-      "12224742808376279442@telegram-oidc.placeholder.invalid"
-    );
   });
 
   it.each([{ trustedProviders: [] }, { trustedProviders: ["telegram-oidc"] }])(
@@ -102,12 +94,24 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
   );
 
   it("works on a SQL database with the schema Better Auth generates", async () => {
-    const { client, rows } = await createSqliteAuth(oidc());
+    const { client, rows, sqlite } = await createSqliteAuth(oidc());
+    try {
+      const { location } = await signInWithTelegramOIDC(client, telegramMock);
+      const session = await client.get("/get-session");
 
-    const { location } = await signInWithTelegramOIDC(client, telegramMock);
-
-    expect(location).toBe("/dashboard");
-    expect(rows("account")).toHaveLength(1);
+      expect(location).toBe("/dashboard");
+      expect(rows("user")).toHaveLength(1);
+      expect(rows("account")).toHaveLength(1);
+      expect(rows("session")).toHaveLength(1);
+      expect(rows("account")[0]).toMatchObject({
+        providerId: "telegram-oidc",
+        accountId: "12224742808376279442",
+        userId: rows("user")[0]!.id,
+      });
+      expect(session.json.user.id).toBe(rows("user")[0]!.id);
+    } finally {
+      sqlite.close();
+    }
   });
 
   it("authenticates to the token endpoint with HTTP Basic, not the body", async () => {
@@ -184,13 +188,20 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     expect(db.user).toHaveLength(0);
   });
 
-  it("reuses the cached JWKS across sign-ins", async () => {
-    const { client } = createMemoryAuth({ loginWidget: false, ...oidc() });
+  it("uses a previously verified key during a JWKS outage", async () => {
+    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
 
-    await signInWithTelegramOIDC(client, telegramMock);
+    const first = await signInWithTelegramOIDC(client, telegramMock);
+    const userId = db.user[0]!.id;
     client.clearCookies();
-    await signInWithTelegramOIDC(client, telegramMock);
+    telegramMock.setJwksStatus(503);
 
+    const cached = await signInWithTelegramOIDC(client, telegramMock);
+    const session = await client.get("/get-session");
+
+    expect(first.location).toBe("/dashboard");
+    expect(cached.location).toBe("/dashboard");
+    expect(session.json.user.id).toBe(userId);
     expect(telegramMock.jwksRequests).toBe(1);
   });
 
@@ -255,10 +266,18 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
   it("signs the same Telegram user back into the same account", async () => {
     const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
 
-    await signInWithTelegramOIDC(client, telegramMock);
+    const first = await signInWithTelegramOIDC(client, telegramMock);
+    const userId = db.user[0]!.id;
+    const firstSessionToken = db.session[0]!.token;
     client.clearCookies();
-    await signInWithTelegramOIDC(client, telegramMock);
 
+    const again = await signInWithTelegramOIDC(client, telegramMock);
+    const session = await client.get("/get-session");
+
+    expect(first.location).toBe("/dashboard");
+    expect(again.location).toBe("/dashboard");
+    expect(session.json.user.id).toBe(userId);
+    expect(session.json.session.token).not.toBe(firstSessionToken);
     expect(db.user).toHaveLength(1);
     expect(db.account).toHaveLength(1);
   });
@@ -396,24 +415,40 @@ describe("Telegram OIDC sign-in (authorization code flow)", () => {
     await signUp(victim);
     db.user[0]!.emailVerified = true;
     const attacker = createClient(auth);
+    const sessionCount = db.session.length;
 
     const { location } = await signInWithTelegramOIDC(attacker, telegramMock);
 
-    expect(location).not.toBe("/dashboard");
+    expect(location).toContain("error=account_not_linked");
+    expect(attacker.hasSession()).toBe(false);
+    expect(db.session).toHaveLength(sessionCount);
+    expect(db.user).toHaveLength(1);
     expect(
       db.account.filter((account) => account.providerId === "telegram-oidc")
     ).toHaveLength(0);
   });
 
-  it("signs in with an ID token that has only sub (EdDSA / ES256K bots drop profile claims)", async () => {
-    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
+  it("signs in with only sub and reports missing profile claims to the application's logger", async () => {
+    const diagnostics: [string, string][] = [];
+    const { client, db } = createMemoryAuth(
+      { loginWidget: false, ...oidc() },
+      {
+        logger: { log: (level, message) => diagnostics.push([level, message]) },
+      }
+    );
 
     const { location } = await signInWithTelegramOIDC(client, telegramMock, {
       sub: "12224742808376279442",
     });
+    const session = await client.get("/get-session");
 
     expect(location).toBe("/dashboard");
     expect(db.account[0]!.accountId).toBe("12224742808376279442");
+    expect(session.json.user.id).toBe(db.user[0]!.id);
+    expect(diagnostics).toContainEqual([
+      "warn",
+      expect.stringContaining("ID token has no profile claims"),
+    ]);
   });
 });
 
@@ -430,9 +465,14 @@ describe("Telegram OIDC sign-in with a client-submitted ID token", () => {
       idToken: { token, nonce: "n-1" },
     });
 
+    const session = await client.get("/get-session");
     expect(response.status).toBe(200);
-    expect(response.json.token).toBeTruthy();
-    expect(db.account[0]!.accountId).toBe("12224742808376279442");
+    expect(session.json.user.id).toBe(response.json.user.id);
+    expect(session.json.session.token).toBe(response.json.token);
+    expect(db.account[0]).toMatchObject({
+      accountId: "12224742808376279442",
+      userId: session.json.user.id,
+    });
   });
 
   it("rejects a token signed with a key that is not in Telegram's JWKS", async () => {
@@ -450,11 +490,15 @@ describe("Telegram OIDC sign-in with a client-submitted ID token", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(db.user).toHaveLength(0);
+    expect(response.json.code).toBe("INVALID_TOKEN");
+    expect([db.user.length, db.account.length, db.session.length]).toEqual([
+      0, 0, 0,
+    ]);
+    expect(client.hasSession()).toBe(false);
   });
 
   it("rejects a token whose nonce does not match", async () => {
-    const { client } = createMemoryAuth({ loginWidget: false, ...oidc() });
+    const { client, db } = createMemoryAuth({ loginWidget: false, ...oidc() });
     const token = await telegramMock.sign({ ...telegramClaims(), nonce: "a" });
 
     const response = await client.post("/sign-in/social", {
@@ -463,5 +507,10 @@ describe("Telegram OIDC sign-in with a client-submitted ID token", () => {
     });
 
     expect(response.status).toBe(401);
+    expect(response.json.code).toBe("INVALID_TOKEN");
+    expect([db.user.length, db.account.length, db.session.length]).toEqual([
+      0, 0, 0,
+    ]);
+    expect(client.hasSession()).toBe(false);
   });
 });

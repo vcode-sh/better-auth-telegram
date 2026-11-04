@@ -7,12 +7,26 @@ import { ERROR_CODES } from "./constants";
 import {
   accountData,
   assertValidUserInfo,
+  findTelegramAccount,
   type TelegramAccount,
   type TelegramIdentity,
   type TelegramProvisioningMethod,
   type TelegramProvisioningOptions,
   type TelegramUser,
 } from "./telegram-account-state";
+
+/** Application hooks may revoke or move the account while a sign-in is awaiting them. */
+async function requireAccountOwner(
+  ctx: GenericEndpointContext,
+  userId: string,
+  telegramId: string
+) {
+  const account = await findTelegramAccount(ctx, telegramId);
+  if (!account || account.userId !== userId) {
+    throw APIError.from("UNAUTHORIZED", ERROR_CODES.ACCOUNT_NOT_LINKED);
+  }
+  return account;
+}
 
 /** Keeps the stored Telegram username current (it can change at any time). */
 export async function refreshIdentity(
@@ -23,7 +37,8 @@ export async function refreshIdentity(
 ): Promise<TelegramUser> {
   // SQL adapters return null for a missing username, the identity has undefined.
   const username = identity.username ?? null;
-  if ((account.telegramUsername ?? null) !== username) {
+  const accountChanged = (account.telegramUsername ?? null) !== username;
+  if (accountChanged) {
     await ctx.context.internalAdapter.updateAccount(account.id, {
       telegramUsername: username,
     } as Partial<Account>);
@@ -39,14 +54,18 @@ export async function refreshIdentity(
     userUpdate.telegramUsername = username;
   }
   if (Object.keys(userUpdate).length === 0) {
+    if (accountChanged) {
+      await requireAccountOwner(ctx, user.id, identity.telegramId);
+    }
     return user;
   }
-  return (
+  const updated =
     ((await ctx.context.internalAdapter.updateUser(
       user.id,
       userUpdate
-    )) as TelegramUser | null) ?? user
-  );
+    )) as TelegramUser | null) ?? user;
+  await requireAccountOwner(ctx, user.id, identity.telegramId);
+  return updated;
 }
 
 /** Signs a returning Telegram user in through their `telegram` account. */
@@ -68,7 +87,14 @@ export async function signInWithAccount(
     "sign-in",
     method
   );
-  return await refreshIdentity(ctx, user, account, identity);
+  // The application gate may await work while an account is revoked. Its old
+  // lookup is no longer authority to create a new authenticated session.
+  const currentAccount = await requireAccountOwner(
+    ctx,
+    user.id,
+    identity.telegramId
+  );
+  return await refreshIdentity(ctx, user, currentAccount, identity);
 }
 
 /**

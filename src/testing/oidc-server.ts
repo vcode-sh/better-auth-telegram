@@ -39,7 +39,7 @@ export interface AuthorizeOptions {
 
 /**
  * Fake oauth.telegram.org. Intercepts `fetch` for the token and JWKS
- * endpoints; everything else falls through to the real `fetch`.
+ * endpoints. Unexpected requests fail instead of reaching a real network.
  */
 export async function mockTelegramOIDC(
   options: {
@@ -68,25 +68,24 @@ export async function mockTelegramOIDC(
   let jwksRequests = 0;
   let codeCounter = 0;
 
-  const realFetch = globalThis.fetch;
   const fetchSpy = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input, init) => {
       const { url } = new Request(input as RequestInfo);
-      if (url.startsWith(TELEGRAM_JWKS_URI)) {
+      if (url === TELEGRAM_JWKS_URI) {
         jwksRequests += 1;
         return jwksStatus === 200
           ? Response.json({ keys: [signingKey.jwk] })
           : new Response("Service Unavailable", { status: jwksStatus });
       }
-      if (url.startsWith(TELEGRAM_TOKEN_ENDPOINT)) {
+      if (url === TELEGRAM_TOKEN_ENDPOINT) {
         const request = new Request(input as RequestInfo, init);
         const body = new URLSearchParams(await request.text());
         const authorization = request.headers.get("authorization");
         tokenRequests.push({ authorization, body });
         return Response.json(await tokenResponse(authorization, body));
       }
-      return realFetch(input as RequestInfo, init);
+      throw new Error(`Unexpected network request in Telegram fixture: ${url}`);
     });
 
   /** Signs an ID token; `iss` / `aud` in `claims` override Telegram's. */
@@ -99,8 +98,8 @@ export async function mockTelegramOIDC(
       .setProtectedHeader({ alg, kid: signingKey.kid, typ: "JWT" })
       .setIssuer(claims.iss ?? TELEGRAM_ISSUER)
       .setAudience(claims.aud ?? clientId)
-      .setIssuedAt(now)
-      .setExpirationTime(now + 30)
+      .setIssuedAt(claims.iat ?? now)
+      .setExpirationTime(claims.exp ?? now + 30)
       .sign(key);
   }
 

@@ -1,28 +1,27 @@
-/**
- * Test-only: Better Auth on real databases for the adapter lane
- * (`npm run test:adapters`). Each database is read from an environment
- * variable; a database without one is skipped.
- *
- * Schemas come from Better Auth itself: its Kysely migrations for PostgreSQL
- * and MySQL, the `auth` CLI's generators for Drizzle and Prisma (then
- * drizzle-kit / prisma push them), none for MongoDB.
- */
-import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+/** Real database fixtures use Better Auth migrations and its generated ORM schemas. */
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
-import { prismaAdapter } from "@better-auth/prisma-adapter";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { generateDrizzleSchema, generatePrismaSchema } from "auth/api";
-import { betterAuth } from "better-auth";
+import { generateDrizzleSchema } from "auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { MongoClient } from "mongodb";
 import { createPool } from "mysql2/promise";
 import pg from "pg";
-import type { TelegramPluginOptions } from "../types";
-import { type AuthOptions, baseOptions, createClient } from "./harness";
+import { prismaLane } from "./adapter-prisma";
+import {
+  type AdapterAuth,
+  type AdapterLane,
+  generatedDirectory,
+  mysqlDatabase,
+  postgresDatabase,
+  uniqueName,
+  wrap,
+} from "./adapter-resources";
+import { baseOptions } from "./auth";
+
+export type { AdapterAuth, AdapterLane } from "./adapter-resources";
 
 export const ADAPTER_ENV = {
   postgres: "BAT_TEST_POSTGRES_URL",
@@ -30,80 +29,9 @@ export const ADAPTER_ENV = {
   mongodb: "BAT_TEST_MONGODB_URL",
 } as const;
 
-const GENERATED_DIR = join(
-  process.cwd(),
-  "node_modules",
-  ".cache",
-  "better-auth-telegram-adapters"
-);
-
-type Row = Record<string, any>;
-
-export interface AdapterAuth {
-  auth: ReturnType<typeof betterAuth>;
-  client: ReturnType<typeof createClient>;
-  close: () => Promise<void>;
-  options: AuthOptions;
-  /** Rows of a Better Auth model, read through the adapter (logical names). */
-  rows: (model: "user" | "account" | "session") => Promise<Row[]>;
-}
-
-export interface AdapterLane {
-  /**
-   * Two servers can't create the same Telegram user twice: the schema has
-   * unique indexes (MongoDB's has none) and the adapter writes the user and
-   * account in one transaction (Drizzle and Prisma only with
-   * `transaction: true`; this lane keeps their default, false).
-   */
-  concurrentServers: boolean;
-  create: (
-    pluginOptions?: Partial<TelegramPluginOptions>,
-    authOptions?: Partial<AuthOptions>
-  ) => Promise<AdapterAuth>;
-  /**
-   * `advanced.database.generateId` "serial" / "uuid" can run here (not on
-   * MongoDB; the Prisma client is generated once, for the default ids).
-   */
-  generatedIds: boolean;
-  name: string;
-  /** Skipped when the database URL is not set. */
-  url: string | undefined;
-}
-
-let databaseCounter = 0;
-const uniqueName = () => {
-  databaseCounter += 1;
-  return `bat_${process.pid}_${Date.now().toString(36)}_${databaseCounter}`;
-};
-
-async function wrap(
-  options: AuthOptions,
-  close: () => Promise<void>
-): Promise<AdapterAuth> {
-  const auth = betterAuth(options);
-  const context = await auth.$context;
-  return {
-    auth,
-    client: createClient(auth),
-    rows: (model) => context.adapter.findMany<Row>({ model }),
-    close,
-    options,
-  };
-}
-
-/** A second Better Auth instance ("server") on the same database. */
+/** A second Better Auth instance sharing the first instance's owned database. */
 export function attach(harness: AdapterAuth): Promise<AdapterAuth> {
   return wrap(harness.options, async () => undefined);
-}
-
-async function postgresDatabase(url: string) {
-  const name = uniqueName();
-  const admin = new pg.Pool({ connectionString: url, max: 1 });
-  await admin.query(`create database "${name}"`);
-  await admin.end();
-  const databaseURL = new URL(url);
-  databaseURL.pathname = `/${name}`;
-  return databaseURL.toString();
 }
 
 function postgresLane(url: string | undefined): AdapterLane {
@@ -113,16 +41,26 @@ function postgresLane(url: string | undefined): AdapterLane {
     concurrentServers: true,
     generatedIds: true,
     async create(pluginOptions = {}, authOptions = {}) {
-      const pool = new pg.Pool({
-        connectionString: await postgresDatabase(url!),
-        max: 10,
-      });
-      const options = {
-        ...baseOptions(pluginOptions, authOptions),
-        database: pool,
+      const database = await postgresDatabase(url!);
+      const pool = new pg.Pool({ connectionString: database.url, max: 10 });
+      const close = async () => {
+        try {
+          await pool.end();
+        } finally {
+          await database.drop();
+        }
       };
-      await (await getMigrations(options)).runMigrations();
-      return wrap(options, () => pool.end());
+      try {
+        const options = {
+          ...baseOptions(pluginOptions, authOptions),
+          database: pool,
+        };
+        await (await getMigrations(options)).runMigrations();
+        return await wrap(options, close);
+      } catch (error) {
+        await close();
+        throw error;
+      }
     },
   };
 }
@@ -134,26 +72,31 @@ function mysqlLane(url: string | undefined): AdapterLane {
     concurrentServers: true,
     generatedIds: true,
     async create(pluginOptions = {}, authOptions = {}) {
-      const name = uniqueName();
-      const admin = createPool({ uri: url!, connectionLimit: 1 });
-      await admin.query(
-        `create database \`${name}\` character set utf8mb4 collate utf8mb4_0900_ai_ci`
-      );
-      await admin.end();
-      const databaseURL = new URL(url!);
-      databaseURL.pathname = `/${name}`;
-      // Better Auth's MySQL docs: timezone "Z".
+      const database = await mysqlDatabase(url!);
+      // Match Better Auth's documented UTC timezone setting.
       const pool = createPool({
-        uri: databaseURL.toString(),
+        uri: database.url,
         timezone: "Z",
         connectionLimit: 10,
       });
-      const options = {
-        ...baseOptions(pluginOptions, authOptions),
-        database: pool,
+      const close = async () => {
+        try {
+          await pool.end();
+        } finally {
+          await database.drop();
+        }
       };
-      await (await getMigrations(options)).runMigrations();
-      return wrap(options, () => pool.end());
+      try {
+        const options = {
+          ...baseOptions(pluginOptions, authOptions),
+          database: pool,
+        };
+        await (await getMigrations(options)).runMigrations();
+        return await wrap(options, close);
+      } catch (error) {
+        await close();
+        throw error;
+      }
     },
   };
 }
@@ -166,17 +109,30 @@ function mongoLane(url: string | undefined): AdapterLane {
     generatedIds: false,
     async create(pluginOptions = {}, authOptions = {}) {
       const client = new MongoClient(url!);
-      await client.connect();
-      const db = client.db(uniqueName());
-      // `client` enables transactions (the container runs a replica set).
-      const options = {
-        ...baseOptions(pluginOptions, authOptions),
-        database: mongodbAdapter(db, { client }),
-      };
-      return wrap(options, async () => {
-        await db.dropDatabase();
+      try {
+        await client.connect();
+      } catch (error) {
         await client.close();
-      });
+        throw error;
+      }
+      const db = client.db(uniqueName());
+      const close = async () => {
+        try {
+          await db.dropDatabase();
+        } finally {
+          await client.close();
+        }
+      };
+      try {
+        const options = {
+          ...baseOptions(pluginOptions, authOptions),
+          database: mongodbAdapter(db, { client }),
+        };
+        return await wrap(options, close);
+      } catch (error) {
+        await close();
+        throw error;
+      }
     },
   };
 }
@@ -190,100 +146,39 @@ function drizzleLane(url: string | undefined): AdapterLane {
     async create(pluginOptions = {}, authOptions = {}) {
       const { drizzle } = await import("drizzle-orm/node-postgres");
       const { pushSchema } = await import("drizzle-kit/api");
-      const pool = new pg.Pool({
-        connectionString: await postgresDatabase(url!),
-        max: 10,
-      });
-      const plain = baseOptions(pluginOptions, authOptions);
-      // `npx auth generate` for Drizzle, written where drizzle-orm resolves.
-      const generated = await generateDrizzleSchema({
-        adapter: drizzleAdapter({}, { provider: "pg" })(plain),
-        options: plain,
-        file: "schema.ts",
-      });
-      mkdirSync(GENERATED_DIR, { recursive: true });
-      const file = join(GENERATED_DIR, `${uniqueName()}.drizzle.ts`);
-      writeFileSync(file, generated.code!);
-      const schema = await import(pathToFileURL(file).href);
-      const db = drizzle(pool, { schema });
-      const { apply } = await pushSchema(schema, db as any);
-      await apply();
-      const options = {
-        ...plain,
-        database: drizzleAdapter(db, { provider: "pg", schema }),
+      const database = await postgresDatabase(url!);
+      const pool = new pg.Pool({ connectionString: database.url, max: 10 });
+      const close = async () => {
+        try {
+          await pool.end();
+        } finally {
+          await database.drop();
+        }
       };
-      return wrap(options, () => pool.end());
-    },
-  };
-}
-
-/**
- * Prisma generates one client per schema, so this lane runs the default
- * options only and empties the tables between tests.
- */
-function prismaLane(url: string | undefined): AdapterLane {
-  let ready: Promise<{ PrismaClient: any; databaseURL: string }> | undefined;
-  const prepare = async () => {
-    const databaseURL = await postgresDatabase(url!);
-    const plain = baseOptions({ miniApp: { enabled: true } }, {});
-    mkdirSync(GENERATED_DIR, { recursive: true });
-    const schemaFile = join(GENERATED_DIR, "schema.prisma");
-    const clientDir = join(GENERATED_DIR, "prisma-client");
-    // The generator edits an existing file. Start from what `prisma init`
-    // writes for a new Prisma 7 app: the `prisma-client` generator needs an
-    // output directory, and the URL lives outside the schema.
-    rmSync(clientDir, { recursive: true, force: true });
-    writeFileSync(
-      schemaFile,
-      `generator client {\n  provider = "prisma-client"\n  output   = "./prisma-client"\n}\n\ndatasource db {\n  provider = "postgresql"\n}\n`
-    );
-    const generated = await generatePrismaSchema({
-      adapter: prismaAdapter({}, { provider: "postgresql" })(plain),
-      options: plain,
-      file: schemaFile,
-    });
-    writeFileSync(schemaFile, generated.code!);
-    const prisma = (...args: string[]) =>
-      execFileSync("npx", ["prisma", ...args, `--schema=${schemaFile}`], {
-        stdio: "pipe",
-      });
-    // A database created for this run: nothing to lose, so no
-    // --accept-data-loss.
-    prisma("db", "push", `--url=${databaseURL}`);
-    prisma("generate");
-    // This schema's client only exists after generate; a clean checkout's
-    // type-check must not depend on a previously generated database client.
-    const { PrismaClient } = await import(
-      pathToFileURL(join(clientDir, "client.ts")).href
-    );
-    return { PrismaClient, databaseURL };
-  };
-  return {
-    name: "Prisma (PostgreSQL)",
-    url,
-    concurrentServers: false,
-    generatedIds: false,
-    async create(pluginOptions = {}, authOptions = {}) {
-      ready ??= prepare();
-      const { PrismaClient, databaseURL } = await ready;
-      const prisma = new PrismaClient({
-        adapter: new PrismaPg({ connectionString: databaseURL }),
-      });
-      // Children first: session and account reference user.
-      await prisma.$transaction([
-        prisma.session.deleteMany(),
-        prisma.account.deleteMany(),
-        prisma.verification.deleteMany(),
-        prisma.user.deleteMany(),
-      ]);
-      const options = {
-        ...baseOptions(
-          { miniApp: { enabled: true }, ...pluginOptions },
-          authOptions
-        ),
-        database: prismaAdapter(prisma, { provider: "postgresql" }),
-      };
-      return wrap(options, () => prisma.$disconnect());
+      try {
+        const plain = baseOptions(pluginOptions, authOptions);
+        const generated = await generateDrizzleSchema({
+          adapter: drizzleAdapter({}, { provider: "pg" })(plain),
+          options: plain,
+          file: "schema.ts",
+        });
+        const file = join(generatedDirectory(), `${uniqueName()}.drizzle.ts`);
+        writeFileSync(file, generated.code!);
+        const schema = await import(pathToFileURL(file).href);
+        const db = drizzle(pool, { schema });
+        const { apply } = await pushSchema(schema, db as any);
+        await apply();
+        return await wrap(
+          {
+            ...plain,
+            database: drizzleAdapter(db, { provider: "pg", schema }),
+          },
+          close
+        );
+      } catch (error) {
+        await close();
+        throw error;
+      }
     },
   };
 }

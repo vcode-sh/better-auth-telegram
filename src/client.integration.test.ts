@@ -66,32 +66,16 @@ function setup() {
 }
 
 type Setup = ReturnType<typeof setup>;
+const sessionSubscriptions: (() => void)[] = [];
 
 afterEach(() => {
+  for (const unsubscribe of sessionSubscriptions.splice(0)) {
+    unsubscribe();
+  }
   vi.unstubAllGlobals();
 });
 
 describe("client actions against the real server", () => {
-  it("signInWithTelegram signs the Telegram user in", async () => {
-    const { client } = setup();
-
-    const { data, error } = await client.signInWithTelegram(
-      (await signWidgetData({ id: 42 })) as any
-    );
-
-    expect(error).toBeNull();
-    expect((data as any).user.telegramId).toBe("42");
-  });
-
-  it("signInWithTelegram surfaces the server's 400 for an unsigned payload", async () => {
-    const { client } = setup();
-
-    const { data, error } = await client.signInWithTelegram({ id: 42 } as any);
-
-    expect(data).toBeNull();
-    expect(error?.status).toBe(400);
-  });
-
   it("linkTelegram and unlinkTelegram change the signed-in user's accounts", async () => {
     const { client, db, signUp } = setup();
     await signUp();
@@ -126,23 +110,20 @@ describe("client actions against the real server", () => {
   it("getTelegramConfig returns the server's bot username", async () => {
     const { client } = setup();
 
-    const { data } = await client.getTelegramConfig();
+    const { data, error } = await client.getTelegramConfig();
 
-    expect(data?.botUsername).toBe("test_bot");
+    expect(error).toBeNull();
+    expect(data).toEqual({
+      botUsername: "test_bot",
+      loginWidgetEnabled: true,
+      miniAppEnabled: true,
+      oidcEnabled: true,
+      testMode: false,
+    });
   });
 
-  it("signInWithMiniApp signs the Mini App user in", async () => {
-    const { client } = setup();
-
-    const { data } = await client.signInWithMiniApp(
-      await signInitData({ id: 7 })
-    );
-
-    expect((data as any).user.telegramId).toBe("7");
-  });
-
-  it("validateMiniApp reports valid initData with the parsed user", async () => {
-    const { client } = setup();
+  it("validateMiniApp parses valid data without signing the user in", async () => {
+    const { client, db } = setup();
 
     const { data } = await client.validateMiniApp(
       await signInitData({ id: 7 })
@@ -150,27 +131,24 @@ describe("client actions against the real server", () => {
 
     expect(data?.valid).toBe(true);
     expect(data?.data.user.id).toBe(7);
+    expect([db.user.length, db.account.length, db.session.length]).toEqual([
+      0, 0, 0,
+    ]);
   });
 
-  it("autoSignInFromMiniApp signs in with Telegram.WebApp.initData", async () => {
-    const { client } = setup();
-    vi.stubGlobal("window", {
-      Telegram: { WebApp: { initData: await signInitData({ id: 7 }) } },
-      location: { hash: "" },
-    });
-
-    const { data } = await client.autoSignInFromMiniApp();
-
-    expect((data as any).user.telegramId).toBe("7");
-  });
-
-  it("signInWithTelegramOIDC returns Telegram's authorization URL to redirect to", async () => {
-    const { client } = setup();
+  it("signInWithTelegramOIDC forwards both callback URLs to the social-login protocol", async () => {
+    const { client, requests } = setup();
 
     const { data } = await client.signInWithTelegramOIDC({
       callbackURL: "/dashboard",
+      errorCallbackURL: "/login",
     });
 
+    expect(await requests[0]!.json()).toEqual({
+      provider: "telegram-oidc",
+      callbackURL: "/dashboard",
+      errorCallbackURL: "/login",
+    });
     expect((data as any).redirect).toBe(true);
     expect((data as any).url).toMatch(
       /^https:\/\/oauth\.telegram\.org\/auth\?/u
@@ -188,10 +166,10 @@ describe("the session store follows Telegram sign-in, link and unlink", () => {
    */
   async function watchSession(client: Setup["client"]) {
     const unsubscribe = client.useSession.subscribe(() => undefined);
+    sessionSubscriptions.push(unsubscribe);
     await client.useSession.get().refetch();
     return {
       telegramId: () => client.useSession.get().data?.user.telegramId ?? null,
-      unsubscribe,
     };
   }
 
@@ -214,7 +192,9 @@ describe("the session store follows Telegram sign-in, link and unlink", () => {
       async (client) => {
         vi.stubGlobal("window", {
           Telegram: { WebApp: { initData: await signInitData({ id: 42 }) } },
-          location: { hash: "" },
+          location: {
+            hash: `#tgWebAppData=${encodeURIComponent(await signInitData({ id: 99 }))}`,
+          },
         });
         return client.autoSignInFromMiniApp();
       },
@@ -228,10 +208,77 @@ describe("the session store follows Telegram sign-in, link and unlink", () => {
     const { client } = setup();
     const session = await watchSession(client);
 
-    await signIn(client);
+    const result = (await signIn(client)) as {
+      data: { user: { telegramId: string } };
+      error: unknown;
+    };
 
+    expect(result.error).toBeNull();
+    expect(result.data.user.telegramId).toBe("42");
     await settles(() => expect(session.telegramId()).toBe("42"));
-    session.unsubscribe();
+  });
+
+  it("disableSignal keeps the mounted session unchanged until an explicit refresh", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { client, requests } = setup();
+      const session = await watchSession(client);
+      const requestCount = requests.length;
+
+      const response = await client.signInWithTelegram(
+        (await signWidgetData({ id: 42 })) as any,
+        { disableSignal: true }
+      );
+      // Better Auth schedules signal-driven refreshes after the action resolves.
+      await vi.runOnlyPendingTimersAsync();
+
+      expect(response.error).toBeNull();
+      expect(response.data?.user.telegramId).toBe("42");
+      expect(
+        requests
+          .slice(requestCount)
+          .map((request) => new URL(request.url).pathname)
+      ).toEqual(["/api/auth/telegram/signin"]);
+      expect(session.telegramId()).toBeNull();
+      await client.useSession.get().refetch();
+      expect(session.telegramId()).toBe("42");
+    } finally {
+      for (const unsubscribe of sessionSubscriptions.splice(0)) {
+        unsubscribe();
+      }
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+    }
+  });
+
+  it("a rejected sign-in returns the error without refreshing or changing the session", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { client, requests, db } = setup();
+      const session = await watchSession(client);
+      const requestCount = requests.length;
+
+      const response = await client.signInWithTelegram({ id: 42 } as any);
+      await vi.runOnlyPendingTimersAsync();
+
+      expect(response.data).toBeNull();
+      expect(response.error?.code).toBe("INVALID_AUTH_DATA");
+      expect(
+        requests
+          .slice(requestCount)
+          .map((request) => new URL(request.url).pathname)
+      ).toEqual(["/api/auth/telegram/signin"]);
+      expect(session.telegramId()).toBeNull();
+      expect([db.user.length, db.account.length, db.session.length]).toEqual([
+        0, 0, 0,
+      ]);
+    } finally {
+      for (const unsubscribe of sessionSubscriptions.splice(0)) {
+        unsubscribe();
+      }
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+    }
   });
 
   it("linkTelegram and unlinkTelegram update session.user", async () => {
@@ -247,7 +294,6 @@ describe("the session store follows Telegram sign-in, link and unlink", () => {
     await settles(() => expect(session.telegramId()).toBe("42"));
     await client.unlinkTelegram();
     await settles(() => expect(session.telegramId()).toBeNull());
-    session.unsubscribe();
   });
 });
 

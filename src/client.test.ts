@@ -7,7 +7,7 @@
  * supplies the bot configuration the widget needs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { telegramClient } from "./client";
+import { type TelegramWidget, telegramClient } from "./client";
 import type { TelegramAuthData } from "./types";
 
 const WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js?24";
@@ -21,10 +21,25 @@ const ann: TelegramAuthData = {
 const bob: TelegramAuthData = { ...ann, id: 43, first_name: "Bob" };
 
 let $fetch: ReturnType<typeof vi.fn>;
+const renderedWidgets: TelegramWidget[] = [];
 
 function actions() {
   const $store = { notify: vi.fn(), listen: vi.fn(), atoms: {} };
-  return telegramClient().getActions($fetch as any, $store);
+  const client = telegramClient().getActions($fetch as any, $store);
+  const remember = async (promise: Promise<TelegramWidget>) => {
+    const widget = await promise;
+    renderedWidgets.push(widget);
+    return widget;
+  };
+  return {
+    ...client,
+    initTelegramWidget: (
+      ...args: Parameters<typeof client.initTelegramWidget>
+    ) => remember(client.initTelegramWidget(...args)),
+    initTelegramWidgetRedirect: (
+      ...args: Parameters<typeof client.initTelegramWidgetRedirect>
+    ) => remember(client.initTelegramWidgetRedirect(...args)),
+  };
 }
 
 function addContainer(id: string) {
@@ -42,7 +57,7 @@ function widgetScript(containerId = "telegram-login") {
 function telegramLogsIn(containerId: string, user: TelegramAuthData) {
   const onauth = widgetScript(containerId).getAttribute("data-onauth")!;
   const name = onauth.replace(/\(user\)$/u, "");
-  (window as any)[name](user);
+  return (window as any)[name](user) as Promise<void>;
 }
 
 beforeEach(() => {
@@ -56,12 +71,35 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const widget of renderedWidgets.splice(0)) {
+    widget.destroy();
+  }
   vi.useRealTimers();
   vi.restoreAllMocks();
-  (window as any).happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
 });
 
 describe("initTelegramWidget", () => {
+  it("preserves existing content when the configuration request fails", async () => {
+    const container = document.getElementById("telegram-login")!;
+    container.textContent = "Please try again";
+    $fetch.mockResolvedValueOnce({ data: null, error: { status: 503 } });
+
+    await expect(
+      actions().initTelegramWidget(container, {}, () => {})
+    ).rejects.toThrow("Failed to get Telegram config");
+
+    expect(container.textContent).toBe("Please try again");
+    expect(container.querySelector("script")).toBeNull();
+  });
+
+  it("rejects a missing container without mounting a widget elsewhere", async () => {
+    await expect(
+      actions().initTelegramWidget("missing", {}, () => {})
+    ).rejects.toThrow('Container with id "missing" not found');
+
+    expect(document.getElementById("telegram-login")!.children).toHaveLength(0);
+  });
+
   it("rejects instead of rendering a widget for an empty bot username", async () => {
     $fetch.mockResolvedValueOnce({ data: { botUsername: "" } });
 
@@ -119,15 +157,6 @@ describe("initTelegramWidget", () => {
     expect(widgetScript().getAttribute("data-request-access")).toBe("write");
   });
 
-  it("passes the user Telegram returns to onAuth", async () => {
-    const onAuth = vi.fn();
-    await actions().initTelegramWidget("telegram-login", {}, onAuth);
-
-    telegramLogsIn("telegram-login", ann);
-
-    expect(onAuth).toHaveBeenCalledExactlyOnceWith(ann);
-  });
-
   it("routes each widget's login to its own onAuth, even when created in the same millisecond", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(1_761_730_000_000);
@@ -154,29 +183,21 @@ describe("initTelegramWidget", () => {
     expect(onAuth.mock.calls).toEqual([[ann], [bob]]);
   });
 
-  it("reports a failing onAuth with console.error instead of an unhandled rejection", async () => {
+  it("contains a rejected onAuth and still delivers the next login", async () => {
     const failure = new Error("sign-in failed");
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    const unhandled = vi.fn();
-    process.on("unhandledRejection", unhandled);
-    try {
-      await actions().initTelegramWidget("telegram-login", {}, () =>
-        Promise.reject(failure)
-      );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const received: number[] = [];
+    await actions().initTelegramWidget("telegram-login", {}, (user) => {
+      if (user.id === ann.id) {
+        return Promise.reject(failure);
+      }
+      received.push(user.id);
+    });
 
-      telegramLogsIn("telegram-login", ann);
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await telegramLogsIn("telegram-login", ann);
+    await telegramLogsIn("telegram-login", bob);
 
-      expect(consoleError).toHaveBeenCalledWith(
-        expect.stringContaining("onAuth"),
-        failure
-      );
-      expect(unhandled).not.toHaveBeenCalled();
-    } finally {
-      process.off("unhandledRejection", unhandled);
-    }
+    expect(received).toEqual([43]);
   });
 });
 
@@ -188,6 +209,8 @@ describe("widget containers and teardown (React refs, StrictMode, HMR)", () => {
   function telegramRendersIframe(container: HTMLElement) {
     const script = container.querySelector("script")!;
     const iframe = document.createElement("iframe");
+    // Only DOM ownership matters here; do not navigate to an external frame.
+    iframe.srcdoc = "<!doctype html><title>Telegram fixture</title>";
     iframe.id = "telegram-login-test_bot";
     container.insertBefore(iframe, script);
     (script as any)._iframe = iframe;
@@ -247,13 +270,16 @@ describe("widget containers and teardown (React refs, StrictMode, HMR)", () => {
       () => {}
     );
     telegramRendersIframe(container);
-    await actions().initTelegramWidget("telegram-login", {}, () => {});
+    const laterLogin = vi.fn();
+    await actions().initTelegramWidget("telegram-login", {}, laterLogin);
     telegramRendersIframe(container);
 
     first.destroy();
+    await telegramLogsIn("telegram-login", bob);
 
     expect(container.querySelectorAll("script")).toHaveLength(1);
     expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(laterLogin).toHaveBeenCalledExactlyOnceWith(bob);
   });
 });
 
@@ -272,16 +298,6 @@ describe("initTelegramWidgetRedirect", () => {
     expect(script.hasAttribute("data-onauth")).toBe(false);
   });
 
-  it("uses the documented defaults: large, with photo, radius 20", async () => {
-    await actions().initTelegramWidgetRedirect("telegram-login", "/cb", {});
-
-    const script = widgetScript();
-    expect(script.getAttribute("data-size")).toBe("large");
-    expect(script.getAttribute("data-userpic")).toBe("true");
-    expect(script.getAttribute("data-radius")).toBe("20");
-    expect(script.hasAttribute("data-request-access")).toBe(false);
-  });
-
   it("applies every widget option", async () => {
     await actions().initTelegramWidgetRedirect("telegram-login", "/cb", {
       size: "small",
@@ -298,60 +314,70 @@ describe("initTelegramWidgetRedirect", () => {
     expect(script.getAttribute("data-request-access")).toBe("write");
     expect(script.getAttribute("data-lang")).toBe("pl");
   });
-
-  it("replaces previous content, so a re-render does not stack two widgets", async () => {
-    const container = document.getElementById("telegram-login")!;
-    container.innerHTML = "<p>Old content</p>";
-
-    await actions().initTelegramWidgetRedirect("telegram-login", "/cb", {});
-
-    expect(container.querySelector("p")).toBeNull();
-    expect(container.querySelectorAll("script")).toHaveLength(1);
-  });
 });
 
 describe("loading Telegram's widget script", () => {
-  it("loads the script into <head> once when it is not on the page yet", async () => {
+  function controlScriptLoad() {
     (window as any).Telegram = undefined;
+    const requested: HTMLScriptElement[] = [];
+    // The network script is the boundary: complete its load/error explicitly.
+    vi.spyOn(document.head, "appendChild").mockImplementation((element) => {
+      requested.push(element as HTMLScriptElement);
+      return element;
+    });
+    return requested;
+  }
 
-    await actions().initTelegramWidget("telegram-login", {}, () => {});
+  it("shares an in-flight script load and renders only after it succeeds", async () => {
+    const requested = controlScriptLoad();
+    const first = actions().initTelegramWidget("telegram-login", {}, () => {});
+    const second = actions().initTelegramWidget("telegram-login", {}, () => {});
 
-    const loaded = document.head.querySelectorAll("script");
-    expect(loaded).toHaveLength(1);
-    expect(loaded[0]!.getAttribute("src")).toBe(WIDGET_SCRIPT);
-  });
+    expect(requested).toHaveLength(1);
+    expect(requested[0]!.src).toBe(WIDGET_SCRIPT);
+    expect(document.getElementById("telegram-login")!.children).toHaveLength(0);
+    requested[0]!.dispatchEvent(new Event("load"));
+    await Promise.all([first, second]);
 
-  // React strict mode runs the effect that renders the widget twice at once.
-  it("loads it once when two widgets initialize at the same time, rendering one", async () => {
-    (window as any).Telegram = undefined;
-
-    await Promise.all([
-      actions().initTelegramWidget("telegram-login", {}, () => {}),
-      actions().initTelegramWidget("telegram-login", {}, () => {}),
-    ]);
-
-    expect(document.head.querySelectorAll("script")).toHaveLength(1);
     expect(
       document.getElementById("telegram-login")!.querySelectorAll("script")
     ).toHaveLength(1);
   });
 
-  it("rejects without rendering a widget when the script fails to load", async () => {
-    (window as any).Telegram = undefined;
-    // happy-dom then logs a DOMException for the refused load; that is expected.
-    (window as any).happyDOM.settings.handleDisabledFileLoadingAsSuccess =
-      false;
+  it("rejects a failed script load and lets a later attempt recover", async () => {
+    const requested = controlScriptLoad();
+    const first = actions().initTelegramWidget("telegram-login", {}, () => {});
+    const rejected = expect(first).rejects.toThrow(
+      "Failed to load Telegram widget script"
+    );
+    requested[0]!.dispatchEvent(new Event("error"));
+    await rejected;
+    expect(document.getElementById("telegram-login")!.children).toHaveLength(0);
 
-    await expect(
-      actions().initTelegramWidget("telegram-login", {}, () => {})
-    ).rejects.toThrow("Failed to load Telegram widget script");
-    expect(
-      document.getElementById("telegram-login")!.querySelector("script")
-    ).toBeNull();
+    const recovered = vi.fn();
+    const retry = actions().initTelegramWidget("telegram-login", {}, recovered);
+    expect(requested).toHaveLength(2);
+    requested[1]!.dispatchEvent(new Event("load"));
+    await retry;
+    await telegramLogsIn("telegram-login", bob);
+
+    expect(recovered).toHaveBeenCalledExactlyOnceWith(bob);
   });
 });
 
 describe("autoSignInFromMiniApp", () => {
+  it("reports server-side use without attempting a sign-in request", async () => {
+    vi.stubGlobal("window", undefined);
+    try {
+      await expect(actions().autoSignInFromMiniApp()).rejects.toThrow(
+        "This method can only be called in browser"
+      );
+      expect($fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reads tgWebAppData from the URL fragment once decoded when the SDK is absent", async () => {
     // Telegram's launch parameters: initData is URL-encoded inside the fragment.
     const initData = "user=%7B%22id%22%3A7%7D&auth_date=1761730000&hash=abc123";

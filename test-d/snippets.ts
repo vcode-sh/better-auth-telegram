@@ -276,13 +276,12 @@ export const membersOnly = telegram({
     enabled: true,
     clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
-    // memberId is declared in betterAuth({ user: { additionalFields } })
     mapOIDCProfileToUser: async (claims) => {
       const member = await findMemberByTelegramId(claims.id);
       if (!member) {
         throw new APIError("FORBIDDEN", { message: "NOT_A_MEMBER" });
       }
-      return { memberId: member.id, name: member.name };
+      return { name: member.name };
     },
   },
 });

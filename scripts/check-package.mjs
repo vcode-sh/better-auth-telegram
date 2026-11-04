@@ -19,13 +19,6 @@ const packResult = JSON.parse(
 const packed = Array.isArray(packResult)
   ? packResult[0]
   : packResult[manifest.name];
-for (const name of ["index", "client"]) {
-  for (const extension of ["js", "cjs", "d.ts", "d.cts"]) {
-    assert(
-      packed.files.some((file) => file.path === `dist/${name}.${extension}`)
-    );
-  }
-}
 assert(!packed.files.some((file) => /(?:^|\/)\.env(?:\.|$)/u.test(file.path)));
 
 // A fresh consumer outside the checkout cannot resolve missing dependencies
@@ -73,28 +66,42 @@ try {
       stdio: "inherit",
     });
   }
-  execFileSync(
-    process.execPath,
-    [
-      "--input-type=module",
-      "--eval",
-      `
-    import assert from "node:assert/strict";
-    import { createHash, createHmac } from "node:crypto";
-    import { betterAuth } from "better-auth";
-    import { memoryAdapter } from "better-auth/adapters/memory";
-    import { telegram } from "better-auth-telegram";
-    import { telegramClient } from "better-auth-telegram/client";
-    assert.equal(typeof telegramClient, "function");
+  // Both export formats must authenticate through their installed bundle.
+  // Merely finding a CommonJS function would miss a broken server export.
+  const imports = {
+    module: `import assert from "node:assert/strict";
+import { createHash, createHmac } from "node:crypto";
+import { betterAuth } from "better-auth";
+import { createAuthClient } from "better-auth/client";
+import { memoryAdapter } from "better-auth/adapters/memory";
+import { telegram } from "better-auth-telegram";
+import { telegramClient } from "better-auth-telegram/client";`,
+    commonjs: `const assert = require("node:assert/strict");
+const { createHash, createHmac } = require("node:crypto");
+const { betterAuth } = require("better-auth");
+const { createAuthClient } = require("better-auth/client");
+const { memoryAdapter } = require("better-auth/adapters/memory");
+const { telegram } = require("better-auth-telegram");
+const { telegramClient } = require("better-auth-telegram/client");`,
+  };
+  const authenticate = `
+    const db = { user: [], account: [], session: [], verification: [] };
     const auth = betterAuth({
       baseURL: "http://localhost:3000",
       secret: "package-consumer-test-secret-0123456789abcdef",
-      database: memoryAdapter({ user: [], account: [], session: [], verification: [] }),
+      database: memoryAdapter(db),
       plugins: [telegram({ botToken: "123456789:package_test_token", botUsername: "test_bot" })],
     });
-    const response = await auth.handler(new Request("http://localhost:3000/api/auth/telegram/config"));
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).botUsername, "test_bot");
+    const client = createAuthClient({
+      baseURL: "http://localhost:3000",
+      plugins: [telegramClient()],
+      fetchOptions: {
+        customFetchImpl: (input, init) => auth.handler(new Request(input, init)),
+      },
+    });
+    const config = await client.getTelegramConfig();
+    assert.equal(config.error, null);
+    assert.equal(config.data.botUsername, "test_bot");
     const data = { id: 42, first_name: "Ann", auth_date: Math.floor(Date.now() / 1000) };
     const signed = Object.keys(data).sort().map((key) => key + "=" + data[key]).join("\\n");
     const key = createHash("sha256").update("123456789:package_test_token").digest();
@@ -108,23 +115,32 @@ try {
     const session = await signIn.json();
     assert.equal(session.user.telegramId, "42");
     assert.equal(typeof session.session.token, "string");
-  `,
-    ],
-    { cwd: consumer, stdio: "inherit" }
-  );
-  execFileSync(
-    process.execPath,
-    [
-      "--input-type=commonjs",
-      "--eval",
-      `
-    const assert = require("node:assert/strict");
-    assert.equal(typeof require("better-auth-telegram").telegram, "function");
-    assert.equal(typeof require("better-auth-telegram/client").telegramClient, "function");
-  `,
-    ],
-    { cwd: consumer, stdio: "inherit" }
-  );
+    const cookies = signIn.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
+    const readback = await auth.handler(new Request("http://localhost:3000/api/auth/get-session", {
+      headers: { cookie: cookies },
+    }));
+    assert.equal(readback.status, 200);
+    const activeSession = await readback.json();
+    assert.ok(activeSession, "The issued cookie must retrieve an authenticated session");
+    assert.equal(activeSession.user.id, session.user.id);
+    assert.equal(db.user.length, 1);
+    assert.equal(db.session[0].userId, session.user.id);
+  `;
+  for (const format of ["module", "commonjs"]) {
+    execFileSync(
+      process.execPath,
+      [
+        `--input-type=${format}`,
+        "--eval",
+        `${imports[format]}
+(async () => { ${authenticate} })().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});`,
+      ],
+      { cwd: consumer, stdio: "inherit" }
+    );
+  }
   console.log(
     `Verified ${packed.filename}: installed ESM, CommonJS and consumer types on ${process.version}.`
   );

@@ -136,7 +136,7 @@ A new OIDC user gets:
 
 - **name**: the `name` claim, or given name + family name, or the username.
 - **image**: the `picture` claim (Telegram profile photo URL).
-- **email**: the placeholder `<sub>@telegram-oidc.placeholder.invalid`, unverified ([why](./installation.md#placeholder-emails)).
+- **email**: an unverified placeholder, normally `<sub>@telegram-oidc.placeholder.invalid` for short email-safe subjects; opaque or long subjects use a bounded derived label ([why](./installation.md#placeholder-emails)).
 - an **account** with provider ID `telegram-oidc` and account ID `sub`.
 
 When the Login Widget or Mini App is also enabled, the Telegram columns exist and the plugin copies more details from the verified ID token after each OIDC sign-up, sign-in and link. When that changes the signed-in user, the plugin issues the new session cookie again with the stored user, so the session (including `session.cookieCache` and stateless mode) carries the new values right away. Framework cookie plugins such as `nextCookies()` must come last in `plugins`, as Better Auth requires, so they forward that cookie:
@@ -200,7 +200,7 @@ export const membersOnly = telegram({
 
 The example uses membership to decide whether sign-in is allowed. If you also store a membership or internal user ID for authorization, keep that field at `input: false` and write it through trusted server code; ordinary mapper fields can also be supplied to Better Auth's generic user-update endpoint. See [Custom user data](./configuration.md#custom-user-data).
 
-If an OIDC account was unlinked, the old user keeps their email. If no remaining linked Telegram account proves the identity, a later sign-in uses a new reserved placeholder (`<sub>.<random>@telegram-oidc.placeholder.invalid`) for a new user. The old email neither blocks sign-in nor reconnects the detached account. A remaining linked Telegram identity can still allow matching across methods, subject to the rules below. A custom mapper email follows your Better Auth account-linking policy.
+If an OIDC account was unlinked, the old user keeps their email. If no remaining linked Telegram account proves the identity, a later sign-in uses a new reserved placeholder (normally `<sub>.<random>@telegram-oidc.placeholder.invalid`; longer subjects use a bounded derived label) for a new user. The old email neither blocks sign-in nor reconnects the detached account. A remaining linked Telegram identity can still allow matching across methods, subject to the rules below. A custom mapper email follows your Better Auth account-linking policy.
 
 ## Use one user across sign-in methods
 
@@ -314,6 +314,10 @@ The plugin checks the token exactly like in the redirect flow, and it **requires
 This path is on by default, as for Better Auth's built-in providers. If you don't use it, turn it off with `oidc.disableIdTokenSignIn: true`. ID tokens sent to `/sign-in/social` or `/link-social` are then rejected with 404 `ID_TOKEN_NOT_SUPPORTED`, and only the redirect flow remains.
 
 ## Things to know about Telegram's OIDC
+
+OIDC account keys always retain the original `sub`. If that subject cannot be used directly in the technical placeholder email, the plugin uses a bounded subject-derived label for the email only. An email label never proves account ownership.
+
+Verified claims passed to your mapper have a nonempty string `sub`. The `aud` value is normalized to the configured client ID after checking that the token names no other audience, including when the JWT encodes that single audience as an array.
 
 These come from Telegram's documentation and from testing against the live service on 2026-10-29. Where the two differ, the live behavior is noted.
 

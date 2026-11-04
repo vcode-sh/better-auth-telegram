@@ -229,23 +229,40 @@ describe("a separate OIDC bot (oidc.clientId)", () => {
 });
 
 describe("missing OIDC credentials at request time", () => {
-  it("answers 500 with a code that names the missing clientSecret", async () => {
-    const { client } = createMemoryAuth({
-      loginWidget: false,
-      oidc: { enabled: true },
-    });
+  it.each([
+    [
+      "clientSecret",
+      { loginWidget: false, oidc: { enabled: true } },
+      "OIDC_CLIENT_SECRET_REQUIRED",
+    ],
+    [
+      "clientId",
+      {
+        botToken: "",
+        loginWidget: false,
+        oidc: { enabled: true, clientSecret: "configured-secret" },
+      },
+      "OIDC_CLIENT_ID_REQUIRED",
+    ],
+  ])(
+    "answers a coded configuration error for missing %s without creating auth state",
+    async (_field, options, code) => {
+      const { client, db } = createMemoryAuth(options);
 
-    const response = await client.post("/sign-in/social", {
-      provider: "telegram-oidc",
-      callbackURL: "/dashboard",
-    });
+      const response = await client.post("/sign-in/social", {
+        provider: "telegram-oidc",
+        callbackURL: "/dashboard",
+      });
 
-    expect(response.status).toBe(500);
-    expect(response.json).toMatchObject({
-      code: "OIDC_CLIENT_SECRET_REQUIRED",
-    });
-    expect(response.json.message).toContain("clientSecret");
-  });
+      expect(response.status).toBe(500);
+      expect(response.json.code).toBe(code);
+      expect([db.user.length, db.account.length, db.session.length]).toEqual([
+        0, 0, 0,
+      ]);
+      expect(client.hasSession()).toBe(false);
+      expect(telegramMock.tokenRequests).toHaveLength(0);
+    }
+  );
 });
 
 describe("social provider registration", () => {
@@ -281,9 +298,3 @@ describe("social provider registration", () => {
     expect(response.status).toBe(404);
   });
 });
-
-// Better Auth issues the session (and its cookie cache, `newSession`, the ID
-// token sign-in response) with the user it read before the session existed.
-// Catches: Telegram fields written after that read, which a cookie cache
-// keeps serving stale until `maxAge` — and in stateless mode until the next
-// sign-in.

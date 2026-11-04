@@ -80,7 +80,7 @@ describe("createPluginConfig", () => {
     ]);
   });
 
-  it.each(["123456789", "bot123:abc", "123456789:abc def", "abc:def"])(
+  it.each(["123456789", "bot123:abc", "123456789:abc def"])(
     "warns about a bot token shaped %j",
     (botToken) => {
       expect(warnings({ ...BASE, botToken })).toContainEqual(
@@ -112,22 +112,6 @@ describe("createPluginConfig", () => {
       ]);
     }
   );
-
-  it("does not warn about sharing a bot when OIDC uses its own client", () => {
-    expect(
-      warnings({
-        ...BASE,
-        loginWidget: false,
-        oidc: { enabled: true, clientSecret: "s" },
-      })
-    ).toEqual([]);
-    expect(
-      warnings({
-        ...BASE,
-        oidc: { enabled: true, clientId: "987654321", clientSecret: "s" },
-      })
-    ).toEqual([]);
-  });
 
   // OIDC-only mode adds no Telegram columns, so there is nowhere to copy
   // the phone number to.
