@@ -327,13 +327,15 @@ BotFather rejects `localhost`, with `http` and with `https`. Use a [tunnel](./in
 
 ### Every OIDC user got a new account
 
-**Why:** you changed the OIDC bot (or `oidc.clientId`). Telegram gives each bot a different `sub` for the same person, and OIDC accounts are stored by `sub`.
+**Why:** you changed the OIDC bot (or `oidc.clientId`). Telegram gives each bot a different `sub` for the same person, and OIDC accounts are stored by `sub`. OIDC-only setups cannot match the new account key to the previous user. In a mixed setup, matching also needs the profile `id` and a surviving linked account proving it.
 
-**Fix:** go back to the previous bot. Keep one OIDC bot for the life of your app.
+**Fix:** restore the previous bot configuration if the change was accidental. Keep one OIDC bot for the life of your app; review any users already created separately before reconciling their data.
 
 ### OIDC sign-in doesn't find my existing Login Widget user
 
-Known limitation ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)). Better Auth matches OAuth sign-ins by account ID and then by verified email, and a Login Widget user has neither for OIDC. Let signed-in users [link OIDC](./oidc.md#link-telegram-oidc-to-a-signed-in-user) instead. (The other direction works: a Login Widget or Mini App sign-in finds users who signed up with OIDC.)
+Upgrade to 3.2.0 or newer. OIDC now finds existing Login Widget and Mini App users by a verified Telegram ID backed by a linked account. Check that the Login Widget or Mini App is enabled, the Telegram columns exist, the OIDC token includes the profile `id`, and Better Auth permits implicit account linking. An unlinked identity or a stale `telegramId` field alone does not grant access.
+
+If an older version already created two users, this update keeps the existing OIDC account attached to its current owner; it does not merge users or their application data. See [Use one user across sign-in methods](./oidc.md#use-one-user-across-sign-in-methods).
 
 ### OIDC users have no telegramId behind oauth-proxy
 
@@ -356,7 +358,7 @@ Check these:
 
 1. **The user existed before.** Mapped values are stored when the user is created. Set `oidc.updateUserInfoOnSignIn: true` to also write them at every sign-in.
 2. **The field is declared on the server**, in `betterAuth({ user: { additionalFields } })`. Declaring it only on the client (`inferAdditionalFields`) isn't enough: Better Auth drops unknown fields.
-3. **The field accepts input.** Fields with `input: false` are dropped, like on any OAuth sign-up.
+3. **The field accepts input.** Fields with `input: false` are dropped, like on any OAuth sign-up. Keep roles, membership and other authorization fields server-owned; do not enable input just to populate them from a mapper. See [Custom user data](./configuration.md#custom-user-data).
 4. **`oidc.overrideUserInfoOnSignIn` is ignored** (the plugin warns at startup). Use `updateUserInfoOnSignIn`.
 5. **The mapper is async and the plugin is older than 3.1.1.** Before 3.1.1 an async mapper (OIDC, Login Widget or Mini App) lost every field it returned, and an error it threw didn't stop the sign-in. Upgrade.
 

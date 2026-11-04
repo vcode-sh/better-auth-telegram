@@ -153,6 +153,117 @@ describe.each(adapterLanes())("$name", (lane) => {
       ]);
     });
 
+    test.each(["Login Widget", "Mini App"])(
+      "signs the existing %s user in through OIDC without changing their email",
+      async (method) => {
+        const mappedEmail = () => ({ email: "ann@example.com" });
+        const { client, rows } = await open(
+          {},
+          {
+            mapTelegramDataToUser: mappedEmail,
+            miniApp: {
+              enabled: true,
+              mapMiniAppDataToUser: mappedEmail,
+            },
+          }
+        );
+        const first =
+          method === "Login Widget"
+            ? await client.post(
+                "/telegram/signin",
+                await signWidgetData({ id: TELEGRAM_ID })
+              )
+            : await client.post("/telegram/miniapp/signin", {
+                initData: await signInitData({ id: TELEGRAM_ID }),
+              });
+        expect(first.status).toBe(200);
+        const userId = first.json.user.id;
+        client.clearCookies();
+
+        const { location } = await signInWithTelegramOIDC(client, telegramMock);
+        const session = await client.get("/get-session");
+
+        expect(location).toBe("/dashboard");
+        expect(session.json.user.id).toBe(userId);
+        const users = await rows("user");
+        expect(users).toHaveLength(1);
+        expect(users[0]).toMatchObject({
+          id: userId,
+          email: "ann@example.com",
+          telegramId: String(TELEGRAM_ID),
+        });
+        const accounts = await rows("account");
+        expect(accounts).toHaveLength(2);
+        expect(accounts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              providerId: "telegram",
+              accountId: String(TELEGRAM_ID),
+              userId,
+            }),
+            expect.objectContaining({
+              providerId: "telegram-oidc",
+              accountId: "12224742808376279442",
+              userId,
+            }),
+          ])
+        );
+      }
+    );
+
+    test("links concurrent first OIDC sign-ins to one existing Mini App user", async () => {
+      const { auth, client, rows } = await open();
+      const first = await client.post("/telegram/miniapp/signin", {
+        initData: await signInitData({ id: TELEGRAM_ID }),
+      });
+      expect(first.status).toBe(200);
+      const userId = first.json.user.id;
+      const clients = Array.from({ length: 4 }, () => createClient(auth));
+
+      const results = await Promise.all(
+        clients.map((visitor) => signInWithTelegramOIDC(visitor, telegramMock))
+      );
+      const sessions = await Promise.all(
+        clients.map((visitor) => visitor.get("/get-session"))
+      );
+
+      expect(results.map(({ location }) => location)).toEqual(
+        new Array(4).fill("/dashboard")
+      );
+      expect(sessions.map(({ json }) => json.user.id)).toEqual(
+        new Array(4).fill(userId)
+      );
+      expect(await rows("user")).toHaveLength(1);
+      const accounts = await rows("account");
+      expect(accounts).toHaveLength(2);
+      expect(providers(accounts)).toEqual(["telegram", "telegram-oidc"]);
+      expect(accounts.every((account) => account.userId === userId)).toBe(true);
+    });
+
+    test.each([{ enabled: false }, { disableImplicitLinking: true }])(
+      "refuses cross-flow OIDC linking when configured with %j",
+      async (accountLinking) => {
+        const { client, rows } = await open({ account: { accountLinking } });
+        const first = await client.post("/telegram/miniapp/signin", {
+          initData: await signInitData({ id: TELEGRAM_ID }),
+        });
+        expect(first.status).toBe(200);
+        const usersBefore = await rows("user");
+        const accountsBefore = await rows("account");
+        const sessionsBefore = await rows("session");
+        client.clearCookies();
+
+        const { callback } = await signInWithTelegramOIDC(client, telegramMock);
+
+        expect(callback.status).toBe(401);
+        expect(callback.json.code).toBe("ACCOUNT_NOT_LINKED");
+        expect(client.hasSession()).toBe(false);
+        expect(await rows("user")).toEqual(usersBefore);
+        expect(await rows("account")).toEqual(accountsBefore);
+        expect(await rows("session")).toEqual(sessionsBefore);
+      }
+    );
+
     test("links and unlinks Telegram, and unlinking revokes the telegramId sign-in", async () => {
       const { auth, client, rows } = await open();
       await signUp(client);

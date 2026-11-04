@@ -5,11 +5,24 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.0] - 2026-11-04
+
+### Added
+
+- **OIDC sign-in finds existing Telegram users** ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)). A user who started with the Login Widget or a Mini App can sign in through OIDC and keep the same user account. Matching uses the verified Telegram `id` and a surviving linked account that proves it. The OIDC account stays keyed by `sub`; no account-key migration or shared placeholder email is needed. Better Auth's implicit-linking settings and user/account hooks still apply. Existing separate users are not automatically merged.
 
 ### Fixed
 
-- Reject Mini App sign-in data with a null user as an invalid structure instead of returning a server error.
+- **Mini App sign-in with `user: null`** ([#58](https://github.com/vcode-sh/better-auth-telegram/pull/58), contributed by [@alexasomba](https://github.com/alexasomba)). The request now receives 400 `INVALID_MINI_APP_DATA_STRUCTURE` instead of a server error. A missing user keeps its separate `NO_USER_IN_INIT_DATA` response. The fix includes validator and endpoint regression tests with signature validation enabled and disabled.
+- **Numeric OIDC IDs now match the public mapper type.** Telegram's documented numeric `id` is normalized to a string before `mapOIDCProfileToUser` runs, just like the string form observed in live tokens. Mappers can safely use the declared `id?: string` type. Malformed or unsafe numeric IDs are rejected before a mapper or identity lookup can use them; an absent profile ID remains allowed.
+
+### Changed
+
+- Updated the development build tool `tsdown` from 0.23.3 to 0.23.4 ([#57](https://github.com/vcode-sh/better-auth-telegram/pull/57)).
+- Split the server, browser client and test fixtures into focused internal modules, with integration tests grouped by behavior. This refactor preserves behavior, the two package entrypoints and their public exports.
+- Clarified that `validateMiniApp` checks signature and age, while sign-in also validates the user structure. Mapper documentation now distinguishes editable profile fields from server-owned authorization fields.
+
+Thanks to [@notpushkin](https://github.com/notpushkin) for describing both login orders in [#25](https://github.com/vcode-sh/better-auth-telegram/issues/25), [@alexasomba](https://github.com/alexasomba) for the focused fix and tests in [#58](https://github.com/vcode-sh/better-auth-telegram/pull/58), and [@parmetra](https://github.com/parmetra) for the detailed follow-up in [#53](https://github.com/vcode-sh/better-auth-telegram/issues/53), which exposed the session and async-mapper bugs fixed in 3.1.0 and 3.1.1.
 
 ## [3.1.1] - 2026-11-02
 

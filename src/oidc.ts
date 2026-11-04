@@ -1,7 +1,3 @@
-import {
-  getCurrentAdapter,
-  tryGetCurrentAuthEndpointContext,
-} from "@better-auth/core/context";
 import { APIError } from "@better-auth/core/error";
 import type {
   OAuth2Tokens,
@@ -12,30 +8,19 @@ import {
   createAuthorizationURL,
   validateAuthorizationCode,
 } from "@better-auth/core/oauth2";
-import { createPlaceholderEmail } from "@better-auth/core/utils/email";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import {
   TELEGRAM_OIDC_AUTH_ENDPOINT,
   TELEGRAM_OIDC_ISSUER,
-  TELEGRAM_OIDC_JWKS_URI,
   TELEGRAM_OIDC_PROVIDER_ID,
   TELEGRAM_OIDC_TOKEN_ENDPOINT,
 } from "./constants";
 import { TELEGRAM_ERROR_CODES } from "./error-codes";
+import { createTelegramIdTokenVerifier } from "./oidc-token";
 import { rememberVerifiedClaims } from "./telegram-identity";
+import { oidcPlaceholderEmail } from "./telegram-placeholder";
 import type { TelegramOIDCClaims, TelegramOIDCOptions } from "./types";
 
 const LOG_PREFIX = "[better-auth-telegram] OIDC:";
-
-/**
- * Algorithms Telegram can sign ID tokens with that Web Crypto can verify.
- * ES256K (secp256k1) is offered by @BotFather but has no Web Crypto support.
- */
-const SUPPORTED_SIGNING_ALGORITHMS = ["RS256", "ES256", "EdDSA"];
-
-/** Matches Better Auth's own ID token verifier. */
-const ID_TOKEN_CLOCK_TOLERANCE_SECONDS = 30;
-const ID_TOKEN_REQUIRED_CLAIMS = ["iss", "sub", "aud", "exp", "iat"];
 
 /**
  * The scopes to request, each once. Like Better Auth's own providers,
@@ -71,40 +56,6 @@ function displayName(claims: TelegramOIDCClaims): string | undefined {
     .filter(Boolean)
     .join(" ");
   return fullName || claims.preferred_username;
-}
-
-async function oidcPlaceholderEmail(sub: string): Promise<string> {
-  const email = createPlaceholderEmail({
-    identifier: sub,
-    namespace: TELEGRAM_OIDC_PROVIDER_ID,
-  });
-  const ctx = tryGetCurrentAuthEndpointContext()?.context;
-  if (!ctx) {
-    return email;
-  }
-  const adapter = await getCurrentAdapter(ctx.adapter);
-  // Existence only: Better Auth resolves ownership later and rejects duplicate
-  // identities there. Placeholder selection must not throw ahead of that check.
-  if (
-    await adapter.findOne({
-      model: "account",
-      where: [
-        { field: "providerId", value: TELEGRAM_OIDC_PROVIDER_ID },
-        { field: "accountId", value: sub },
-      ],
-    })
-  ) {
-    return email;
-  }
-  // An unlinked user keeps their email. It cannot prove ownership of a new
-  // OIDC account, even if the app trusts Telegram for email-based linking.
-  if (await ctx.internalAdapter.findUserByEmail(email)) {
-    return createPlaceholderEmail({
-      identifier: `${sub}.${crypto.randomUUID()}`,
-      namespace: TELEGRAM_OIDC_PROVIDER_ID,
-    });
-  }
-  return email;
 }
 
 /**
@@ -156,33 +107,7 @@ export function createTelegramOIDCProvider(
     }
   };
 
-  // Fetched lazily, cached and rate limited by jose; shared by every request
-  // served by this Better Auth instance.
-  const jwks = createRemoteJWKSet(new URL(TELEGRAM_OIDC_JWKS_URI));
-
-  const verifyIdToken = async (
-    token: string,
-    expectedNonce: string | undefined
-  ): Promise<TelegramOIDCClaims> => {
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer: TELEGRAM_OIDC_ISSUER,
-      audience: clientId,
-      algorithms: SUPPORTED_SIGNING_ALGORITHMS,
-      requiredClaims: ID_TOKEN_REQUIRED_CLAIMS,
-      clockTolerance: ID_TOKEN_CLOCK_TOLERANCE_SECONDS,
-    });
-    // OIDC Core 3.1.3.7: reject a token that also names audiences we don't
-    // trust (jose only checks that ours is among them).
-    if ([payload.aud].flat().some((audience) => audience !== clientId)) {
-      throw new Error("ID token is also issued to another audience");
-    }
-    if (expectedNonce !== undefined && payload.nonce !== expectedNonce) {
-      throw new Error(
-        "ID token nonce does not match the authorization request"
-      );
-    }
-    return payload as unknown as TelegramOIDCClaims;
-  };
+  const verifyIdToken = createTelegramIdTokenVerifier(clientId);
 
   // Client-submitted ID tokens (POST /sign-in/social and /link-social with
   // `idToken`). Better Auth treats the nonce as optional; Telegram tokens are

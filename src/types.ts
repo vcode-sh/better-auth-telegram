@@ -76,7 +76,8 @@ export interface TelegramOIDCClaims {
   iat: number;
   /**
    * Telegram user id, the same number the Login Widget and Mini Apps report.
-   * Telegram sends it as a string (e.g. `"8306595751"`).
+   * Numeric ID token values are normalized to a string (e.g. `"8306595751"`)
+   * before the profile is passed to the mapper.
    */
   id?: string;
   iss: string;

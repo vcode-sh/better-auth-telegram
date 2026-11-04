@@ -13,6 +13,7 @@
 - Uses the standard Web Crypto API; release tests run on Node.js and Bun.
 - Tested with SQLite, PostgreSQL, MySQL, Drizzle, Prisma and MongoDB. Other Better Auth adapters need their own deployment checks.
 - Fully typed: `session.user.telegramId` is known to TypeScript on the server and in the browser.
+- Users can move between enabled Telegram sign-in methods and keep one user account, subject to your account-linking policy. [How matching works](docs/oidc.md#use-one-user-across-sign-in-methods).
 
 > **Upgrading from v2?** Read the [v2 to v3 migration guide](docs/migration-v2-to-v3.md). v3 requires Better Auth 1.7, which fixes a critical security issue.
 

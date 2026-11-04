@@ -68,7 +68,7 @@ What this prevents: forged tokens (only Telegram has the private key), tokens is
 
 **Login CSRF protection.** `/telegram/signin` and `/telegram/miniapp/signin` refuse browser requests from origins that aren't trusted (403 `INVALID_ORIGIN`), even without cookies, just like Better Auth's `/sign-in/email`. Without this, a page on another site could send the attacker's own valid Telegram data to your server and sign your visitor into the attacker's account. Requests without browser origin headers (for example server-to-server calls) are not affected.
 
-**OIDC details stay with their owner.** Details from an ID token are copied only to the user who owns the `telegram-oidc` account for that token's `sub`. A Telegram ID that already belongs to another user is never copied.
+**OIDC details stay with their owner.** Details from an ID token are copied only to the user who owns the `telegram-oidc` account for that token's `sub`. A Telegram ID that already belongs to another user is never copied. When that OIDC account does not exist yet, sign-in can link it to an existing user only if the verified profile ID matches and a remaining linked Telegram account proves the identity. Multiple matching users are refused. An existing OIDC account is never moved to another user, and implicit-linking restrictions still apply.
 
 ## Your hooks run for Telegram users
 
@@ -116,7 +116,7 @@ The bot token is the signing key. BotFather creates a new token by revoking the 
 
 ### Simultaneous first sign-ins on several servers
 
-Login Widget and Mini App requests for the same Telegram ID are serialized within one Better Auth instance; explicit links are also serialized by target user. Across instances, this is not a distributed lock. With the built-in Kysely adapter, the normal first sign-up benefits from a transaction and a unique, deterministic placeholder email. That protection does not cover every case: after unlinking, replacement placeholders differ between requests; mapper emails can differ too. OIDC uses Better Auth's own concurrency handling. Multiple servers can still create duplicate Telegram accounts, and nontransactional adapters can leave partial writes. Do not treat the profile index as a uniqueness constraint; check this boundary in your deployment if simultaneous requests can reach different instances.
+Login Widget and Mini App requests for the same Telegram ID are serialized within one Better Auth instance; explicit links are also serialized by target user. Across instances, this is not a distributed lock. With the built-in Kysely adapter, the normal first sign-up benefits from a transaction and a unique, deterministic placeholder email. That protection does not cover every case: after unlinking, replacement placeholders differ between requests; mapper emails can differ too. First OIDC links for the same `sub` are also serialized within an instance; the rest of the OIDC flow uses Better Auth's own concurrency handling. Multiple servers can still create duplicate Telegram accounts, and nontransactional adapters can leave partial writes. Do not treat the profile index as a uniqueness constraint; check this boundary in your deployment if simultaneous requests can reach different instances.
 
 ### Telegram signing-key rotation
 
@@ -126,8 +126,8 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 
 - Two-factor authentication is skipped for Telegram sign-ins ([above](#two-factor-authentication)).
 - Third-party Ed25519 validation of Mini App `initData` is not implemented ([above](#mini-app)).
-- OIDC sign-in doesn't find an existing Login Widget or Mini App user yet ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)).
-- A user who unlinked Telegram keeps their placeholder email. A later sign-in with the default email mapping creates a new user with another reserved placeholder, for the Login Widget, Mini App and OIDC. Custom mapper emails follow the documented rules for that flow.
+- Users already split across separate OIDC and Widget/Mini App accounts are not automatically merged. [Matching across methods](./oidc.md#use-one-user-across-sign-in-methods) keeps an existing OIDC account attached to its current owner.
+- A user who unlinked Telegram keeps their placeholder email. If no remaining linked account proves that Telegram identity, a later sign-in with the default email mapping creates a new user with another reserved placeholder. Custom mapper emails follow the documented rules for that flow.
 
 ## Keeping secrets safe
 

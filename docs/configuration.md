@@ -73,7 +73,7 @@ export const inviteOnly = telegram({
 });
 ```
 
-For OIDC, the matching switch is `oidc.disableSignUp: true`. To also block a Widget/Mini App sign-in from linking itself to an existing OIDC user, set Better Auth's `account.accountLinking.disableImplicitLinking: true`.
+For OIDC, the matching switch is `oidc.disableSignUp: true`. To block automatic linking between the Telegram sign-in methods in either direction, set Better Auth's `account.accountLinking.disableImplicitLinking: true`.
 
 ## Plugin options
 
@@ -164,6 +164,7 @@ Rules, so there are no surprises:
 - **Mappers may be async**, so they can look the user up in your own data. Throw an `APIError` from `better-auth/api` to refuse the sign-in: nothing is created and the endpoint answers with the error's status. For OIDC that answer comes from the callback URL instead of a redirect to `errorCallbackURL`, as with Better Auth's built-in providers. See the [OIDC example](./oidc.md#what-gets-stored).
 - **Mappers run on every sign-in attempt.** Keep them safe to call again. Their mapped profile values are stored when a user is created; returning users keep their name, image and email. Verified Telegram identity fields are refreshed separately. For OIDC, `oidc.updateUserInfoOnSignIn: true` writes the name, image and mapped fields onto returning users too (never the email).
 - **Only known fields are kept.** Mapper output is filtered like a Better Auth OAuth profile: fields that aren't in your user schema, or that users may not set (`input: false`), are dropped. That includes the plugin's own `telegramId`, `telegramUsername` and `telegramPhoneNumber`, which the plugin fills itself.
+- **Keep authorization fields server-owned.** Do not enable input for roles, membership, or an internal user ID just to save it through a mapper: the same setting also accepts values from generic user-update requests. Keep those fields at `input: false` and write them through your application's trusted server code. A mapper can still refuse sign-in by throwing an `APIError`. See [Better Auth's guidance](https://better-auth.com/docs/concepts/oauth#server-owned-fields-and-authorization-claims).
 - **The Login Widget and Mini App mappers can't set `id` or `emailVerified`.** An email from a mapper is stored as unverified, because Telegram didn't verify it.
 - **The OIDC mapper can't set `id` or `emailVerified`** (both are ignored). Telegram verifies no email, and Better Auth links a sign-in to an existing user when the email is marked verified, so a mapper must not be able to vouch for one.
 - **A Login Widget or Mini App mapper email that another user already has** is refused with 422 `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. OIDC follows Better Auth's OAuth linking rules: by default an email collision gives `account_not_linked`; deliberately trusting a provider for email linking changes that policy. Keep the default placeholder unless you have independently established who owns an email.
