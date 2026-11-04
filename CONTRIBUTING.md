@@ -95,7 +95,7 @@ Not guidelines. Not suggestions. Rules.
 
 ## Testing
 
-Follow [Testing standards](docs/testing.md). Each test must distinguish a requirement from a plausible defect. Delete cases with no unique protection; do not retain them for a coverage target or test count.
+Use [Testing standards](docs/testing.md) to find the shared `testing-patterns` skill and repository guidance for writing, reviewing and pruning tests.
 
 - **Verification**: crypto tests in `verify.test.ts` and `verify-hardening.test.ts` -- HMAC paths, replay attacks, future `auth_date`, hash format, edge cases
 - **Server plugin**: `widget.integration.test.ts`, `miniapp.integration.test.ts` and `widget-mappers.integration.test.ts` cover Widget/Mini App sign-in, account changes and mapping. OIDC suites are grouped by behavior: `oidc.integration.test.ts`, `oidc-protocol.integration.test.ts`, `oidc-identity.integration.test.ts`, `oidc-profile.integration.test.ts`, `oidc-claims.integration.test.ts` and `oidc-linking.integration.test.ts`. `identity.integration.test.ts` and `hooks.integration.test.ts` cover revocation, placeholders and application hooks. These use real `betterAuth()` instances (memory or SQLite) and a fake Telegram modeled on the live one. Prefer them over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7

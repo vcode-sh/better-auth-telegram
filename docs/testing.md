@@ -10,6 +10,9 @@ Codex discovers `.agents/skills/testing-patterns/SKILL.md` and accepts
 `.claude/skills/testing-patterns` and accepts `/testing-patterns`. Both use one body;
 no plugin, global installation or host-specific frontmatter is required.
 
+[Validation evidence](../.agents/skills/testing-patterns/references/validation.md)
+records client discovery, representative decisions and the limits of those checks.
+
 The skill is adapted from the supplied 2026 research, preserving its qualifications:
 meaningful contracts and deliberate baselines, proportional failure evidence,
 legitimate doubles/structural checks, complementary test levels, and no universal
