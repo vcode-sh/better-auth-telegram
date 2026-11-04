@@ -214,6 +214,7 @@ export function validateMiniAppData(data: any): data is TelegramMiniAppData {
     typeof data.hash === "string" &&
     (data.user === undefined ||
       (typeof data.user === "object" &&
+        data.user !== null &&
         typeof data.user.id === "number" &&
         typeof data.user.first_name === "string"))
   );

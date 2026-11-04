@@ -5,6 +5,12 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Reject Mini App sign-in data with a null user as an invalid structure instead of returning a server error.
+
 ## [3.1.1] - 2026-11-02
 
 ### Fixed
