@@ -88,8 +88,16 @@ of an authenticated cookie. Removing only this authority check in an isolated
 copy makes the new case fail with HTTP 200 instead of 401; restoring it passes.
 No production change was needed. The temporary copy was removed.
 
-The updated default suite passes all 337 tests on Node 26.13.0. Coverage is 98.68%
-lines, 98.70% statements, 95.78% branches and 100% functions; the affected account
+Codecov's processed report also exposed the null-result fallback after a user
+update veto, which the local LCOV report did not label as a missed line. A
+compatibility case now checks that refusing a username update preserves the saved
+profile, returns it in the sign-in response and authenticates through the issued
+cookie while the linked account remains valid. Removing the fallback in an
+isolated copy causes HTTP 500 instead of 200; restoring it passes. This protects
+existing behavior and needs no production change. The probe copy was removed.
+
+The updated default suite passes all 338 tests on Node 26.13.0. Coverage is 98.68%
+lines, 98.70% statements, 95.94% branches and 100% functions; the affected account
 module has 100% line coverage. Scoped lint, package type checks and diff checks
 also pass. These results supplement the earlier runtime/adapter matrix; release
 CI checks the new test on every required runtime without weakening existing gates.

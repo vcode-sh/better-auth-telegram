@@ -7,6 +7,50 @@ import {
 } from "./testing/harness";
 
 describe("Telegram identity authority transitions", () => {
+  it("keeps the stored profile and an authenticated session when a username update is vetoed", async () => {
+    const { client, db } = createMemoryAuth(
+      {},
+      {
+        session: { cookieCache: { enabled: true } },
+        databaseHooks: { user: { update: { before: async () => false } } },
+      }
+    );
+    const first = await client.post(
+      "/telegram/signin",
+      await signWidgetData({ id: 42, username: "before" })
+    );
+    expect(first.status).toBe(200);
+    const storedUser = structuredClone(db.user[0]);
+    client.clearCookies();
+
+    const response = await client.post(
+      "/telegram/signin",
+      await signWidgetData({ id: 42, username: "after" })
+    );
+    const session = await client.get("/get-session");
+
+    // Preserve the existing contract: a metadata veto keeps the stored profile;
+    // the independently proven account can still authorize this sign-in.
+    expect(response.status).toBe(200);
+    expect(response.json.user).toMatchObject({
+      id: first.json.user.id,
+      telegramId: "42",
+      telegramUsername: "before",
+    });
+    expect(db.user).toEqual([storedUser]);
+    expect(db.account[0]).toMatchObject({
+      userId: first.json.user.id,
+      telegramUsername: "after",
+    });
+    expect(session.status).toBe(200);
+    expect(session.json.user).toMatchObject({
+      id: first.json.user.id,
+      telegramId: "42",
+      telegramUsername: "before",
+    });
+    expect(db.session).toHaveLength(2);
+  });
+
   it.each(["Widget", "Mini App"])(
     "%s refuses a Telegram account key held by different users",
     async (method) => {
