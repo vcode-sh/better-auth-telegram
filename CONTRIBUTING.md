@@ -37,25 +37,47 @@ npm run lint:fix     # Auto-fix -- let the machine do the boring part
 
 ```
 src/
-  index.ts                Server plugin entry (endpoints, schema, init hook)
-  client.ts               Client plugin (widget init, API methods, Mini App helpers)
-  plugin-config.ts        Option parsing, defaults, startup warnings
-  schema.ts               Conditional user/account schema fields
-  widget-endpoints.ts     /telegram/signin, /telegram/link, /telegram/unlink
-  miniapp-endpoints.ts    /telegram/miniapp/signin, /telegram/miniapp/validate
-  config-endpoint.ts      /telegram/config
-  telegram-account.ts     Find/link/create/unlink through Better Auth's internal adapter
-  oidc.ts                 telegram-oidc provider (PKCE, nonce, Basic auth, ID token verification)
-  telegram-identity.ts    databaseHooks: placeholder email guard, OIDC claims onto user/account,
-                          re-checking user.telegramId when a Telegram account is deleted
-  verify.ts               HMAC-SHA-256 verification via Web Crypto API
-  types.ts                TypeScript interfaces
-  constants.ts            Error codes, defaults, PLUGIN_ID, OIDC endpoints
-  testing/harness.ts      Real Better Auth (memory or SQLite) plus a fake oauth.telegram.org
-  *.test.ts               Co-located unit tests
-  *.integration.test.ts   Tests against a real Better Auth instance
-test-d/                   Type tests for consumers of dist/
+  index.ts                   Public server plugin entry
+  client.ts                  Public client plugin entry and API actions
+  client-widget.ts           Browser widget lifecycle and widget option types
+  client-types.ts            Client response and user types
+  plugin-config.ts           Option parsing, defaults, startup warnings
+  schema.ts                  Conditional user/account schema fields
+  widget-endpoints.ts        /telegram/signin, /telegram/link, /telegram/unlink
+  miniapp-endpoints.ts       /telegram/miniapp/signin, /telegram/miniapp/validate
+  config-endpoint.ts         /telegram/config
+  telegram-account.ts        Find-or-create orchestration
+  telegram-account-state.ts  Shared account types, lookups, validation and locks
+  telegram-account-user.ts   User provisioning and returning-user refresh
+  telegram-account-link.ts   Explicit account link/unlink
+  telegram-session.ts        Session creation and cookie refresh
+  oidc.ts                    Telegram OIDC provider factory
+  oidc-token.ts              JWKS/token verification and claim normalization
+  oidc-linking.ts            Match verified identity before OIDC account lookup
+  oidc-linking-policy.ts     Linked identity proof and application validation
+  telegram-identity.ts       Database hook registration
+  telegram-identity-state.ts Verified request claims and changed-user tracking
+  telegram-identity-sync.ts  Copy/reconcile identity on users and accounts
+  telegram-identity-session.ts OIDC session-cookie refresh
+  telegram-profile.ts        Mapped profile updates
+  telegram-placeholder.ts    Placeholder reservation and OIDC email selection
+  verify.ts                  HMAC-SHA256 verification via Web Crypto API
+  types.ts                   Public server types
+  constants.ts               Error codes, defaults, provider IDs and endpoints
+  testing/harness.ts         Stable imports for shared test fixtures
+  testing/auth.ts            Real Better Auth on memory or SQLite
+  testing/http-client.ts     Cookie-aware test client
+  testing/signed-data.ts     Signed Widget and Mini App fixtures
+  testing/oidc-server.ts     Fake oauth.telegram.org server
+  testing/oidc-flow.ts       OIDC claims and complete sign-in helpers
+  testing/constants.ts       Independent fixture constants
+  testing/adapters.ts        Real database adapter fixtures
+  *.test.ts                  Co-located unit tests
+  *.integration.test.ts      Tests against a real Better Auth instance
+test-d/                      Type tests for consumers of dist/
 ```
+
+The package still exposes only `better-auth-telegram` and `better-auth-telegram/client`. Supporting modules are internal; consumers should not import their paths.
 
 ## The Rules
 
@@ -76,7 +98,7 @@ Not guidelines. Not suggestions. Rules.
 I maintain 90%+ coverage. Not because I worship the metric, but because untested code is just a theory.
 
 - **Verification**: crypto tests in `verify.test.ts` and `verify-hardening.test.ts` -- HMAC paths, replay attacks, future `auth_date`, hash format, edge cases
-- **Server plugin**: `widget.integration.test.ts`, `oidc.integration.test.ts` and `identity.integration.test.ts` run a real `betterAuth()` (memory adapter, or SQLite with the schema Better Auth's migrations generate) against a fake Telegram modeled on the live one -- signin, link, unlink, Mini App, OIDC, hooks, `validateUserInfo`, identity revocation, placeholder squatting. Prefer these over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7
+- **Server plugin**: `widget.integration.test.ts`, `miniapp.integration.test.ts` and `widget-mappers.integration.test.ts` cover Widget/Mini App sign-in, account changes and mapping. OIDC suites are grouped by behavior: `oidc.integration.test.ts`, `oidc-protocol.integration.test.ts`, `oidc-identity.integration.test.ts`, `oidc-profile.integration.test.ts`, `oidc-claims.integration.test.ts` and `oidc-linking.integration.test.ts`. `identity.integration.test.ts` and `hooks.integration.test.ts` cover revocation, placeholders and application hooks. These use real `betterAuth()` instances (memory or SQLite) and a fake Telegram modeled on the live one. Prefer them over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7
 - **Client plugin**: mock `$fetch`, test widget init and API methods in `client.test.ts`
 - **Security**: adversarial inputs, timestamp manipulation, malformed data, forged ID tokens
 

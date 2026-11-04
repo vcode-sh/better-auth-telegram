@@ -163,9 +163,9 @@ Signs in with the raw `initData` string (`window.Telegram.WebApp.initData`). Cal
 
 ### `validateMiniApp(initData, fetchOptions?)`
 
-Checks `initData` without signing in. Calls `POST /telegram/miniapp/validate`.
+Checks the signature and age of `initData` without signing in. Calls `POST /telegram/miniapp/validate`. It does not validate the parsed user structure; `signInWithMiniApp` performs that additional check.
 
-**Returns:** `{ data: { valid: boolean, data: TelegramMiniAppData | null }, error }`. Invalid data is `{ valid: false, data: null }`, not an error.
+**Returns:** `{ data: { valid: boolean, data: TelegramMiniAppData | null }, error }`. An invalid signature or expired data is `{ valid: false, data: null }`, not an error.
 
 ### `autoSignInFromMiniApp(fetchOptions?)`
 
@@ -302,7 +302,7 @@ interface TelegramMiniAppChat {
 
 ### `TelegramOIDCClaims`
 
-The verified ID-token claims.
+The verified ID-token claims. A numeric `id` is normalized to a string before these claims reach `mapOIDCProfileToUser`. Present IDs must be positive safe-integer numbers or canonical positive decimal strings; malformed values reject the token.
 
 ```ts
 interface TelegramOIDCClaims {
@@ -312,7 +312,7 @@ interface TelegramOIDCClaims {
   iat: number;
   exp: number; // Telegram's tokens live 30 seconds
   nonce?: string;
-  id?: string; // Telegram user ID, sent as a string ("8306595751"); needs "profile"
+  id?: string; // Telegram user ID, normalized to a string ("8306595751"); needs "profile"
   name?: string;
   given_name?: string;
   family_name?: string;
@@ -481,7 +481,7 @@ Signs in, or creates, a user from Mini App `initData`. Sets the session cookie. 
 | Status | Code | When |
 |---|---|---|
 | 400 | `INIT_DATA_REQUIRED` | `initData` missing or not a string |
-| 400 | `INVALID_MINI_APP_DATA_STRUCTURE` | No numeric `auth_date` or no `hash`, or `user` without numeric `id` / text `first_name` |
+| 400 | `INVALID_MINI_APP_DATA_STRUCTURE` | No numeric `auth_date` or no `hash`, or `user` is null or lacks numeric `id` / text `first_name` |
 | 400 | `NO_USER_IN_INIT_DATA` | No `user` in `initData` |
 | 401 | `INVALID_MINI_APP_INIT_DATA` | Signature wrong, `hash` not 64 lowercase hex, `auth_date` too old or more than 60 s in the future |
 | 401 | `ACCOUNT_NOT_LINKED` | As for `/telegram/signin` |
@@ -519,7 +519,7 @@ OIDC uses Better Auth's built-in social sign-in routes with the provider `telegr
 | `POST /sign-in/social` `{ provider: "telegram-oidc", idToken: { token, nonce } }` | Signs in with an existing ID token, verified the same way; the nonce is required. 401 if the token is refused, 404 `ID_TOKEN_NOT_SUPPORTED` with `oidc.disableIdTokenSignIn`. |
 | `POST /link-social` `{ provider: "telegram-oidc" }` | Links Telegram OIDC to the signed-in user. Needs `trustedProviders` and `allowDifferentEmails` ([details](./oidc.md#link-telegram-oidc-to-a-signed-in-user)). |
 
-With the Telegram columns, verified `id`, `preferred_username` and `phone_number` are copied to the user (and `id`, `preferred_username` to the `telegram-oidc` account) after OIDC sign-ups, sign-ins and links, only for the user who owns the account for that `sub`. Known limitations are listed in [OIDC](./oidc.md#known-limitations).
+With the Telegram columns, verified `id`, `preferred_username` and `phone_number` are copied to the user (and `id`, `preferred_username` to the `telegram-oidc` account) after OIDC sign-ups, sign-ins and links, only for the user who owns the account for that `sub`. If the OIDC account does not exist yet, callback and ID-token sign-in can link it to an existing user whose Telegram identity is still proven by a linked account. This respects implicit-linking settings and leaves existing OIDC ownership unchanged. See [matching across methods](./oidc.md#use-one-user-across-sign-in-methods) and [known limitations](./oidc.md#known-limitations).
 
 ## Error codes
 

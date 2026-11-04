@@ -10,6 +10,7 @@ Choose OIDC when your app is a website and you want a standard OAuth 2.0 flow, o
 - [Setup](#setup)
 - [Add the sign-in button](#add-the-sign-in-button)
 - [What gets stored](#what-gets-stored)
+- [Use one user across sign-in methods](#use-one-user-across-sign-in-methods)
 - [Phone numbers](#phone-numbers)
 - [Link Telegram OIDC to a signed-in user](#link-telegram-oidc-to-a-signed-in-user)
 - [Only allow existing users](#only-allow-existing-users)
@@ -146,7 +147,7 @@ When the Login Widget or Mini App is also enabled, the Telegram columns exist an
 | `preferred_username` | `user.telegramUsername` and `account.telegramUsername` (cleared when the user removes their Telegram username) |
 | `phone_number` (with `requestPhone`) | `user.telegramPhoneNumber` |
 
-This is what lets someone who signed up with OIDC later sign in with the Login Widget or a Mini App and land in the same account: those methods find users by `user.telegramId`.
+This lets someone who signed up with OIDC later sign in with the Login Widget or a Mini App and keep the same user account. Since 3.2.0, OIDC also finds users who started with either of those methods. See [Use one user across sign-in methods](#use-one-user-across-sign-in-methods) for the conditions.
 
 Safety rules: the details only go to the user who owns the `telegram-oidc` account for that token's `sub`. The plugin never overwrites a different `telegramId` already on the user, and never copies a Telegram ID that another user already has (it logs a warning instead).
 
@@ -172,7 +173,7 @@ export const telegramPlugin = telegram({
 });
 ```
 
-The mapper runs on every sign-in attempt; its profile values are stored for new users. To keep returning users up to date as well, set `updateUserInfoOnSignIn: true`: once Better Auth has allowed a sign-in (your `validateUserInfo` included), the plugin writes `name`, `image` and the mapper's other fields onto the user. It never changes the email or `emailVerified`. Better Auth's own `overrideUserInfoOnSignIn` would write the placeholder email back over a real one, so the plugin doesn't support it and warns at startup if it is set. Like that option, it also applies when the first OIDC sign-in links an existing user by email. If the update fails (a hook refuses it, or a field's validator rejects a mapped value), the plugin logs a warning and the user signs in with the stored profile. The result is merged over the defaults above. Both `id` and `emailVerified` are ignored, and a mapper email stays unverified: Telegram verifies no email address. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself.
+The mapper runs on every sign-in attempt; its profile values are stored for new users. To keep returning users up to date as well, set `updateUserInfoOnSignIn: true`: once Better Auth has allowed a sign-in (your `validateUserInfo` included), the plugin writes `name`, `image` and the mapper's other fields onto the user. It never changes the email or `emailVerified`. Better Auth's own `overrideUserInfoOnSignIn` would write the placeholder email back over a real one, so the plugin doesn't support it and warns at startup if it is set. It also applies when the first OIDC sign-in links an existing user, whether by the verified Telegram identity or by Better Auth's email-linking rules. If the update fails (a hook refuses it, or a field's validator rejects a mapped value), the plugin logs a warning and the user signs in with the stored profile. The result is merged over the defaults above. Both `id` and `emailVerified` are ignored, and a mapper email stays unverified: Telegram verifies no email address. Returning `telegramId` or `telegramPhoneNumber` does nothing (Better Auth drops those fields because users may not set them); the plugin fills them itself.
 
 The mapper may be async, as with Better Auth's `mapProfileToUser`, so it can look the user up in your own data. Throwing an `APIError` refuses the sign-in: no user, account or session is created. As with Better Auth's built-in providers, the callback then answers with that error's status (here 403) instead of redirecting to `errorCallbackURL`.
 
@@ -186,19 +187,32 @@ export const membersOnly = telegram({
     enabled: true,
     clientId: process.env.TELEGRAM_OIDC_CLIENT_ID,
     clientSecret: process.env.TELEGRAM_OIDC_CLIENT_SECRET,
-    // memberId is declared in betterAuth({ user: { additionalFields } })
     mapOIDCProfileToUser: async (claims) => {
       const member = await findMemberByTelegramId(claims.id);
       if (!member) {
         throw new APIError("FORBIDDEN", { message: "NOT_A_MEMBER" });
       }
-      return { memberId: member.id, name: member.name };
+      return { name: member.name };
     },
   },
 });
 ```
 
-If an OIDC account was unlinked, the old user keeps their email. A later sign-in uses a new reserved placeholder (`<sub>.<random>@telegram-oidc.placeholder.invalid`) for a new user, so the old email neither blocks sign-in nor reconnects the detached account. A custom mapper email still follows your Better Auth account-linking policy.
+The example uses membership to decide whether sign-in is allowed. If you also store a membership or internal user ID for authorization, keep that field at `input: false` and write it through trusted server code; ordinary mapper fields can also be supplied to Better Auth's generic user-update endpoint. See [Custom user data](./configuration.md#custom-user-data).
+
+If an OIDC account was unlinked, the old user keeps their email. If no remaining linked Telegram account proves the identity, a later sign-in uses a new reserved placeholder (`<sub>.<random>@telegram-oidc.placeholder.invalid`) for a new user. The old email neither blocks sign-in nor reconnects the detached account. A remaining linked Telegram identity can still allow matching across methods, subject to the rules below. A custom mapper email follows your Better Auth account-linking policy.
+
+## Use one user across sign-in methods
+
+Since 3.2.0, a user can start with OIDC, the Login Widget or a Mini App and later sign in through another enabled Telegram method without creating another user. You do not need to return a shared email or `telegramId` from a mapper.
+
+The plugin uses the verified Telegram profile `id`, then checks that a linked Telegram account still proves that identity. A profile field by itself is not enough, and multiple users claiming the same Telegram ID are rejected instead of choosing an owner. The new OIDC account keeps Telegram's `sub` as its account ID; existing account keys and users are not migrated.
+
+This matching requires the Telegram columns (the Login Widget or Mini App must be enabled), a database containing the existing user and linked account, and a verified OIDC token with the `profile` claim `id`. OIDC-only setups and tokens without that claim keep the normal OIDC behavior. Better Auth's `account.accountLinking.enabled: false` or `disableImplicitLinking: true` prevents automatic linking; signed-in users can use [explicit linking](#link-telegram-oidc-to-a-signed-in-user) when their policy permits it.
+
+**Application validation.** Before a first cross-flow link, the plugin calls `user.validateUserInfo` for `link-account` and `sign-in`. Better Auth checks `sign-in` again during its normal continuation, so keep this callback repeatable. A refusal in the initial checks prevents the link; a later refusal or session failure can leave a successfully linked account in place, without issuing a session.
+
+**Already have two users from older versions?** This update does not merge them or move an existing OIDC account. A stored OIDC account for the token's `sub` remains attached to its current user. Review both users and their application data before any manual reconciliation.
 
 ## Phone numbers
 
@@ -303,8 +317,8 @@ This path is on by default, as for Better Auth's built-in providers. If you don'
 
 These come from Telegram's documentation and from testing against the live service on 2026-10-29. Where the two differ, the live behavior is noted.
 
-- **`sub` is not the Telegram user ID, and it is different for each bot.** The same person gets another `sub` from another bot (Telegram's discovery document says `public`, which would mean the same `sub` everywhere; live, it differs). The plugin stores OIDC accounts by `sub`, so changing the OIDC bot gives every user a new account. The real Telegram user ID is the `id` claim.
-- **`id` arrives as a string**, for example `"8306595751"`, although Telegram's documentation shows a number. The plugin types it as `string`.
+- **`sub` is not the Telegram user ID, and it is different for each bot.** The same person gets another `sub` from another bot (Telegram's discovery document says `public`, which would mean the same `sub` everywhere; live, it differs). The plugin stores OIDC accounts by `sub`, so changing the OIDC bot changes the account key. In OIDC-only mode this creates another user. With the Telegram columns, matching can retain the user when a verified profile `id` and a remaining linked account prove the same identity. Keep one OIDC bot for the life of your app rather than relying on that fallback. The real Telegram user ID is the `id` claim.
+- **The plugin exposes `id` as a string**, for example `"8306595751"`. Telegram's documentation shows a number, while the live tokens checked on 2026-10-29 used strings. The plugin accepts a positive safe-integer number or a canonical positive decimal string and normalizes it before calling your mapper. An absent `id` is allowed when the profile scope is unavailable; a present but malformed `id` rejects the token.
 - **ID tokens live 30 seconds, and there is no refresh token.** There is also no UserInfo endpoint, so the access token is of no further use.
 - **Token errors come back with HTTP 200** and an `error` field. The plugin treats them as failures; Better Auth then redirects with `error=invalid_code`.
 - **Declining sends no callback.** If the user declines in the Telegram app, Telegram never redirects back to your site; the browser stays on `oauth.telegram.org`, which shows its account picker again. Don't build UI that waits for an "access denied" callback; keep a "Back" link on your own page instead.
@@ -313,7 +327,7 @@ These come from Telegram's documentation and from testing against the live servi
 
 ## Known limitations
 
-- **OIDC doesn't find existing Login Widget or Mini App users yet** ([#25](https://github.com/vcode-sh/better-auth-telegram/issues/25)). Better Auth matches OAuth sign-ins by account ID and then by verified email, and a Login Widget user has neither. The other direction works (see [What gets stored](#what-gets-stored)). Until then, let signed-in users [link OIDC](#link-telegram-oidc-to-a-signed-in-user).
+- **Existing duplicate users are not automatically merged.** Matching across methods applies when there is no existing OIDC account for that `sub`. See [Use one user across sign-in methods](#use-one-user-across-sign-in-methods).
 - **With Better Auth's `oauth-proxy` plugin**, the Telegram ID isn't copied onto the user: the token is checked on the server that exchanges the code, while the user is created on the other server.
 - **Better Auth's `/account-info`** stops working for `telegram-oidc` about 30 seconds after sign-in, because the tokens expire and can't be refreshed. Read `telegramId`, `telegramUsername` and `telegramPhoneNumber` from the user instead.
 - **With `session.cookieCache`**, Telegram fields changed by Better Auth's `/link-social` or `/unlink-account` show up in the session only when the cache expires. (The plugin's own `/telegram/link` and `/telegram/unlink` refresh the cookie immediately.)

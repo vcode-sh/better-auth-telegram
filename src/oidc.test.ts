@@ -104,6 +104,41 @@ describe("getUserInfo", () => {
     expect(result?.user).not.toHaveProperty("id");
   });
 
+  it.each([
+    null,
+    true,
+    {},
+    [],
+    -1,
+    0,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    "",
+    " 7",
+    "7 ",
+    "01",
+    "1.5",
+    "1e3",
+  ])(
+    "rejects an invalid profile id %j before invoking the mapper",
+    async (id) => {
+      const mapper = vi.fn();
+      const logger = { warn: vi.fn() };
+      const oidcProvider = createTelegramOIDCProvider(
+        BOT_TOKEN,
+        { clientSecret: CLIENT_SECRET, mapOIDCProfileToUser: mapper },
+        logger
+      );
+
+      const result = await oidcProvider.getUserInfo({
+        idToken: await telegram.sign(telegramClaims({ id })),
+      });
+
+      expect(result).toBeNull();
+      expect(mapper).not.toHaveBeenCalled();
+    }
+  );
+
   it("warns that the bot's signing algorithm drops profile claims", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 

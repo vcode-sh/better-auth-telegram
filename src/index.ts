@@ -6,6 +6,7 @@ import {
   getMiniAppRateLimits,
 } from "./miniapp-endpoints";
 import { createTelegramOIDCProvider } from "./oidc";
+import { withTelegramIdentityLinking } from "./oidc-linking";
 import { createPluginConfig } from "./plugin-config";
 import { createTelegramSchema, type TelegramSchema } from "./schema";
 import {
@@ -62,16 +63,17 @@ export const telegram = (options: TelegramPluginOptions) => {
       for (const warning of config.warnings) {
         ctx.logger.warn(warning);
       }
+      const provider = config.oidcEnabled
+        ? createTelegramOIDCProvider(config.botToken, config.oidc!, ctx.logger)
+        : null;
       return {
-        ...(config.oidcEnabled
+        ...(provider
           ? {
               context: {
                 socialProviders: [
-                  createTelegramOIDCProvider(
-                    config.botToken,
-                    config.oidc!,
-                    ctx.logger
-                  ),
+                  config.widgetEnabled || config.miniAppEnabled
+                    ? withTelegramIdentityLinking(provider)
+                    : provider,
                   ...ctx.socialProviders,
                 ],
               },

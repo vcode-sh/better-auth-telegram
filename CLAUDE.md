@@ -11,14 +11,16 @@ Two entry points, two export paths:
 
 Supporting modules:
 
-- **`src/verify.ts`** -- HMAC-SHA256 verification via Web Crypto API. Two paths: Login Widget (`SHA256(botToken)`) and Mini App (`HMAC-SHA256("WebAppData", botToken)`)
-- **`src/oidc.ts`** -- Telegram OIDC provider factory. Creates a Better Auth 1.7 `OAuthProvider` (`accountSubject` = `sub`, declarative `idToken`, `requiresIdTokenNonce`) for the Authorization Code flow with PKCE and nonce via `oauth.telegram.org`. Basic client auth; ID tokens verified against the cached JWKS before claims are used.
-- **`src/telegram-identity.ts`** -- Request-scoped verified OIDC claims plus the `databaseHooks` installed via `init`: copy `id`/`preferred_username`/`phone_number` onto the user (and the OIDC account) for the user owning that `sub`; re-check `user.telegramId` whenever a Telegram account is deleted (by any route); reserve the placeholder email domains for the Telegram flows.
-- **`src/telegram-account.ts`** -- Shared Login Widget / Mini App account logic (find, link, create, unlink) through `ctx.context.internalAdapter`, so `databaseHooks` and `user.validateUserInfo` apply.
-- **`src/testing/harness.ts`** -- Test-only: real `betterAuth()` on the memory adapter or SQLite (Better Auth migrations), and a fake oauth.telegram.org modeled on live behavior (key rotation, JWKS outage).
-- **`src/testing/adapters.ts`** -- Test-only: Better Auth on PostgreSQL / MySQL (Kysely), Drizzle, Prisma and MongoDB for the adapter lane (`*.adapter.test.ts`), each skipped unless its `BAT_TEST_*_URL` is set.
-- **`src/types.ts`** -- All TypeScript interfaces (`TelegramPluginOptions`, `TelegramAuthData`, Mini App types, `TelegramOIDCOptions`, `TelegramOIDCClaims`)
-- **`src/constants.ts`** -- Error codes, success messages, `PLUGIN_ID`, `DEFAULT_MAX_AUTH_AGE`, OIDC endpoints/issuer constants
+- **`src/client-widget.ts` and `src/client-types.ts`** -- Browser widget lifecycle and client response/widget types. `client.ts` keeps the API actions, Mini App helpers, session notifications and public exports.
+- **`src/verify.ts`** -- HMAC-SHA256 verification via Web Crypto API. Login Widget uses `SHA256(botToken)`; Mini App uses `HMAC-SHA256("WebAppData", botToken)`.
+- **`src/oidc.ts` and `src/oidc-token.ts`** -- Better Auth 1.7 provider factory (`accountSubject` = `sub`, PKCE, nonce, Basic client authentication) and cached JWKS/token verification, including profile-ID normalization before claims are used.
+- **`src/oidc-linking.ts` and `src/oidc-linking-policy.ts`** -- Match a verified OIDC sign-in to an existing Telegram user before Better Auth's account lookup. Require linked identity proof, preserve existing `sub` ownership, and enforce implicit-linking policy and validation hooks.
+- **`src/telegram-account.ts`** -- Find-or-create orchestration for Login Widget and Mini App users. `telegram-account-state.ts` owns shared types, lookups, validation and per-instance operation locks; `telegram-account-user.ts` owns provisioning and profile refresh; `telegram-account-link.ts` owns explicit link/unlink. Writes use Better Auth's internal adapter.
+- **`src/telegram-session.ts`** -- Creates sessions and renews cookies for Login Widget and Mini App flows.
+- **`src/telegram-identity.ts`** -- Installs database hooks. `telegram-identity-state.ts` holds verified request claims; `telegram-identity-sync.ts` copies and reconciles linked identities; `telegram-identity-session.ts` refreshes OIDC session cookies; `telegram-profile.ts` applies mapped profile updates; `telegram-placeholder.ts` reserves placeholder emails and chooses collision-safe OIDC placeholders.
+- **`src/testing/harness.ts`** -- Stable test-fixture imports. Implementations live in `testing/auth.ts` (memory/SQLite Better Auth), `http-client.ts` (cookie-aware requests), `signed-data.ts` (Widget/Mini App fixtures), `oidc-server.ts` (fake Telegram), `oidc-flow.ts` (sign-in helpers) and `constants.ts` (independent fixture constants).
+- **`src/testing/adapters.ts`** -- Real PostgreSQL/MySQL (Kysely), Drizzle, Prisma and MongoDB fixtures for `*.adapter.test.ts`; each lane requires its `BAT_TEST_*_URL`.
+- **`src/types.ts` and `src/constants.ts`** -- Public server types, defaults, provider IDs and OIDC endpoints. Client types live in `client-types.ts`; widget options live in `client-widget.ts`.
 
 ### Server Endpoints
 
@@ -45,7 +47,7 @@ Schema conditionally extends `user` table with `telegramId`, `telegramUsername`,
 ## Testing
 
 - **Vitest** with `happy-dom` environment; `*.integration.test.ts` run in `node` against a real Better Auth instance (see `src/testing/harness.ts`). Prefer those over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7.
-- Tests co-located in `src/` (`*.test.ts`)
+- Tests co-located in `src/` (`*.test.ts`). OIDC integration suites separate sign-in, protocol, identity, profile, claims and linking; Widget, Mini App and mapper suites cover their corresponding flows.
 - `npm run test:types` compiles `test-d/consumer.ts` against the built `dist/` (run `npm run build` first)
 - `*.adapter.test.ts` (the adapter lane) is excluded from `npm test`; CI runs it in the `adapters` job with service containers. Concurrency and driver typing (PostgreSQL integer ids) only show up there: SQLite serializes every query.
 - Better Auth disables its origin checks under `NODE_ENV=test`; tests of CSRF behavior set `advanced.disableOriginCheck: false`.
@@ -88,10 +90,10 @@ Single test file: `npx vitest run src/verify.test.ts`
 - `botToken` must never leak to client-side code. Server plugin only.
 - All endpoints use `createAuthEndpoint()` from `better-auth/api`. Follow that pattern.
 - Write users/accounts through `ctx.context.internalAdapter`, never raw `ctx.context.adapter.create` (that skips `databaseHooks` and `validateUserInfo`). Reads via `adapter.findOne` are fine.
-- Telegram facts verified live (2026-10-29): OIDC `sub` is per bot (use the `id` claim, a string, for the Telegram user id); switching a bot to OIDC permanently disables its legacy Login Widget; BotFather rejects localhost redirect URIs; ID tokens live 30 s; token errors come back as HTTP 200; declining the OIDC login in the Telegram app sends no callback at all (oauth.telegram.org shows its account picker again).
+- Telegram facts verified live (2026-10-29): OIDC `sub` is per bot (use the `id` claim for the Telegram user id; the plugin normalizes verified numeric or string IDs to strings before exposing claims); switching a bot to OIDC permanently disables its legacy Login Widget; BotFather rejects localhost redirect URIs; ID tokens live 30 s; token errors come back as HTTP 200; declining the OIDC login in the Telegram app sends no callback at all (oauth.telegram.org shows its account picker again).
 - Session-protected endpoints use `sessionMiddleware`. Don't forget it for authenticated routes.
 - Type guards (`validateTelegramAuthData`, `validateMiniAppData`) run before processing. Don't skip validation.
 - Mini App endpoints are conditionally registered (`miniApp.enabled`). Test both enabled and disabled paths.
-- OIDC provider is conditionally injected via `init` hook (`oidc.enabled`). JWT verification in `oidc.ts` uses `jose` library -- changes to JWKS fetching or token validation need scrutiny.
+- OIDC provider is conditionally injected via `init` hook (`oidc.enabled`). JWT verification in `oidc-token.ts` uses `jose` library -- changes to JWKS fetching or token validation need scrutiny.
 - HTTP status codes: 400 (validation), 401 (auth), 403 (disabled), 404 (not found), 409 (conflict)
 - Coverage thresholds are enforced in CI. New code needs tests.
