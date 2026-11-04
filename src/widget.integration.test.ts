@@ -465,6 +465,26 @@ describe("Mini App request validation", () => {
     expect(response.json.code).toBe("NO_USER_IN_INIT_DATA");
   });
 
+  it.each([true, false])(
+    "rejects a null Mini App user when signature validation is %s",
+    async (validateInitData) => {
+      const { client, db } = createMemoryAuth(miniApp({ validateInitData }));
+      const initData = await signInitParams({
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        user: "null",
+      });
+
+      const response = await client.post("/telegram/miniapp/signin", {
+        initData,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.json.code).toBe("INVALID_MINI_APP_DATA_STRUCTURE");
+      expect(client.hasSession()).toBe(false);
+      expect(db.user).toHaveLength(0);
+    }
+  );
+
   it("answers 400 for unsigned data with a broken structure when validation is off", async () => {
     const { client } = createMemoryAuth(miniApp({ validateInitData: false }));
 

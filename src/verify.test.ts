@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signInitParams } from "./testing/harness";
 import {
   parseMiniAppInitData,
+  validateMiniAppData,
   verifyMiniAppInitData,
   verifyTelegramAuth,
 } from "./verify";
@@ -136,5 +137,13 @@ describe("parseMiniAppInitData", () => {
 
     expect(parsed.user).toBeUndefined();
     expect(parsed.auth_date).toBe(1_761_730_000);
+  });
+});
+
+describe("validateMiniAppData", () => {
+  it("rejects a null user without throwing", () => {
+    expect(validateMiniAppData({ user: null, auth_date: 1, hash: "x" })).toBe(
+      false
+    );
   });
 });
