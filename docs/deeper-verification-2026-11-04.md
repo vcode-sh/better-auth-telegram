@@ -78,5 +78,21 @@ these measurements do not justify the extra state or complexity.
 - Disposable database readback finds no remaining generated databases. Containers and temporary dependency installs are removed after verification.
 - Largest implementation module: 187 non-comment code lines. Largest test file: 466.
 
+## 3.2.1 release follow-up
+
+Codecov identified an untested authority check when the user profile is already
+current but the Telegram account metadata still needs updating. The profile-hook
+regression now covers that state as well as the original stale-profile case,
+checking the refusal code, removed account, unchanged stored sessions and absence
+of an authenticated cookie. Removing only this authority check in an isolated
+copy makes the new case fail with HTTP 200 instead of 401; restoring it passes.
+No production change was needed. The temporary copy was removed.
+
+The updated default suite passes all 337 tests on Node 26.13.0. Coverage is 98.68%
+lines, 98.70% statements, 95.78% branches and 100% functions; the affected account
+module has 100% line coverage. Scoped lint, package type checks and diff checks
+also pass. These results supplement the earlier runtime/adapter matrix; release
+CI checks the new test on every required runtime without weakening existing gates.
+
 No test claims that this finite review proves the absence of every possible defect.
 No release or production deployment is part of this working-tree verification.

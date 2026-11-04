@@ -160,40 +160,53 @@ describe("Telegram identity authority transitions", () => {
     expect(client.hasSession()).toBe(false);
   });
 
-  it("does not issue a session after a profile hook revokes the proving account", async () => {
-    let accountId = "";
-    const { client, db } = createMemoryAuth(
-      {},
-      {
-        databaseHooks: {
-          account: {
-            update: {
-              before: async (_account, ctx) => {
-                await ctx!.context.internalAdapter.deleteAccount(accountId);
+  it.each([
+    { profile: "outdated", profileAlreadyCurrent: false },
+    { profile: "already current", profileAlreadyCurrent: true },
+  ])(
+    "does not issue a session after an account hook revokes its proof while the user profile is $profile",
+    async ({ profileAlreadyCurrent }) => {
+      let accountId = "";
+      const { auth, client, db } = createMemoryAuth(
+        {},
+        {
+          databaseHooks: {
+            account: {
+              update: {
+                before: async (_account, ctx) => {
+                  await ctx!.context.internalAdapter.deleteAccount(accountId);
+                },
               },
             },
           },
-        },
+        }
+      );
+      const first = await client.post(
+        "/telegram/signin",
+        await signWidgetData({ id: 42, username: "before" })
+      );
+      expect(first.status).toBe(200);
+      accountId = db.account[0]!.id;
+      if (profileAlreadyCurrent) {
+        // Other sign-in methods can refresh the user before this account catches up.
+        const context = await auth.$context;
+        await context.internalAdapter.updateUser(first.json.user.id, {
+          telegramUsername: "after",
+        });
       }
-    );
-    const first = await client.post(
-      "/telegram/signin",
-      await signWidgetData({ id: 42, username: "before" })
-    );
-    expect(first.status).toBe(200);
-    accountId = db.account[0]!.id;
-    client.clearCookies();
-    const sessionCount = db.session.length;
+      client.clearCookies();
+      const sessions = structuredClone(db.session);
 
-    const response = await client.post(
-      "/telegram/signin",
-      await signWidgetData({ id: 42, username: "after" })
-    );
+      const response = await client.post(
+        "/telegram/signin",
+        await signWidgetData({ id: 42, username: "after" })
+      );
 
-    expect(response.status).toBe(401);
-    expect(response.json.code).toBe("ACCOUNT_NOT_LINKED");
-    expect(db.account).toHaveLength(0);
-    expect(db.session).toHaveLength(sessionCount);
-    expect(client.hasSession()).toBe(false);
-  });
+      expect(response.status).toBe(401);
+      expect(response.json.code).toBe("ACCOUNT_NOT_LINKED");
+      expect(db.account).toHaveLength(0);
+      expect(db.session).toEqual(sessions);
+      expect(client.hasSession()).toBe(false);
+    }
+  );
 });
