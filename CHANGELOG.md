@@ -5,6 +5,22 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Overlapping widget initializations on the same host now keep the newest requested configuration. A late older response cannot replace the current bot or login callback, and its cleanup handle is harmless.
+- OIDC placeholder emails now support valid opaque and long subjects. Existing account keys and ordinary numeric placeholders remain unchanged, and collision variants stay within the email local-part limit.
+- OIDC tokens with an empty or non-string subject are rejected before profile mapping or cross-flow linking. An accepted single-client audience array is normalized to the public string type before the mapper runs.
+- Mini App data with duplicate parameter names is rejected, so signature verification and parsed output cannot select different copies of a field. Widget and Mini App user IDs must be positive safe integers.
+- Widget and Mini App sign-in reject account keys owned by different users instead of selecting the first record. Same-owner legacy duplicates remain supported, including when a conflicting owner appears after the first two rows.
+- Returning Telegram sign-ins recheck account ownership after application validation and profile-update hooks. Revocation or reassignment during those steps cannot authorize a new session from stale account data.
+
+### Tests and maintenance
+
+- Replaced redundant or weak checks with independently derived response, session and durable-state assertions; added real nontransactional adapter checks and installed CommonJS/type-consumer acceptance.
+- Documented the testing standards and audit evidence. Test-owned SQLite handles, databases and generated fixtures are released after success or failure.
+
 ## [3.2.0] - 2026-11-04
 
 ### Added

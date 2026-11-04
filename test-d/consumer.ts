@@ -35,7 +35,7 @@ const client = createAuthClient({ plugins: [telegramClient()] });
 typed(client.signInWithTelegram);
 typed(client.signInWithTelegramOIDC);
 
-// Telegram sends the user id as a string (a number would lose precision).
+// The verified mapper profile normalizes Telegram numeric IDs to strings.
 export const id: TelegramOIDCClaims["id"] = "8306595751";
 // @ts-expect-error the id claim is a string, never a number
 export const numericId: TelegramOIDCClaims["id"] = 8306595751;
@@ -75,4 +75,31 @@ export async function widgets(element: HTMLElement) {
   });
   const redirect = await client.initTelegramWidgetRedirect(element, "/cb");
   redirect.destroy();
+}
+
+// These calls compile against the published declarations, not source types.
+// A function typed with `any` arguments still passes typed(function), so also
+// check the input and result contracts consumers rely on.
+export async function signInContract() {
+  const result = await client.signInWithTelegram({
+    id: 42,
+    first_name: "Ann",
+    auth_date: 1_761_730_000,
+    hash: "signed-payload",
+  });
+  if (result.error) {
+    typed(result.error.code) satisfies string | undefined;
+  } else {
+    typed(result.data.user.telegramId) satisfies string | null | undefined;
+    typed(result.data.session.token) satisfies string;
+  }
+  await client.signInWithTelegram({
+    // @ts-expect-error raw Widget IDs are numbers, unlike normalized OIDC IDs
+    id: "42",
+    first_name: "Ann",
+    auth_date: 1,
+    hash: "x",
+  });
+  // @ts-expect-error Mini App sign-in accepts the raw signed string, not parsed data
+  await client.signInWithMiniApp({ user: { id: 42 } });
 }

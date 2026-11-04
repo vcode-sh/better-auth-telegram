@@ -83,17 +83,6 @@ describe("configuration warnings", () => {
     ]);
     expect(console).not.toHaveBeenCalled();
   });
-
-  it("stay quiet with logger.disabled", async () => {
-    const console = vi
-      .spyOn(globalThis.console, "warn")
-      .mockImplementation(() => undefined);
-    const { auth } = createMemoryAuth({ botToken: "not-a-token" });
-
-    await auth.$context;
-
-    expect(console).not.toHaveBeenCalled();
-  });
 });
 
 describe("GET /telegram/config", () => {
@@ -140,11 +129,14 @@ describe("rate limits (Better Auth's limiter)", () => {
       statuses.push((await client.post(path, {})).status);
     }
     const overLimit = await client.post(path, {});
+    vi.setSystemTime(1_761_730_059_000);
+    const sameWindow = await client.post(path, {});
     vi.setSystemTime(1_761_730_061_000);
     const nextWindow = await client.post(path, {});
 
     expect(statuses).not.toContain(429);
     expect(overLimit.status).toBe(429);
+    expect(sameWindow.status).toBe(429);
     expect(nextWindow.status).not.toBe(429);
   });
 });

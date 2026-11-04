@@ -121,6 +121,11 @@ export async function verifyTelegramAuth(
   return verifyHmacHex(secretKey, dataCheckString, hash);
 }
 
+/** Reject identities that JSON numbers cannot represent without changing them. */
+function isTelegramUserId(id: unknown): id is number {
+  return typeof id === "number" && Number.isSafeInteger(id) && id > 0;
+}
+
 /**
  * Validates that required fields are present in Telegram auth data
  */
@@ -128,7 +133,7 @@ export function validateTelegramAuthData(data: any): data is TelegramAuthData {
   return (
     typeof data === "object" &&
     data !== null &&
-    typeof data.id === "number" &&
+    isTelegramUserId(data.id) &&
     typeof data.first_name === "string" &&
     typeof data.auth_date === "number" &&
     typeof data.hash === "string"
@@ -175,6 +180,11 @@ export async function verifyMiniAppInitData(
   maxAge = DEFAULT_MAX_AUTH_AGE
 ): Promise<boolean> {
   const params = new URLSearchParams(initData);
+  // Verification reads first values; parsing keeps last values. Telegram's
+  // fields are unique, so reject ambiguity before trusting either view.
+  if (new Set(params.keys()).size !== params.size) {
+    return false;
+  }
   const hash = params.get("hash");
 
   if (!hash) {
@@ -215,7 +225,7 @@ export function validateMiniAppData(data: any): data is TelegramMiniAppData {
     (data.user === undefined ||
       (typeof data.user === "object" &&
         data.user !== null &&
-        typeof data.user.id === "number" &&
+        isTelegramUserId(data.user.id) &&
         typeof data.user.first_name === "string"))
   );
 }

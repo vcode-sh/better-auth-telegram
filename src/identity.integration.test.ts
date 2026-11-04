@@ -4,7 +4,7 @@
  * it must only ever be backed by a linked Telegram account, because the
  * Login Widget and Mini App sign users in by it.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createClient,
   createMemoryAuth,
@@ -70,27 +70,16 @@ function accountId(db: { account: Record<string, any>[] }, providerId: string) {
 }
 
 describe("removing a Telegram account revokes the Telegram identity", () => {
-  it("clears telegramId when the OIDC account is unlinked through Better Auth", async () => {
-    const { client, db } = createMemoryAuth(options(), authOptions);
-    await signUp(client);
-    await linkOIDC(client);
-    expect(db.user[0]!.telegramId).toBe("8306595751");
-
-    const unlink = await client.post("/unlink-account", {
-      accountId: accountId(db, "telegram-oidc"),
-    });
-
-    expect(unlink.status).toBe(200);
-    expect(db.user[0]!.telegramId).toBeNull();
-  });
-
   it("does not let the Mini App sign back in after the OIDC account is unlinked", async () => {
     const { auth, client, db } = createMemoryAuth(options(), authOptions);
     await signUp(client);
     await linkOIDC(client);
-    await client.post("/unlink-account", {
+    const unlink = await client.post("/unlink-account", {
       accountId: accountId(db, "telegram-oidc"),
     });
+    expect(unlink.status).toBe(200);
+    expect(db.user[0]!.telegramId).toBeNull();
+    const originalUserId = db.user[0]!.id;
 
     const miniApp = createClient(auth);
     const response = await miniApp.post("/telegram/miniapp/signin", {
@@ -98,7 +87,10 @@ describe("removing a Telegram account revokes the Telegram identity", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.json.user.id).not.toBe(db.user[0]!.id);
+    expect(response.json.user.id).not.toBe(originalUserId);
+    expect((await miniApp.get("/get-session")).json.user.id).toBe(
+      response.json.user.id
+    );
   });
 
   it("clears telegramId when the Login Widget account is unlinked through Better Auth", async () => {
@@ -201,7 +193,7 @@ describe("verified OIDC claims only apply to the user they prove", () => {
 
 describe("ID token sign-in", () => {
   it("requires the nonce the token was issued with", async () => {
-    const { client } = createMemoryAuth(options());
+    const { client, db } = createMemoryAuth(options());
     const token = await telegramMock.sign({
       ...telegramClaims(),
       nonce: "n-1",
@@ -213,10 +205,15 @@ describe("ID token sign-in", () => {
     });
 
     expect(response.status).toBe(401);
+    expect(response.json.code).toBe("INVALID_TOKEN");
+    expect([db.user.length, db.account.length, db.session.length]).toEqual([
+      0, 0, 0,
+    ]);
+    expect(client.hasSession()).toBe(false);
   });
 
   it("can be turned off", async () => {
-    const { client } = createMemoryAuth(
+    const { client, db } = createMemoryAuth(
       options({
         oidc: {
           enabled: true,
@@ -236,9 +233,13 @@ describe("ID token sign-in", () => {
     });
 
     expect(response.status).toBe(404);
+    expect(response.json.code).toBe("ID_TOKEN_NOT_SUPPORTED");
+    expect([db.user.length, db.account.length, db.session.length]).toEqual([
+      0, 0, 0,
+    ]);
   });
 
-  it("honors oidc.disableSignUp", async () => {
+  it("honors oidc.disableSignUp in redirect and direct-token flows", async () => {
     const { client, db } = createMemoryAuth(
       options({
         oidc: {
@@ -252,19 +253,34 @@ describe("ID token sign-in", () => {
     const { location } = await signInWithTelegramOIDC(client, telegramMock);
 
     expect(location).toContain("error=signup_disabled");
-    expect(db.user).toHaveLength(0);
+    const token = await telegramMock.sign({
+      ...telegramClaims(),
+      nonce: "signup-denied",
+    });
+    const response = await client.post("/sign-in/social", {
+      provider: "telegram-oidc",
+      idToken: { token, nonce: "signup-denied" },
+    });
+    expect(response.status).toBe(401);
+    expect(response.json.code).toBe("OAUTH_LINK_ERROR");
+    expect([db.user.length, db.account.length, db.session.length]).toEqual([
+      0, 0, 0,
+    ]);
+    expect(client.hasSession()).toBe(false);
   });
 });
 
 describe("validateUserInfo beyond sign-up", () => {
   it("runs for returning Login Widget sign-ins", async () => {
-    const validateUserInfo = vi.fn(
-      async ({ source }: { source: { action: string } }) =>
-        source.action === "sign-in" ? { error: "suspended" } : undefined
-    );
-    const { client } = createMemoryAuth({}, { user: { validateUserInfo } });
+    const validateUserInfo = async ({
+      source,
+    }: {
+      source: { action: string };
+    }) => (source.action === "sign-in" ? { error: "suspended" } : undefined);
+    const { client, db } = createMemoryAuth({}, { user: { validateUserInfo } });
     await client.post("/telegram/signin", await signWidgetData({ id: 42 }));
     client.clearCookies();
+    const sessionsBefore = db.session.length;
 
     const response = await client.post(
       "/telegram/signin",
@@ -273,13 +289,17 @@ describe("validateUserInfo beyond sign-up", () => {
 
     expect(response.status).toBe(403);
     expect(response.json.code).toBe("suspended");
+    expect(client.hasSession()).toBe(false);
+    expect(db.session).toHaveLength(sessionsBefore);
   });
 
   it("runs before /telegram/link links an account", async () => {
-    const validateUserInfo = vi.fn(
-      async ({ source }: { source: { action: string } }) =>
-        source.action === "link-account" ? { error: "no_linking" } : undefined
-    );
+    const validateUserInfo = async ({
+      source,
+    }: {
+      source: { action: string };
+    }) =>
+      source.action === "link-account" ? { error: "no_linking" } : undefined;
     const { client, db } = createMemoryAuth(
       {},
       { ...authOptions, user: { validateUserInfo } }
@@ -292,6 +312,8 @@ describe("validateUserInfo beyond sign-up", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(response.json.code).toBe("no_linking");
+    expect(db.user[0]!.telegramId ?? null).toBeNull();
     expect(
       db.account.filter((account) => account.providerId === "telegram")
     ).toHaveLength(0);
@@ -300,10 +322,14 @@ describe("validateUserInfo beyond sign-up", () => {
 
 describe("validateUserInfo for an implicit link by telegramId", () => {
   it("sees a Mini App sign-in into an OIDC user as link-account by telegram-mini-app", async () => {
-    const validateUserInfo = vi.fn(
-      async ({ source }: { source: { action: string } }) =>
-        source.action === "link-account" ? { error: "no_linking" } : undefined
-    );
+    const validateUserInfo = async ({
+      source,
+    }: {
+      source: { action: string; method: string };
+    }) =>
+      source.action === "link-account" && source.method === "telegram-mini-app"
+        ? { error: "no_linking" }
+        : undefined;
     const { client, db } = createMemoryAuth(options(), {
       user: { validateUserInfo },
     });
@@ -316,12 +342,6 @@ describe("validateUserInfo for an implicit link by telegramId", () => {
 
     expect(response.status).toBe(403);
     expect(response.json.code).toBe("no_linking");
-    expect(validateUserInfo).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        source: { action: "link-account", method: "telegram-mini-app" },
-      }),
-      expect.anything()
-    );
     expect(
       db.account.filter((account) => account.providerId === "telegram")
     ).toHaveLength(0);
@@ -381,17 +401,20 @@ describe("placeholder emails cannot be claimed by other sign-up methods", () => 
   ])(
     "rejects an email/password sign-up with a %s placeholder",
     async (_namespace, email) => {
-      const { client, rows } = await createSqliteAuth({}, authOptions);
+      const { client, rows, sqlite } = await createSqliteAuth({}, authOptions);
+      try {
+        const response = await client.post("/sign-up/email", {
+          email,
+          password: "correct-horse-battery",
+          name: "Squatter",
+        });
 
-      const response = await client.post("/sign-up/email", {
-        email,
-        password: "correct-horse-battery",
-        name: "Squatter",
-      });
-
-      expect(response.status).toBe(400);
-      expect(response.json.code).toBe("FAILED_TO_CREATE_USER");
-      expect(rows("user")).toHaveLength(0);
+        expect(response.status).toBe(400);
+        expect(response.json.code).toBe("FAILED_TO_CREATE_USER");
+        expect(rows("user")).toHaveLength(0);
+      } finally {
+        sqlite.close();
+      }
     }
   );
 
@@ -437,5 +460,10 @@ describe("tolerating data written by older versions", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.json.user.id).toBe(db.user[0]!.id);
+    expect(db.user).toHaveLength(1);
+    expect((await client.get("/get-session")).json.user.id).toBe(
+      response.json.user.id
+    );
   });
 });

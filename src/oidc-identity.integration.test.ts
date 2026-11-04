@@ -159,23 +159,6 @@ describe("Telegram identity on OIDC users", () => {
     expect(db.user).toHaveLength(1);
   });
 
-  it("lets a Mini App sign-in find the user OIDC created", async () => {
-    const { client, db } = createMemoryAuth({
-      ...oidc(),
-      miniApp: { enabled: true },
-    });
-    await signInWithTelegramOIDC(client, telegramMock);
-    client.clearCookies();
-
-    const response = await client.post("/telegram/miniapp/signin", {
-      initData: await signInitData({ id: 8_306_595_751 }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(db.user).toHaveLength(1);
-    expect(response.json.user.id).toBe(db.user[0]!.id);
-  });
-
   it("signs an existing Widget user in through the same Telegram OIDC identity", async () => {
     const { client, db } = createMemoryAuth(oidc());
     await client.post(
@@ -240,11 +223,20 @@ describe("the session issued by an OIDC sign-in", () => {
       cookieCache
     );
 
-    await signInWithTelegramOIDC(
+    const { callback } = await signInWithTelegramOIDC(
       client,
       telegramMock,
       telegramClaims({ phone_number: "48572068680" })
     );
+    const cookieNames = callback.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split("=")[0]);
+    expect(
+      cookieNames.filter((name) => name?.includes("session_data"))
+    ).toHaveLength(1);
+    expect(
+      cookieNames.filter((name) => name?.includes("session_token"))
+    ).toHaveLength(1);
     const session = await client.get("/get-session");
 
     expect(session.json.user).toMatchObject({
@@ -318,22 +310,6 @@ describe("the session issued by an OIDC sign-in", () => {
     expect(session.json.user.telegramId).toBe("8306595751");
   });
 
-  it("sends the session cookies once", async () => {
-    const { client } = createMemoryAuth(oidc(), cookieCache);
-
-    const { callback } = await signInWithTelegramOIDC(client, telegramMock);
-    const names = callback.headers
-      .getSetCookie()
-      .map((cookie) => cookie.slice(0, cookie.indexOf("=")));
-
-    expect(names.filter((name) => name.includes("session_data"))).toHaveLength(
-      1
-    );
-    expect(names.filter((name) => name.includes("session_token"))).toHaveLength(
-      1
-    );
-  });
-
   // An app's after hook may end the session it was just given.
   it("does not bring back a session cookie an earlier hook removed", async () => {
     const { client } = createMemoryAuth(oidc(), {
@@ -348,9 +324,11 @@ describe("the session issued by an OIDC sign-in", () => {
       },
     });
 
-    await signInWithTelegramOIDC(client, telegramMock);
+    const { callback } = await signInWithTelegramOIDC(client, telegramMock);
 
+    expect(callback.headers.get("location")).toBe("/dashboard");
     expect(client.hasSession()).toBe(false);
+    expect((await client.get("/get-session")).json).toBeNull();
   });
 
   it("issues the cached OIDC session for the existing Telegram user", async () => {
@@ -369,5 +347,3 @@ describe("the session issued by an OIDC sign-in", () => {
     expect(session.json.user.telegramId).toBe("8306595751");
   });
 });
-
-// #53: the mapper's values only land on new users unless the app opts in.

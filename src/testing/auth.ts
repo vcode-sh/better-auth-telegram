@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { getMigrations } from "better-auth/db/migration";
+import { onTestFinished } from "vitest";
 import { telegram } from "../index";
 import type { TelegramPluginOptions } from "../types";
 import { BASE_URL, BOT_TOKEN } from "./constants";
@@ -66,12 +67,24 @@ export async function createSqliteAuth(
   authOptions: Partial<AuthOptions> = {}
 ) {
   const sqlite = new DatabaseSync(":memory:");
+  const close = () => {
+    if (sqlite.isOpen) {
+      sqlite.close();
+    }
+  };
+  // Register before setup: a failed migration or assertion must release the handle.
+  onTestFinished(close);
   const options = {
     ...baseOptions(pluginOptions, authOptions),
     database: sqlite,
   };
-  const { runMigrations } = await getMigrations(options);
-  await runMigrations();
+  try {
+    const { runMigrations } = await getMigrations(options);
+    await runMigrations();
+  } catch (error) {
+    close();
+    throw error;
+  }
   const auth = betterAuth(options);
   const rows = (table: string) =>
     sqlite.prepare(`select * from "${table}"`).all() as Record<string, any>[];

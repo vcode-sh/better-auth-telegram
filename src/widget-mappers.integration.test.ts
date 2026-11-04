@@ -60,7 +60,7 @@ describe("what user mappers can set", () => {
 
   // A placeholder variant is still reserved for that Telegram user.
   it("refuses an email sign-up with another user's placeholder variant", async () => {
-    const { client } = await createSqliteAuth(
+    const { client, rows } = await createSqliteAuth(
       {},
       { emailAndPassword: { enabled: true } }
     );
@@ -71,7 +71,12 @@ describe("what user mappers can set", () => {
       name: "Squatter",
     });
 
-    expect(response.status).not.toBe(200);
+    expect(response.status).toBe(400);
+    expect(response.json.code).toBe("FAILED_TO_CREATE_USER");
+    expect(rows("user")).toHaveLength(0);
+    expect(rows("account")).toHaveLength(0);
+    expect(rows("session")).toHaveLength(0);
+    expect(client.hasSession()).toBe(false);
   });
 
   // Better Auth's /sign-up/email answers 422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL.

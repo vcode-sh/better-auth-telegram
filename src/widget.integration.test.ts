@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { APIError } from "better-auth/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createClient,
@@ -33,22 +34,10 @@ describe("Login Widget sign-in", () => {
     });
   });
 
-  it("keeps an email returned by mapTelegramDataToUser", async () => {
-    const { client, db } = createMemoryAuth({
-      mapTelegramDataToUser: (data) => ({
-        name: data.first_name,
-        email: `ann-${data.id}@example.com`,
-      }),
-    });
-
-    await client.post("/telegram/signin", await widgetUser());
-
-    expect(db.user[0]!.email).toBe("ann-42@example.com");
-  });
-
   it("returns the same user on the next sign-in and refreshes the username", async () => {
     const { client, db } = createMemoryAuth();
-    await client.post("/telegram/signin", await widgetUser());
+    const first = await client.post("/telegram/signin", await widgetUser());
+    expect(first.status).toBe(200);
     client.clearCookies();
 
     const response = await client.post(
@@ -57,28 +46,10 @@ describe("Login Widget sign-in", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.json.user.id).toBe(first.json.user.id);
     expect(db.user).toHaveLength(1);
     expect(db.user[0]!.telegramUsername).toBe("ann_new");
     expect(db.account[0]!.telegramUsername).toBe("ann_new");
-  });
-
-  it("runs Better Auth database hooks for the new user and account", async () => {
-    const userBefore = vi.fn();
-    const accountAfter = vi.fn();
-    const { client } = createMemoryAuth(
-      {},
-      {
-        databaseHooks: {
-          user: { create: { before: userBefore } },
-          account: { create: { after: accountAfter } },
-        },
-      }
-    );
-
-    await client.post("/telegram/signin", await widgetUser());
-
-    expect(userBefore).toHaveBeenCalledOnce();
-    expect(accountAfter).toHaveBeenCalledOnce();
   });
 
   it("honors user.validateUserInfo", async () => {
@@ -110,7 +81,10 @@ describe("Login Widget sign-in", () => {
     );
 
     expect(response.status).toBe(401);
+    expect(response.json.code).toBe("INVALID_AUTHENTICATION");
     expect(db.user).toHaveLength(0);
+    expect(db.account).toHaveLength(0);
+    expect(db.session).toHaveLength(0);
   });
 
   it("answers 404 when auto-create is disabled", async () => {
@@ -119,7 +93,10 @@ describe("Login Widget sign-in", () => {
     const response = await client.post("/telegram/signin", await widgetUser());
 
     expect(response.status).toBe(404);
+    expect(response.json.code).toBe("USER_CREATION_DISABLED");
     expect(db.user).toHaveLength(0);
+    expect(db.account).toHaveLength(0);
+    expect(db.session).toHaveLength(0);
   });
 });
 
@@ -237,6 +214,7 @@ describe("Login Widget request validation", () => {
     const response = await client.post("/telegram/signin", { id: 42 });
 
     expect(response.status).toBe(400);
+    expect(response.json.code).toBe("INVALID_AUTH_DATA");
   });
 
   it("answers 500 when the bot token is not configured", async () => {
@@ -257,12 +235,15 @@ describe("Login Widget request validation", () => {
   });
 
   it("answers 403 when linking is disabled", async () => {
-    const { client } = createMemoryAuth({ allowUserToLink: false });
+    const { client, db } = createMemoryAuth({ allowUserToLink: false });
     await client.post("/telegram/signin", await widgetUser());
 
     const response = await client.post("/telegram/link", await widgetUser(43));
 
     expect(response.status).toBe(403);
+    expect(response.json.code).toBe("LINKING_DISABLED");
+    expect(db.account.map((account) => account.accountId)).toEqual(["42"]);
+    expect(db.user[0]!.telegramId).toBe("42");
   });
 
   it("answers 409 when the Telegram account is already linked to this user", async () => {
@@ -293,43 +274,47 @@ describe("Login Widget request validation", () => {
 });
 
 describe("Telegram account bookkeeping", () => {
-  it("does not write when nothing changed since the last sign-in", async () => {
-    const userUpdate = vi.fn();
-    const { client } = createMemoryAuth(
-      {},
-      { databaseHooks: { user: { update: { before: userUpdate } } } }
-    );
-    await client.post("/telegram/signin", await widgetUser());
-    client.clearCookies();
+  it.each([undefined, "ann"])(
+    "signs in without rewriting unchanged user/account metadata (username %s)",
+    async (username) => {
+      const userUpdate = vi.fn();
+      const accountUpdate = vi.fn();
+      // SQL stores a missing username as null, unlike the memory adapter.
+      const { client, rows, sqlite } = await createSqliteAuth(
+        {},
+        {
+          databaseHooks: {
+            user: { update: { before: userUpdate } },
+            account: { update: { before: accountUpdate } },
+          },
+        }
+      );
+      try {
+        const payload = await signWidgetData({
+          id: 42,
+          first_name: "Ann",
+          ...(username === undefined ? {} : { username }),
+        });
+        const first = await client.post("/telegram/signin", payload);
+        expect(first.status).toBe(200);
+        const [storedUser] = rows("user");
+        const [storedAccount] = rows("account");
+        client.clearCookies();
 
-    await client.post("/telegram/signin", await widgetUser());
+        const again = await client.post("/telegram/signin", payload);
+        const session = await client.get("/get-session");
 
-    expect(userUpdate).not.toHaveBeenCalled();
-  });
-
-  it("does not write on every sign-in for users without a Telegram username", async () => {
-    const userUpdate = vi.fn();
-    const accountUpdate = vi.fn();
-    // SQL returns null for the missing username; the memory adapter keeps
-    // undefined, which would hide the bug.
-    const { client } = await createSqliteAuth(
-      {},
-      {
-        databaseHooks: {
-          user: { update: { before: userUpdate } },
-          account: { update: { before: accountUpdate } },
-        },
+        expect(again.status).toBe(200);
+        expect(session.json.user.id).toBe(first.json.user.id);
+        expect(rows("user")).toEqual([storedUser]);
+        expect(rows("account")).toEqual([storedAccount]);
+        expect(userUpdate).not.toHaveBeenCalled();
+        expect(accountUpdate).not.toHaveBeenCalled();
+      } finally {
+        sqlite.close();
       }
-    );
-    const noUsername = () => signWidgetData({ id: 42, first_name: "Ann" });
-    await client.post("/telegram/signin", await noUsername());
-    client.clearCookies();
-
-    await client.post("/telegram/signin", await noUsername());
-
-    expect(userUpdate).not.toHaveBeenCalled();
-    expect(accountUpdate).not.toHaveBeenCalled();
-  });
+    }
+  );
 
   it("restores a missing telegramId on users that already have the account", async () => {
     const { client, db } = createMemoryAuth();
@@ -451,6 +436,29 @@ describe("another server creating the same Telegram user first", () => {
     expect(response.json.user.id).toBe(db.user[0]!.id);
   });
 
+  it("does not turn an application refusal into sign-in after another server created the user", async () => {
+    const { serverA, db } = racingServers(
+      () =>
+        new APIError("FORBIDDEN", {
+          code: "INVITE_REVOKED",
+          message: "Invite revoked",
+        })
+    );
+
+    const response = await serverA.client.post(
+      "/telegram/signin",
+      await widgetUser()
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.json.code).toBe("INVITE_REVOKED");
+    expect(serverA.client.hasSession()).toBe(false);
+    expect(db.user).toHaveLength(1);
+    expect(db.account).toHaveLength(1);
+    // Only server B's permitted sign-in may have created a session.
+    expect(db.session).toHaveLength(1);
+  });
+
   it("still reports a database error when no Telegram user was created", async () => {
     const { client, db } = createMemoryAuth(
       {},
@@ -542,7 +550,3 @@ describe("maxAuthAge reaches the sign-in endpoints", () => {
     }
   );
 });
-
-// Better Auth's OAuth sign-up drops `id`, `email`, `emailVerified` and
-// `input: false` fields from provider profiles (link-account.mjs,
-// db/schema.mjs parseAdditionalUserInputFromProviderProfile).

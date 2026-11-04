@@ -46,6 +46,8 @@ Schema conditionally extends `user` table with `telegramId`, `telegramUsername`,
 
 ## Testing
 
+Apply [Testing standards](docs/testing.md) to every added, edited or deleted test. Name the contract and the plausible defect; use independent expected results and remove cases with no unique protection.
+
 - **Vitest** with `happy-dom` environment; `*.integration.test.ts` run in `node` against a real Better Auth instance (see `src/testing/harness.ts`). Prefer those over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7.
 - Tests co-located in `src/` (`*.test.ts`). OIDC integration suites separate sign-in, protocol, identity, profile, claims and linking; Widget, Mini App and mapper suites cover their corresponding flows.
 - `npm run test:types` compiles `test-d/consumer.ts` against the built `dist/` (run `npm run build` first)
@@ -96,4 +98,4 @@ Single test file: `npx vitest run src/verify.test.ts`
 - Mini App endpoints are conditionally registered (`miniApp.enabled`). Test both enabled and disabled paths.
 - OIDC provider is conditionally injected via `init` hook (`oidc.enabled`). JWT verification in `oidc-token.ts` uses `jose` library -- changes to JWKS fetching or token validation need scrutiny.
 - HTTP status codes: 400 (validation), 401 (auth), 403 (disabled), 404 (not found), 409 (conflict)
-- Coverage thresholds are enforced in CI. New code needs tests.
+- Coverage thresholds are enforced in CI, but coverage does not prove assertions are useful. Add a test only for meaningful behavior not already protected.

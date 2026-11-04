@@ -138,6 +138,8 @@ export async function checkInitData(initData: string) {
 }
 ```
 
+Duplicate parameter names are rejected: verification and parsing must describe the same fields. Sign-in also requires a positive, safely representable integer user ID.
+
 It always checks the signature, even if `miniApp.validateInitData` is `false`. An invalid signature or expired `initData` returns `{ valid: false, data: null }` with status 200. `valid: true` confirms signature and age; it does not check that the parsed data contains a user suitable for sign-in. Use `signInWithMiniApp` to create a session: it also checks the data structure, rejects `user: null` with 400 `INVALID_MINI_APP_DATA_STRUCTURE`, and reports a missing user as 400 `NO_USER_IN_INIT_DATA`.
 
 ## Inside Telegram Web: cookies in an iframe

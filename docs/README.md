@@ -17,6 +17,7 @@ Welcome. This page tells you where to find each answer, and explains the words t
 | I get an error, or something doesn't happen. | [Troubleshooting](./troubleshooting.md) (organized by symptom) |
 | What exactly does endpoint, type or error code X look like? | [API reference](./api-reference.md) |
 | I'm on v2. What changes, and what do I do? | [Migration from v2 to v3](./migration-v2-to-v3.md) |
+| How do I write and review tests that detect real defects? | [Testing standards](./testing.md) |
 
 ## Glossary
 

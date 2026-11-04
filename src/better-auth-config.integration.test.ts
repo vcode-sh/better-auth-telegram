@@ -242,65 +242,72 @@ describe("session.cookieCache", () => {
 describe("custom table and column names", () => {
   it("signs in with the Login Widget and OIDC on renamed models and fields", async () => {
     const sqlite = new DatabaseSync(":memory:");
-    const options = {
-      baseURL: BASE_URL,
-      secret: "better-auth-telegram-test-secret-0123456789abcdef",
-      logger: { disabled: true },
-      database: sqlite,
-      user: { modelName: "users", fields: { email: "email_address" } },
-      account: { modelName: "accounts", fields: { accountId: "account_id" } },
-      session: { modelName: "sessions", fields: { userId: "user_id" } },
-      plugins: [
-        telegram({
-          botToken: BOT_TOKEN,
-          botUsername: "test_bot",
-          oidc: oidc(),
-        }),
-      ],
-    };
-    const { runMigrations } = await getMigrations(options);
-    await runMigrations();
-    const client = createClient(betterAuth(options));
+    try {
+      const options = {
+        baseURL: BASE_URL,
+        secret: "better-auth-telegram-test-secret-0123456789abcdef",
+        logger: { disabled: true },
+        database: sqlite,
+        user: { modelName: "users", fields: { email: "email_address" } },
+        account: { modelName: "accounts", fields: { accountId: "account_id" } },
+        session: { modelName: "sessions", fields: { userId: "user_id" } },
+        plugins: [
+          telegram({
+            botToken: BOT_TOKEN,
+            botUsername: "test_bot",
+            oidc: oidc(),
+          }),
+        ],
+      };
+      const { runMigrations } = await getMigrations(options);
+      await runMigrations();
+      const client = createClient(betterAuth(options));
 
-    const widget = await client.post(
-      "/telegram/signin",
-      await signWidgetData({ id: 42 })
-    );
-    client.clearCookies();
-    const again = await client.post(
-      "/telegram/signin",
-      await signWidgetData({ id: 42 })
-    );
-    client.clearCookies();
-    const { location } = await signInWithTelegramOIDC(
-      client,
-      telegramMock,
-      telegramClaims({ id: "43" })
-    );
+      const widget = await client.post(
+        "/telegram/signin",
+        await signWidgetData({ id: 42 })
+      );
+      client.clearCookies();
+      const again = await client.post(
+        "/telegram/signin",
+        await signWidgetData({ id: 42 })
+      );
+      client.clearCookies();
+      const { location } = await signInWithTelegramOIDC(
+        client,
+        telegramMock,
+        telegramClaims({ id: "43" })
+      );
 
-    expect([widget.status, again.status, location]).toEqual([
-      200,
-      200,
-      "/dashboard",
-    ]);
-    const rows = (sql: string) => sqlite.prepare(sql).all();
-    expect(
-      rows(
-        'select email_address, "telegramId" from users order by email_address'
-      )
-    ).toEqual([
-      {
-        email_address: "12224742808376279442@telegram-oidc.placeholder.invalid",
-        telegramId: "43",
-      },
-      { email_address: "42@telegram.placeholder.invalid", telegramId: "42" },
-    ]);
-    expect(
-      rows('select account_id, "providerId" from accounts order by account_id')
-    ).toEqual([
-      { account_id: "12224742808376279442", providerId: "telegram-oidc" },
-      { account_id: "42", providerId: "telegram" },
-    ]);
+      expect([widget.status, again.status, location]).toEqual([
+        200,
+        200,
+        "/dashboard",
+      ]);
+      const rows = (sql: string) => sqlite.prepare(sql).all();
+      expect(
+        rows(
+          'select email_address, "telegramId" from users order by email_address'
+        )
+      ).toEqual([
+        {
+          email_address:
+            "12224742808376279442@telegram-oidc.placeholder.invalid",
+          telegramId: "43",
+        },
+        { email_address: "42@telegram.placeholder.invalid", telegramId: "42" },
+      ]);
+      expect(
+        rows(
+          'select account_id, "providerId" from accounts order by account_id'
+        )
+      ).toEqual([
+        { account_id: "12224742808376279442", providerId: "telegram-oidc" },
+        { account_id: "42", providerId: "telegram" },
+      ]);
+    } finally {
+      sqlite.close();
+    }
   });
 });
 
@@ -388,6 +395,7 @@ describe("fields marked returned: false", () => {
 
     expect(response.status).toBe(200);
     expect(db.user[0]!.secretNote).toBe("s3cret");
+    expect(db.session[0]!.deviceSecret).toBe("d3vice");
     expect(response.text).not.toContain("s3cret");
     expect(response.text).not.toContain("d3vice");
     expect(response.json.user.telegramId).toBe("42");
@@ -450,7 +458,6 @@ describe("bearer plugin", () => {
       })
     );
 
-    expect(token).toBeTruthy();
     expect((await session.json()).user.telegramId).toBe("42");
   });
 });

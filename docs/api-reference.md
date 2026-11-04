@@ -135,6 +135,8 @@ Calls `GET /telegram/config`.
 
 ### `initTelegramWidget(container, options?, onAuth)`
 
+The host must exist when initialization is called. If several calls overlap on the same host, only the newest requested initialization can render. A superseded call resolves to a harmless cleanup handle. A failed new configuration leaves an already rendered widget intact.
+
 Shows the Login Widget in callback mode.
 
 | Parameter | Type | Description |

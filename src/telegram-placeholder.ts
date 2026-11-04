@@ -10,6 +10,41 @@ import {
 } from "./constants";
 import { currentClaims } from "./telegram-identity-state";
 
+function oidcEmail(identifier: string) {
+  return createPlaceholderEmail({
+    identifier,
+    namespace: TELEGRAM_OIDC_PROVIDER_ID,
+  });
+}
+
+function directOIDCEmail(sub: string): string | null {
+  if (sub.length > 64) {
+    return null;
+  }
+  try {
+    return oidcEmail(sub);
+  } catch {
+    return null;
+  }
+}
+
+async function opaqueSubjectKey(sub: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(sub)
+  );
+  // This is only an email-safe label, never the account identity. Leave room
+  // for collision suffixes while retaining 192 bits of the subject's digest.
+  return `h-${Array.from(new Uint8Array(digest).slice(0, 24), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("")}`;
+}
+
+function matchesIdentifier(identifier: string, base: string) {
+  const lower = base.toLowerCase();
+  return identifier === lower || identifier.startsWith(`${lower}.`);
+}
+
 /**
  * `<identifier>@<namespace>.placeholder.invalid` addresses are the plugin's.
  * Returns the identifier when `email` is one of them.
@@ -48,21 +83,27 @@ export async function isAllowedPlaceholder(user: Record<string, unknown>) {
         placeholder.identifier.startsWith(`${telegramId}.`))
     );
   }
-  const claims = await currentClaims();
-  const subject = claims?.sub.toLowerCase();
-  return (
-    subject !== undefined &&
-    (placeholder.identifier === subject ||
-      placeholder.identifier.startsWith(`${subject}.`))
+  const subject = (await currentClaims())?.sub;
+  if (subject === undefined) {
+    return false;
+  }
+  if (
+    directOIDCEmail(subject) &&
+    matchesIdentifier(placeholder.identifier, subject)
+  ) {
+    return true;
+  }
+  return matchesIdentifier(
+    placeholder.identifier,
+    await opaqueSubjectKey(subject)
   );
 }
 
 /** Keep placeholder selection and reservation together so emails never prove identity. */
 export async function oidcPlaceholderEmail(sub: string): Promise<string> {
-  const email = createPlaceholderEmail({
-    identifier: sub,
-    namespace: TELEGRAM_OIDC_PROVIDER_ID,
-  });
+  const direct = directOIDCEmail(sub);
+  const identifier = direct ? sub : await opaqueSubjectKey(sub);
+  const email = direct ?? oidcEmail(identifier);
   const ctx = tryGetCurrentAuthEndpointContext()?.context;
   if (!ctx) {
     return email;
@@ -84,10 +125,12 @@ export async function oidcPlaceholderEmail(sub: string): Promise<string> {
   // An unlinked user keeps their email. It cannot prove ownership of a new
   // OIDC account, even if the app trusts Telegram for email-based linking.
   if (await ctx.internalAdapter.findUserByEmail(email)) {
-    return createPlaceholderEmail({
-      identifier: `${sub}.${crypto.randomUUID()}`,
-      namespace: TELEGRAM_OIDC_PROVIDER_ID,
-    });
+    const suffix = crypto.randomUUID();
+    if (identifier.length + suffix.length + 1 <= 64) {
+      return oidcEmail(`${identifier}.${suffix}`);
+    }
+    const base = direct ? await opaqueSubjectKey(sub) : identifier;
+    return oidcEmail(`${base}.${suffix.replaceAll("-", "").slice(0, 13)}`);
   }
   return email;
 }

@@ -27,7 +27,7 @@ npm run test:types   # Type-check a consumer of the built dist/ (run build first
 npm test             # Run all tests -- you'd be surprised how many people skip this
 npm run test:watch   # Watch mode -- for when you're in the zone
 npm run test:ui      # Vitest UI -- pretty graphs that prove you did something
-npm run test:coverage # Coverage report -- the number must go up
+npm run test:coverage # Coverage report -- inspect gaps; do not optimize the number
 npm run test:adapters # Real PostgreSQL / MySQL / MongoDB (Docker); databases without a BAT_TEST_*_URL are skipped, see vitest.adapters.config.ts
 npm run lint         # Biome lint check -- it has opinions and they are correct
 npm run lint:fix     # Auto-fix -- let the machine do the boring part
@@ -95,17 +95,17 @@ Not guidelines. Not suggestions. Rules.
 
 ## Testing
 
-I maintain 90%+ coverage. Not because I worship the metric, but because untested code is just a theory.
+Follow [Testing standards](docs/testing.md). Each test must distinguish a requirement from a plausible defect. Delete cases with no unique protection; do not retain them for a coverage target or test count.
 
 - **Verification**: crypto tests in `verify.test.ts` and `verify-hardening.test.ts` -- HMAC paths, replay attacks, future `auth_date`, hash format, edge cases
 - **Server plugin**: `widget.integration.test.ts`, `miniapp.integration.test.ts` and `widget-mappers.integration.test.ts` cover Widget/Mini App sign-in, account changes and mapping. OIDC suites are grouped by behavior: `oidc.integration.test.ts`, `oidc-protocol.integration.test.ts`, `oidc-identity.integration.test.ts`, `oidc-profile.integration.test.ts`, `oidc-claims.integration.test.ts` and `oidc-linking.integration.test.ts`. `identity.integration.test.ts` and `hooks.integration.test.ts` cover revocation, placeholders and application hooks. These use real `betterAuth()` instances (memory or SQLite) and a fake Telegram modeled on the live one. Prefer them over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7
-- **Client plugin**: mock `$fetch`, test widget init and API methods in `client.test.ts`
+- **Client plugin**: exercise widget behavior through the DOM and session refresh through the real Better Auth client store. Control the external HTTP/script boundary; do not replace the behavior being tested.
 - **Security**: adversarial inputs, timestamp manipulation, malformed data, forged ID tokens
 
 ## Pull Request Process
 
 1. Fork the repo and branch off `main` (not `develop`, not `feature-branch-from-six-months-ago`)
-2. Write tests for your new code (yes, before the PR, not "I'll add them later")
+2. Add or strengthen tests only for changed behavior or a concrete uncovered risk; follow [Testing standards](docs/testing.md).
 3. Make sure absolutely everything passes:
    ```bash
    npm run type-check && npm test && npm run lint

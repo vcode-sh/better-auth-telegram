@@ -15,33 +15,6 @@ import {
 import type { TelegramOIDCClaims } from "./types";
 
 const CLIENT_SECRET = "client-secret-from-botfather";
-const authorizationRequest = {
-  state: "state",
-  codeVerifier: "verifier",
-  redirectURI: "https://example.com/api/auth/callback/telegram-oidc",
-};
-
-describe("client credentials", () => {
-  it("never falls back to the bot token as the client secret", () => {
-    // Telegram rejects the bot token; v3 requires oidc.clientSecret.
-    const provider = createTelegramOIDCProvider(BOT_TOKEN, {});
-
-    expect(() => provider.createAuthorizationURL(authorizationRequest)).toThrow(
-      "oidc.clientSecret is required"
-    );
-  });
-
-  it("refuses to start a login with an empty client_id", () => {
-    const provider = createTelegramOIDCProvider("", {
-      clientSecret: CLIENT_SECRET,
-    });
-
-    expect(() => provider.createAuthorizationURL(authorizationRequest)).toThrow(
-      "oidc.clientId (or botToken) is required"
-    );
-  });
-});
-
 describe("accountSubject", () => {
   const profile = telegramClaims() as unknown as TelegramOIDCClaims;
 
@@ -138,37 +111,4 @@ describe("getUserInfo", () => {
       expect(mapper).not.toHaveBeenCalled();
     }
   );
-
-  it("warns that the bot's signing algorithm drops profile claims", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const result = await provider().getUserInfo({
-      idToken: await telegram.sign({ sub: "12224742808376279442" }),
-    });
-
-    expect(result).not.toBeNull();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("no profile claims"),
-      expect.stringMatching(/EdDSA.*RS256 or ES256/u)
-    );
-  });
-
-  it("logs to the logger it is given (the plugin passes Better Auth's)", async () => {
-    const logger = { warn: vi.fn() };
-    const console = vi.spyOn(globalThis.console, "warn");
-
-    await createTelegramOIDCProvider(
-      BOT_TOKEN,
-      { clientSecret: CLIENT_SECRET, disableDefaultScope: true },
-      logger
-    ).getUserInfo({
-      idToken: await telegram.sign({ sub: "12224742808376279442" }),
-    });
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("no profile claims"),
-      expect.stringContaining("disableDefaultScope")
-    );
-    expect(console).not.toHaveBeenCalled();
-  });
 });

@@ -69,6 +69,7 @@ export interface TelegramMiniAppData {
  * EdDSA or ES256K.
  */
 export interface TelegramOIDCClaims {
+  /** Verified audience, normalized to the configured client ID. */
   aud: string;
   exp: number;
   family_name?: string;

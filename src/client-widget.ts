@@ -66,6 +66,9 @@ function loadTelegramWidgetScript(): Promise<void> {
   return widgetScriptLoading;
 }
 
+// A late response must not replace a newer initialization of the same host.
+const pendingRenders = new WeakMap<HTMLElement, symbol>();
+
 let widgetCount = 0;
 
 /** A global name for a widget's `data-onauth` callback that no widget uses yet. */
@@ -116,13 +119,19 @@ async function renderWidget(
   container: string | HTMLElement,
   options: TelegramWidgetOptions,
   loginAttributes: Record<string, string>
-): Promise<TelegramWidget> {
+): Promise<TelegramWidget | null> {
+  const element = resolveContainer(container);
+  const request = Symbol("widget initialization");
+  pendingRenders.set(element, request);
   await loadTelegramWidgetScript();
 
   const configResponse = await $fetch<TelegramConfigResponse>(
     "/telegram/config",
     { method: "GET" }
   );
+  if (pendingRenders.get(element) !== request) {
+    return null;
+  }
   if (!configResponse.data) {
     throw new Error("Failed to get Telegram config");
   }
@@ -135,7 +144,6 @@ async function renderWidget(
     lang,
   } = options;
 
-  const element = resolveContainer(container);
   element.innerHTML = "";
 
   const script = document.createElement("script");
@@ -200,6 +208,9 @@ export function createTelegramWidgetActions($fetch: BetterFetch) {
       const widget = await renderWidget($fetch, container, options, {
         "data-onauth": `${callbackName}(user)`,
       });
+      if (!widget) {
+        return { destroy: () => {} };
+      }
       (window as any)[callbackName] = async (authData: TelegramAuthData) => {
         try {
           await onAuth(authData);
@@ -240,8 +251,8 @@ export function createTelegramWidgetActions($fetch: BetterFetch) {
       redirectUrl: string,
       options: TelegramWidgetOptions = {}
     ): Promise<TelegramWidget> =>
-      await renderWidget($fetch, container, options, {
+      (await renderWidget($fetch, container, options, {
         "data-auth-url": redirectUrl,
-      }),
+      })) ?? { destroy: () => {} },
   };
 }
