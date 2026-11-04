@@ -5,21 +5,23 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.1] - 2026-11-04
+
+More reliable sign-in when widgets load out of order, OIDC identifiers have unusual formats, or application hooks change an account during login. No database migration or configuration change is required.
 
 ### Fixed
 
-- Overlapping widget initializations on the same host now keep the newest requested configuration. A late older response cannot replace the current bot or login callback, and its cleanup handle is harmless.
-- OIDC placeholder emails now support valid opaque and long subjects. Existing account keys and ordinary numeric placeholders remain unchanged, and collision variants stay within the email local-part limit.
-- OIDC tokens with an empty or non-string subject are rejected before profile mapping or cross-flow linking. An accepted single-client audience array is normalized to the public string type before the mapper runs.
-- Mini App data with duplicate parameter names is rejected, so signature verification and parsed output cannot select different copies of a field. Widget and Mini App user IDs must be positive safe integers.
-- Widget and Mini App sign-in reject account keys owned by different users instead of selecting the first record. Same-owner legacy duplicates remain supported, including when a conflicting owner appears after the first two rows.
-- Returning Telegram sign-ins recheck account ownership after application validation and profile-update hooks. Revocation or reassignment during those steps cannot authorize a new session from stale account data.
+- **The latest widget keeps its button and callback.** When two initializations target the same element, an older request finishing late can no longer replace the current bot or handle its login. Disposing that older initialization leaves the current widget alone.
+- **OIDC sign-in accepts long or unusual account identifiers.** Subjects that cannot fit in an email address now get a bounded placeholder instead of causing a server error. The original subject remains the account key, existing numeric placeholders stay the same, and signing in after unlinking cannot reconnect through the old placeholder email.
+- **OIDC mappers receive the declared claim types.** An accepted audience array containing only this client is normalized to a string before mapping. Empty or non-string subjects are rejected before mapping or account linking.
+- **Malformed Telegram input is rejected consistently.** Mini App data with repeated parameter names is refused so verification and parsing cannot use different copies of a field. Widget and Mini App user IDs must be positive integers that JavaScript can represent exactly; valid 52-bit Telegram IDs remain supported.
+- **Conflicting account records no longer choose a user arbitrarily.** Widget and Mini App sign-in refuse a Telegram account key stored against different users. Legacy duplicate records belonging to the same user still work.
+- **Account changes made by application hooks take effect during login.** Returning Widget and Mini App users cannot get a new session from an account link that validation or profile-update hooks removed or reassigned. Existing sessions are unaffected.
 
 ### Tests and maintenance
 
-- Replaced redundant or weak checks with independently derived response, session and durable-state assertions; added real nontransactional adapter checks and installed CommonJS/type-consumer acceptance.
-- Documented the testing standards and audit evidence. Test-owned SQLite handles, databases and generated fixtures are released after success or failure.
+- Strengthened regression tests around returned identities, session cookies and persisted changes, including adapters where a rejected request does not automatically roll back writes. Installed-package checks now exercise sign-in through both ESM and CommonJS exports.
+- Added shared test-quality guidance for Claude Code and Codex, with repository commands and documented verification limits. Test fixtures now release owned SQLite handles, databases and generated files after success or failure.
 
 ## [3.2.0] - 2026-11-04
 
