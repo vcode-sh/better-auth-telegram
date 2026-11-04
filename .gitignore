@@ -7,6 +7,12 @@ dist
 info
 .mcp.json
 .claude
+# Expose only the repository skill; keep local Claude state ignored.
+!/.claude/
+/.claude/*
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/testing-patterns
 .npmrc
 .messages/
 

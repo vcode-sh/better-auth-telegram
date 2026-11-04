@@ -46,7 +46,7 @@ Schema conditionally extends `user` table with `telegramId`, `telegramUsername`,
 
 ## Testing
 
-Apply [Testing standards](docs/testing.md) to every added, edited or deleted test. Name the contract and the plausible defect; use independent expected results and remove cases with no unique protection.
+For test authoring, review, pruning or verification decisions, use `/testing-patterns` ([shared instructions](.claude/skills/testing-patterns/SKILL.md)).
 
 - **Vitest** with `happy-dom` environment; `*.integration.test.ts` run in `node` against a real Better Auth instance (see `src/testing/harness.ts`). Prefer those over mocking Better Auth: mock-only tests passed while OIDC was broken on 1.7.
 - Tests co-located in `src/` (`*.test.ts`). OIDC integration suites separate sign-in, protocol, identity, profile, claims and linking; Widget, Mini App and mapper suites cover their corresponding flows.
