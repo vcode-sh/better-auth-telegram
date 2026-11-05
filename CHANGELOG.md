@@ -5,6 +5,28 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2026-11-05
+
+Safer account changes when cookie caching is enabled, and clearer examples for putting application user IDs and roles into a Telegram session. Upgrade Better Auth and `@better-auth/core` together to **1.7.17 or newer, below 1.8**. No plugin database migration is needed.
+
+### Fixed
+
+- **Revoked sessions cannot change Telegram account links.** Link and unlink now check server-side session storage before accepting a cached cookie. Unlink still requires a recent sign-in.
+- **OIDC account revocation is checked before issuing a session.** Removing or reassigning the account during application validation, changing a new account binding in a hook, or removing a newly created account can no longer leave that attempt signed in without its original account proof.
+- **Generated client unlink calls use POST.** `authClient.telegram.unlink()` works without a dummy request body.
+- **Widgets support global throwing fetch options.** `fetchOptions.throw: true` no longer breaks a successful widget configuration request.
+
+### Changed
+
+- **Requires Better Auth and `@better-auth/core` 1.7.17 or newer, below 1.8.** Earlier supported versions can link an OAuth account using a revoked cached session or finish linking after the initiating session was revoked. Upgrade the Better Auth packages together. No plugin database migration is required.
+- Added a tested [server-owned fields recipe](docs/server-owned-fields.md) for the follow-up in [#53](https://github.com/vcode-sh/better-auth-telegram/issues/53). It populates creation-time user fields or fresh per-sign-in session claims through validation and trusted database hooks, without `customSession` or allowing clients to edit authorization fields. Live device testing also documents the returning-user behavior of Better Auth's in-memory store. Mappers continue to respect `input: false`.
+
+### Verification
+
+- Exercised OIDC, Login Widget and Mini App sign-in through the real Telegram app on a physical Android phone, including JWT readback, rejected field edits, logout and account revocation. Added focused regressions for returning-user session claims and kept the live acceptance harness reusable.
+
+Thanks to [@parmetra](https://github.com/parmetra) for the detailed configuration and follow-ups in [#53](https://github.com/vcode-sh/better-auth-telegram/issues/53). They helped uncover the async-mapper issue in earlier patches and prompted this deeper review of server-owned fields and session behavior.
+
 ## [3.2.1] - 2026-11-04
 
 More reliable sign-in when widgets load out of order, OIDC identifiers have unusual formats, or application hooks change an account during login. No database migration or configuration change is required.

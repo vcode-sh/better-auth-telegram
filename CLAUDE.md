@@ -76,7 +76,7 @@ Single test file: `npx vitest run src/verify.test.ts`
 
 ## Dependencies
 
-**Runtime (peer):** `better-auth`, `@better-auth/core` (`>=1.7.12 <1.8.0`; 1.7.7 fixed GHSA-965c-763c-88jm, 1.7.12 made every OAuth callback route — including oauth-proxy — enforce the ID token nonce)
+**Runtime (peer):** `better-auth`, `@better-auth/core` (`>=1.7.17 <1.8.0`; 1.7.7 fixed GHSA-965c-763c-88jm, 1.7.12 enforced ID-token nonces across callbacks; 1.7.17 includes live-session checks for OAuth linking)
 
 **Runtime (dependency):** `jose`
 
@@ -93,7 +93,7 @@ Single test file: `npx vitest run src/verify.test.ts`
 - All endpoints use `createAuthEndpoint()` from `better-auth/api`. Follow that pattern.
 - Write users/accounts through `ctx.context.internalAdapter`, never raw `ctx.context.adapter.create` (that skips `databaseHooks` and `validateUserInfo`). Reads via `adapter.findOne` are fine.
 - Telegram facts verified live (2026-10-29): OIDC `sub` is per bot (use the `id` claim for the Telegram user id; the plugin normalizes verified numeric or string IDs to strings before exposing claims); switching a bot to OIDC permanently disables its legacy Login Widget; BotFather rejects localhost redirect URIs; ID tokens live 30 s; token errors come back as HTTP 200; declining the OIDC login in the Telegram app sends no callback at all (oauth.telegram.org shows its account picker again).
-- Session-protected endpoints use `sessionMiddleware`. Don't forget it for authenticated routes.
+- Account link/unlink endpoints use `sensitiveSessionMiddleware` to reject revoked sessions even with cookie caching. Unlink also uses `freshSessionMiddleware`.
 - Type guards (`validateTelegramAuthData`, `validateMiniAppData`) run before processing. Don't skip validation.
 - Mini App endpoints are conditionally registered (`miniApp.enabled`). Test both enabled and disabled paths.
 - OIDC provider is conditionally injected via `init` hook (`oidc.enabled`). JWT verification in `oidc-token.ts` uses `jose` library -- changes to JWKS fetching or token validation need scrutiny.

@@ -126,7 +126,7 @@ There is one. It's in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). The short versio
 
 ## CI and releases
 
-Node.js 24 is the minimum. The required `CI` check collects package validation, Node 24.0.0 and current 24/26 tests, the complete Better Auth 1.7.12 family, forced Bun 1.4.4 tests and real database adapters. A failed or skipped required lane fails the gate. Fork PRs run with read-only permissions.
+Node.js 24 is the minimum. The required `CI` check collects package validation, Node 24.0.0 and current 24/26 tests, the complete Better Auth 1.7.17 family, forced Bun 1.4.4 tests and real database adapters. A failed or skipped required lane fails the gate. Fork PRs run with read-only permissions.
 
 `npm run build` checks the bundles and declarations with publint and Are The Types Wrong. `npm run test:package` packs the result, installs it outside the checkout, checks its consumer types, exercises ESM authentication configuration and loads both CommonJS exports. It leaves `better-auth-telegram-<version>.tgz` for inspection. CI uploads that tarball.
 

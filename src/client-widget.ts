@@ -127,7 +127,9 @@ async function renderWidget(
 
   const configResponse = await $fetch<TelegramConfigResponse>(
     "/telegram/config",
-    { method: "GET" }
+    // The renderer handles errors itself and needs the response envelope,
+    // even when the auth client defaults to `throw: true`.
+    { method: "GET", throw: false }
   );
   if (pendingRenders.get(element) !== request) {
     return null;

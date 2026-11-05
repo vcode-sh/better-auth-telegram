@@ -60,9 +60,11 @@ What this prevents: forged tokens (only Telegram has the private key), tokens is
 
 **Telegram fields can't be edited by users.** `user.telegramId`, `telegramUsername` and `telegramPhoneNumber` are marked `input: false`, so Better Auth's update endpoints ignore them. Only the plugin sets them, from verified Telegram data.
 
-Widget and Mini App account lookups tolerate duplicate rows for the same owner, but reject a key belonging to different users with `TELEGRAM_ALREADY_LINKED_OTHER`. Returning sign-ins recheck account ownership after application validation and profile-update hooks before continuing to session creation. These checks are not a distributed transaction or a way to revoke existing sessions.
+Widget and Mini App account lookups tolerate duplicate rows for the same owner, but reject a key belonging to different users with `TELEGRAM_ALREADY_LINKED_OTHER`. Returning Widget, Mini App and OIDC sign-ins recheck account ownership after application validation and profile-update hooks before continuing to session creation. OIDC also rechecks newly created accounts after creation hooks. These checks are not a distributed transaction or a way to revoke existing sessions.
 
 **Unlinking revokes the account's sign-in access.** Whenever a `telegram` or `telegram-oidc` account is removed through Better Auth, a database hook re-checks the user. `user.telegramId` stays only if a remaining Telegram account proves it; otherwise it switches to one that does, or is cleared along with `telegramUsername` and `telegramPhoneNumber`. Sign-in independently checks that a linked account proves the profile's Telegram ID, so a stale field left by a vetoed update cannot restore access. Direct SQL deletion does not run hooks; clear the profile fields yourself to keep displayed data accurate. Existing Better Auth sessions remain active; revoke those separately when your policy requires it.
+
+**Account changes require a live session.** `/telegram/link` and `/telegram/unlink` check server-side session storage when configured, so a valid cookie cache cannot authorize a change after session revocation. OIDC linking relies on the equivalent checks in Better Auth 1.7.17+, including revalidation of the initiating session after the redirect.
 
 **Unlinking needs a recent sign-in, and never strands the user.** `/telegram/unlink` requires a session younger than `session.freshAge` (403 `SESSION_NOT_FRESH`), so an old stolen session can't remove the owner's Telegram login. It refuses to remove the last sign-in method (400 `CANNOT_UNLINK_LAST_ACCOUNT`) unless you set `account.accountLinking.allowUnlinkingAll: true`.
 
@@ -76,7 +78,7 @@ Widget and Mini App account lookups tolerate duplicate rows for the same owner, 
 
 The plugin creates users, accounts and sessions through Better Auth's internal adapter, so your Better Auth hooks see them:
 
-- **`databaseHooks`** run for user, account and session changes. A refused new user gives 403 `USER_CREATION_REJECTED`; a refused account creation gives 403 `ACCOUNT_CREATION_REJECTED`; a refused session gives 401 `FAILED_TO_CREATE_SESSION`. Required identity updates and account removals also fail explicitly (`IDENTITY_UPDATE_REJECTED`, `ACCOUNT_UNLINK_REJECTED`). The plugin uses transactions for sign-up, link and unlink; rollback requires transaction support in your adapter (enable `transaction: true` for Drizzle or Prisma). On a nontransactional adapter, a refused later write can leave earlier writes in place. Inspect the error and stored accounts before retrying.
+- **`databaseHooks`** run for user, account and session changes. A refused new user gives 403 `USER_CREATION_REJECTED`; a refused account creation gives 403 `ACCOUNT_CREATION_REJECTED`; a refused session gives 401 `FAILED_TO_CREATE_SESSION`. Required identity updates and account removals also fail explicitly (`IDENTITY_UPDATE_REJECTED`, `ACCOUNT_UNLINK_REJECTED`). The plugin uses transactions for sign-up, link and unlink; rollback requires transaction support in your adapter (enable `transaction: true` for Drizzle or Prisma). On a nontransactional adapter, a refused later write can leave earlier writes in place. After hooks can also run after a transaction commits; a rejected session does not undo those application changes. Inspect the error and stored accounts before retrying.
 - **`user.validateUserInfo`** is called for every Login Widget and Mini App step, with `source.method` set to `"telegram-login-widget"` or `"telegram-mini-app"` and `source.action` set to:
   - `"create-user"` for a new user,
   - `"sign-in"` for a returning user,
@@ -140,8 +142,8 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 
 ## Production checklist
 
-- [ ] Better Auth is 1.7.12 or newer (`npm ls better-auth`).
-- [ ] `npx auth@1.7.14 check schema` passes against the production database.
+- [ ] Better Auth is 1.7.17 or newer (`npm ls better-auth`).
+- [ ] `npx auth@1.7.17 check schema` passes against the production database.
 - [ ] The server starts without `[better-auth-telegram]` warnings.
 - [ ] Secrets are in environment variables, not in code or git.
 - [ ] Your site uses HTTPS, and Better Auth's cookies are secure (the default in production).

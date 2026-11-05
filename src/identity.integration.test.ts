@@ -182,10 +182,17 @@ describe("verified OIDC claims only apply to the user they prove", () => {
     await signUp(bobClient, "bob@example.com");
     state.bob = db.user.find((user) => user.email === "bob@example.com")!.id;
     client.clearCookies();
+    const bobSessionsBefore = db.session.filter(
+      (session) => session.userId === state.bob
+    ).length;
 
-    await signInWithTelegramOIDC(client, telegramMock);
+    const { location } = await signInWithTelegramOIDC(client, telegramMock);
 
+    expect(location).toBe("/dashboard");
     expect(state.done).toBe(true);
+    expect(
+      db.session.filter((session) => session.userId === state.bob)
+    ).toHaveLength(bobSessionsBefore + 1);
     const bob = db.user.find((user) => user.id === state.bob)!;
     expect(bob.telegramId ?? null).toBeNull();
   });

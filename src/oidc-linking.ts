@@ -14,6 +14,7 @@ import {
   validateTelegramOIDCLink,
 } from "./oidc-linking-policy";
 import { withTelegramOperation } from "./telegram-account";
+import { currentSignIn } from "./telegram-identity-state";
 import type { TelegramOIDCClaims } from "./types";
 
 async function linkVerifiedIdentity(
@@ -136,7 +137,8 @@ async function linkVerifiedIdentity(
  * explicit linkSocial and account-info requests retain their native behavior.
  */
 export function withTelegramIdentityLinking(
-  provider: OAuthProvider<TelegramOIDCClaims>
+  provider: OAuthProvider<TelegramOIDCClaims>,
+  identityFields: boolean
 ): OAuthProvider<TelegramOIDCClaims> {
   return {
     ...provider,
@@ -154,12 +156,31 @@ export function withTelegramIdentityLinking(
         current.body?.provider === TELEGRAM_OIDC_PROVIDER_ID &&
         !!current.body?.idToken;
       if ((isCallback && !(await getOAuthState())?.link) || isTokenSignIn) {
-        await linkVerifiedIdentity(
-          current as GenericEndpointContext,
-          result.data,
-          result.user,
-          tokens
-        );
+        if (identityFields) {
+          await linkVerifiedIdentity(
+            current as GenericEndpointContext,
+            result.data,
+            result.user,
+            tokens
+          );
+        }
+        const signIn = await currentSignIn();
+        if (signIn) {
+          // Snapshot an unambiguous owner; Better Auth's own lookup rejects
+          // duplicate identities through its normal callback error handling.
+          const accounts = await (
+            await getCurrentAdapter(current.context.adapter)
+          ).findMany<Account>({
+            model: "account",
+            where: [
+              { field: "providerId", value: TELEGRAM_OIDC_PROVIDER_ID },
+              { field: "accountId", value: result.data.sub },
+            ],
+            limit: 2,
+          });
+          signIn.expectedUserId ??=
+            accounts.length === 1 ? accounts[0]!.userId : undefined;
+        }
       }
       return result;
     },

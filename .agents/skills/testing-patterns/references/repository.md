@@ -62,7 +62,7 @@ Default tests use happy-dom unless their file selects Node. `*.adapter.test.ts` 
 excluded from `npm test`; a passing default suite is not adapter evidence. Coverage
 floors remain 90% lines/statements/branches and 80% functions. Broad/release CI also
 requires lint, type checks, runtime dependency audit, package validation, Node 24.0.0,
-current Node 24/26, the complete minimum Better Auth 1.7.12 family, Bun 1.4.4 and real
+current Node 24/26, the complete minimum Better Auth 1.7.17 family, Bun 1.4.4 and real
 adapters. Do not infer a release pass from one local lane or bypass required checks.
 
 Documentation/skill-only changes normally need readback, link/frontmatter validation

@@ -71,9 +71,10 @@ export const telegram = (options: TelegramPluginOptions) => {
           ? {
               context: {
                 socialProviders: [
-                  config.widgetEnabled || config.miniAppEnabled
-                    ? withTelegramIdentityLinking(provider)
-                    : provider,
+                  withTelegramIdentityLinking(
+                    provider,
+                    config.widgetEnabled || config.miniAppEnabled
+                  ),
                   ...ctx.socialProviders,
                 ],
               },

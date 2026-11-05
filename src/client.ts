@@ -63,6 +63,10 @@ export const telegramClient = () => {
     $InferServerPlugin: {} as ReturnType<TelegramPlugin>,
     $ERROR_CODES: TELEGRAM_ERROR_CODES,
 
+    pathMethods: {
+      "/telegram/unlink": "POST",
+    },
+
     // Refreshes `useSession` after the generated routes
     // (`authClient.telegram.signin(...)`), like Better Auth's own plugins.
     atomListeners: [

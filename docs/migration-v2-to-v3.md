@@ -18,7 +18,7 @@ This guide takes you from `better-auth-telegram` v2.x to v3. Most apps need four
 
 v2 requires Better Auth 1.6. Better Auth 1.6 is affected by [GHSA-965c-763c-88jm](https://github.com/better-auth/better-auth/security/advisories/GHSA-965c-763c-88jm), a critical account-takeover issue (CVSS 9.1): in Better Auth from 1.4.0-beta.18 up to (not including) 1.7.7, an OAuth sign-in `state` value could be used as a Magic Link token, letting an attacker who knows a user's email sign in as that user. It affects apps that use Magic Link together with a social or OAuth sign-in (such as Telegram OIDC), with OAuth state stored in the database (the default when you have a database). It is fixed **only in 1.7.7**; there is no 1.6 fix, and Better Auth supports only its latest version.
 
-v3 therefore requires Better Auth **1.7.12 or newer** (below 1.8). 1.7.12 is the first release in which every OAuth callback route, including Better Auth's `oauth-proxy` plugin, checks the ID-token nonce.
+v3 therefore requires Better Auth **1.7.17 or newer** (below 1.8). The original v3 baseline was 1.7.12 for ID-token nonce enforcement on every OAuth callback route. The current baseline is 1.7.17, which also verifies the live initiating session when linking an OAuth account, including after the redirect. Older versions can accept a revoked session from the cookie cache.
 
 v3 also fixes real bugs (Login Widget and Mini App sign-up failed on SQL databases, OIDC ID tokens weren't verified on the callback, unlinking didn't stop Telegram sign-in) and brings stricter, Better-Auth-consistent rules. The [changelog](../CHANGELOG.md) lists every change.
 
@@ -43,7 +43,7 @@ npm install better-auth-telegram@3 better-auth@1.7
 npm install @better-auth/core@1.7
 ```
 
-Check the result: `npm ls better-auth-telegram better-auth @better-auth/core` should show `better-auth-telegram` 3.x and Better Auth 1.7.12 or newer, all Better Auth packages on the same version.
+Check the result: `npm ls better-auth-telegram better-auth @better-auth/core` should show `better-auth-telegram` 3.x and Better Auth 1.7.17 or newer, all Better Auth packages on the same version.
 
 ### 2. Apply Better Auth's own 1.7 changes (everyone)
 
@@ -53,12 +53,12 @@ Follow the [Better Auth 1.7 upgrade guide](https://www.better-auth.com/docs/guid
 
 First check for duplicate `(providerId, accountId)` pairs, as Better Auth's [upgrade guide](https://www.better-auth.com/docs/guides/1-7-upgrade-guide#check-for-duplicate-account-keys) requires. Keep different users separate when resolving them. If you briefly ran Better Auth 1.7.0–1.7.2, also follow its steps for the retired `account.issuer` column before applying migrations.
 
-Use the CLI version matching Better Auth. These examples use the tested 1.7.14 release:
+Use the CLI version matching Better Auth. These examples use the tested 1.7.17 release:
 
 ```bash
-npx auth@1.7.14 migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
-npx auth@1.7.14 generate       # Prisma or Drizzle; then run your ORM's migration
-npx auth@1.7.14 check schema   # must print "Schema check passed against the live database."
+npx auth@1.7.17 migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
+npx auth@1.7.17 generate       # Prisma or Drizzle; then run your ORM's migration
+npx auth@1.7.17 check schema   # must print "Schema check passed against the live database."
 ```
 
 Why: Better Auth 1.7.3 and newer answers **every** request with HTTP 500 until the database matches the schema. v3 adds an index on `user.telegramId` (it makes every Login Widget and Mini App sign-in faster). The five Telegram columns are the same as in v2.
@@ -256,7 +256,7 @@ These still work, but you can remove them:
 
 | What changed | What breaks | What to do |
 |---|---|---|
-| Better Auth `>=1.7.12 <1.8.0` (was `>=1.6.22 <1.7.0`); `@better-auth/core` is now a peer too | Installing next to Better Auth 1.6 fails | [Step 1](#1-update-the-packages-everyone), [step 2](#2-apply-better-auths-own-17-changes-everyone) |
+| Better Auth `>=1.7.17 <1.8.0` (was `>=1.6.22 <1.7.0`); `@better-auth/core` is now a peer too | Installing next to Better Auth 1.6 fails | [Step 1](#1-update-the-packages-everyone), [step 2](#2-apply-better-auths-own-17-changes-everyone) |
 | Better Auth checks the schema; `user.telegramId` is indexed | Every request answers 500 until migrated | [Step 3](#3-update-the-database-everyone) |
 | Login Widget and Mini App go through Better Auth's internal adapter | Your `databaseHooks` and `user.validateUserInfo` now see Telegram users, and can block them | [Step 10](#10-review-your-hooks-if-you-use-databasehooks-or-uservalidateuserinfo) |
 | `/telegram/unlink` needs a fresh session and keeps the last sign-in method | New 403 `SESSION_NOT_FRESH` and 400 `CANNOT_UNLINK_LAST_ACCOUNT` | [Step 12](#12-update-your-unlink-ui-if-you-offer-unlink-telegram) |
@@ -277,8 +277,8 @@ These still work, but you can remove them:
 
 ## Check that the upgrade worked
 
-1. `npm ls better-auth-telegram better-auth` shows 3.x and 1.7.12 or newer.
-2. `npx auth@1.7.14 check schema` prints `Schema check passed against the live database.`
+1. `npm ls better-auth-telegram better-auth` shows 3.x and 1.7.17 or newer.
+2. `npx auth@1.7.17 check schema` prints `Schema check passed against the live database.`
 3. The server starts without `[better-auth-telegram]` warnings ([what they mean](./configuration.md#startup-warnings)).
 4. `GET /api/auth/telegram/config` lists the methods you expect as enabled.
 5. Sign in once with each method you use. A **new** Telegram user gets an email ending in `.placeholder.invalid`; existing users keep theirs.

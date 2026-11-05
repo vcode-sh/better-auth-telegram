@@ -3,7 +3,7 @@ import {
   createAuthEndpoint,
   formCsrfMiddleware,
   freshSessionMiddleware,
-  sessionMiddleware,
+  sensitiveSessionMiddleware,
 } from "better-auth/api";
 import { ERROR_CODES, SUCCESS_MESSAGES } from "./constants";
 import type { TelegramPluginConfig } from "./plugin-config";
@@ -83,7 +83,7 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
       "/telegram/link",
       {
         method: "POST",
-        use: [sessionMiddleware],
+        use: [sensitiveSessionMiddleware],
       },
       async (ctx) => {
         if (
@@ -108,8 +108,8 @@ export function createWidgetEndpoints(config: TelegramPluginConfig) {
       "/telegram/unlink",
       {
         method: "POST",
-        // Same as Better Auth's /unlink-account: a recent sign-in.
-        use: [freshSessionMiddleware],
+        // Check revocation in storage before enforcing the recent-sign-in rule.
+        use: [sensitiveSessionMiddleware, freshSessionMiddleware],
       },
       async (ctx) => {
         await unlinkTelegramAccount(ctx, ctx.context.session.user.id);
