@@ -4,5 +4,11 @@
     "module": "Node16",
     "moduleResolution": "Node16"
   },
-  "files": ["consumer.ts", "snippets.ts", "commonjs.cts"]
+  "files": [
+    "consumer.ts",
+    "snippets.ts",
+    "commonjs.cts",
+    "server-owned-fields.ts",
+    "server-owned-session-fields.ts"
+  ]
 }

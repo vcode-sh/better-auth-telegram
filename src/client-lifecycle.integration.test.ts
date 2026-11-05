@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
+import { createAuthClient } from "better-auth/client";
 import { afterEach, expect, it as test, vi } from "vitest";
+import { telegramClient } from "./client";
 import {
   createTelegramWidgetActions,
   type TelegramWidget,
 } from "./client-widget";
+import { BASE_URL, createMemoryAuth } from "./testing/harness";
 import type { TelegramAuthData } from "./types";
 
 const handles: TelegramWidget[] = [];
@@ -35,6 +38,37 @@ afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   vi.unstubAllGlobals();
+});
+
+test("renders the widget when the auth client uses throwing fetch responses", async () => {
+  (window as any).Telegram = { Login: {} };
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const { auth } = createMemoryAuth();
+  const client = createAuthClient({
+    baseURL: BASE_URL,
+    plugins: [telegramClient()],
+    fetchOptions: {
+      throw: true,
+      customFetchImpl: (input, init) => auth.handler(new Request(input, init)),
+    },
+  });
+  const onAuth = vi.fn();
+
+  const widget = await client.initTelegramWidget(host, {}, onAuth);
+  handles.push(widget);
+  const user: TelegramAuthData = {
+    id: 42,
+    first_name: "Ann",
+    auth_date: 1,
+    hash: "x",
+  };
+  await callbackFrom(host)(user);
+
+  expect(onAuth).toHaveBeenCalledExactlyOnceWith(user);
+  expect(
+    host.querySelector("script")!.getAttribute("data-telegram-login")
+  ).toBe("test_bot");
 });
 
 test.each(["callback", "redirect"] as const)(

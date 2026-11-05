@@ -17,7 +17,7 @@ npm install better-auth-telegram better-auth
 
 pnpm, yarn and bun work the same way (`pnpm add`, `yarn add`, `bun add`).
 
-- `better-auth-telegram` v3 needs `better-auth` and `@better-auth/core` version `>=1.7.12 <1.8.0`. `@better-auth/core` is installed together with `better-auth`.
+- `better-auth-telegram` v3 needs `better-auth` and `@better-auth/core` version `>=1.7.17 <1.8.0`. `@better-auth/core` is installed together with `better-auth`.
 - The plugin's only other dependency is [`jose`](https://github.com/panva/jose), which checks OIDC tokens. Your package manager installs it automatically.
 
 ## 2. Configure the server
@@ -86,13 +86,13 @@ Let Better Auth's CLI do the work. Which command depends on how you connect to t
 
 ```bash
 # Built-in Kysely adapter (a pg/mysql2 pool, SQLite): applies the changes directly
-npx auth@1.7.14 migrate
+npx auth@1.7.17 migrate
 
 # Prisma or Drizzle: writes the schema file, then run your ORM's migration
-npx auth@1.7.14 generate
+npx auth@1.7.17 generate
 
 # Everyone: confirm the database matches
-npx auth@1.7.14 check schema
+npx auth@1.7.17 check schema
 ```
 
 `check schema` should print `Schema check passed against the live database.`
@@ -175,7 +175,7 @@ Free ngrok addresses change every time ngrok restarts. When that happens, repeat
 
 ## Check that it works
 
-1. `npx auth@1.7.14 check schema` passes.
+1. `npx auth@1.7.17 check schema` passes.
 2. The server starts without `[better-auth-telegram]` warnings.
 3. `https://<your domain>/api/auth/telegram/config` returns your bot's username, for example `{"botUsername":"my_app_login_bot","loginWidgetEnabled":true,...}`.
 4. Your sign-in button appears and signing in creates a user with a `telegramId`.

@@ -1,7 +1,7 @@
 import type { AuthContext, BetterAuthOptions } from "@better-auth/core";
 import { APIError } from "better-auth/api";
 import { ERROR_CODES, PLUGIN_ID, TELEGRAM_OIDC_PROVIDER_ID } from "./constants";
-import { currentClaims, currentSignIn } from "./telegram-identity-state";
+import { currentSignIn } from "./telegram-identity-state";
 import {
   accountProvenByClaims,
   reconcileTelegramIdentity,
@@ -75,10 +75,7 @@ export function telegramIdentityHooks(
           session.userId,
           signIn.claims
         );
-        if (!account) {
-          return;
-        }
-        if (options.identityFields) {
+        if (account && options.identityFields) {
           // A refused identity update stops the sign-in.
           await syncTelegramIdentity(
             ctx,
@@ -87,37 +84,66 @@ export function telegramIdentityHooks(
             account
           );
         }
-        if (options.updateUserInfo) {
+        if (account && options.updateUserInfo) {
           await updateUserInfo(ctx, session.userId, signIn.userInfo);
+        }
+        // Application validation and profile hooks may await a concurrent unlink.
+        if (
+          signIn.expectedUserId === session.userId &&
+          !(await accountProvenByClaims(ctx, session.userId, signIn.claims))
+        ) {
+          throw APIError.from("UNAUTHORIZED", ERROR_CODES.ACCOUNT_NOT_LINKED);
         }
       },
     },
   };
-
-  if (!options.identityFields) {
-    return options.updateUserInfo
-      ? { ...placeholderGuard, session: sessionHooks }
-      : placeholderGuard;
-  }
 
   return {
     ...placeholderGuard,
     session: sessionHooks,
     account: {
       create: {
+        async before(account) {
+          const signIn = await currentSignIn();
+          if (
+            signIn &&
+            account.providerId === TELEGRAM_OIDC_PROVIDER_ID &&
+            account.accountId === signIn.claims.sub
+          ) {
+            // Plugin hooks precede application hooks. Pin the intended owner
+            // before an application hook can change the new account binding.
+            signIn.expectedUserId ??= account.userId;
+          }
+        },
         async after(account) {
           if (account.providerId !== TELEGRAM_OIDC_PROVIDER_ID) {
             return;
           }
-          const claims = await currentClaims();
-          if (claims && account.accountId === claims.sub) {
-            await syncTelegramIdentity(ctx, account.userId, claims, account);
+          const signIn = await currentSignIn();
+          if (signIn && account.accountId === signIn.claims.sub) {
+            if (signIn.expectedUserId !== account.userId) {
+              throw APIError.from(
+                "UNAUTHORIZED",
+                ERROR_CODES.ACCOUNT_NOT_LINKED
+              );
+            }
+            if (options.identityFields) {
+              await syncTelegramIdentity(
+                ctx,
+                account.userId,
+                signIn.claims,
+                account
+              );
+            }
           }
         },
       },
       delete: {
         async after(account) {
-          if (TELEGRAM_PROVIDERS.has(account.providerId)) {
+          if (
+            options.identityFields &&
+            TELEGRAM_PROVIDERS.has(account.providerId)
+          ) {
             await reconcileTelegramIdentity(ctx, account.userId);
           }
         },

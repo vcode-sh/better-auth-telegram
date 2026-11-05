@@ -237,6 +237,59 @@ describe("session.cookieCache", () => {
     expect(linked.json.user.telegramId).toBe("42");
     expect(unlinked.json.user.telegramId ?? null).toBeNull();
   });
+
+  it.each(["link", "unlink"] as const)(
+    "refuses to %s using a revoked session's still-valid cookie cache",
+    async (action) => {
+      const { auth, client, rows } = await createSqliteAuth({}, cached);
+      const signUpResponse = await client.post("/sign-up/email", {
+        email: "ann@example.com",
+        password: "correct-horse-battery",
+        name: "Ann",
+      });
+      expect(signUpResponse.status).toBe(200);
+      if (action === "unlink") {
+        const initialLink = await client.post(
+          "/telegram/link",
+          await signWidgetData({ id: 42 })
+        );
+        if (initialLink.status !== 200) {
+          throw new Error(`Initial link failed: ${initialLink.status}`);
+        }
+      }
+      const otherDevice = createClient(auth);
+      const signIn = await otherDevice.post("/sign-in/email", {
+        email: "ann@example.com",
+        password: "correct-horse-battery",
+      });
+      expect(signIn.status).toBe(200);
+      const revoke = await otherDevice.post("/revoke-session", {
+        token: signUpResponse.json.token,
+      });
+      expect(revoke.status).toBe(200);
+      expect(rows("session").map((session) => session.token)).not.toContain(
+        signUpResponse.json.token
+      );
+      // Ordinary reads can still use the cache; changing logins must check storage.
+      const staleSession = await client.get("/get-session");
+      expect(staleSession.json.user.id).toBe(signUpResponse.json.user.id);
+
+      const change = await client.post(
+        `/telegram/${action}`,
+        action === "link" ? await signWidgetData({ id: 42 }) : {}
+      );
+
+      expect(change.status).toBe(401);
+      expect(change.json.code).toBe("UNAUTHORIZED");
+      expect(rows("account").map((account) => account.providerId)).toEqual([
+        "credential",
+        ...(action === "unlink" ? ["telegram"] : []),
+      ]);
+      expect(rows("user")[0]!.telegramId).toBe(
+        action === "unlink" ? "42" : null
+      );
+    }
+  );
 });
 
 describe("custom table and column names", () => {

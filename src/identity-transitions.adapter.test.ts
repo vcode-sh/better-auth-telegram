@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it as test } from "vitest";
 import { type AdapterAuth, adapterLanes } from "./testing/adapters";
-import { signInitData, signWidgetData } from "./testing/harness";
+import {
+  mockTelegramOIDC,
+  signInitData,
+  signInWithTelegramOIDC,
+  signWidgetData,
+} from "./testing/harness";
 
 describe.each(adapterLanes())("$name identity authority", (lane) => {
   let fixture: AdapterAuth | undefined;
@@ -11,6 +16,39 @@ describe.each(adapterLanes())("$name identity authority", (lane) => {
   });
 
   describe.skipIf(!lane.url)("persisted account proof", () => {
+    test("does not issue an OIDC session after a creation hook revokes the committed account", async () => {
+      const provider = await mockTelegramOIDC();
+      try {
+        fixture = await lane.create(
+          {
+            loginWidget: false,
+            oidc: { enabled: true, clientSecret: provider.clientSecret },
+          },
+          {
+            databaseHooks: {
+              account: {
+                create: {
+                  after: async (account, ctx) => {
+                    await ctx!.context.internalAdapter.deleteAccount(
+                      account.id
+                    );
+                  },
+                },
+              },
+            },
+          }
+        );
+        const { client, rows } = fixture;
+        const { location } = await signInWithTelegramOIDC(client, provider);
+        expect(location).toContain("error=ACCOUNT_NOT_LINKED");
+        expect(await rows("account")).toHaveLength(0);
+        expect(await rows("session")).toHaveLength(0);
+        expect(client.hasSession()).toBe(false);
+      } finally {
+        provider.restore();
+      }
+    });
+
     test("refuses conflicting owners beyond same-owner duplicate rows", async () => {
       fixture = await lane.create({ miniApp: { enabled: true } });
       const { auth, client, rows } = fixture;

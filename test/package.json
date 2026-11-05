@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
-    "better-auth": ">=1.7.12 <1.8.0",
+    "better-auth": ">=1.7.17 <1.8.0",
     "better-auth-telegram": "file:..",
     "better-sqlite3": "^12.6.2",
     "next": "^16.1.6",

@@ -45,9 +45,9 @@ Find what you see, then follow the fix. Each entry is: **what you see**, why it 
 **Fix:**
 
 ```bash
-npx auth@1.7.14 migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
-npx auth@1.7.14 generate       # Prisma or Drizzle; then run your ORM's migration
-npx auth@1.7.14 check schema   # should print "Schema check passed against the live database."
+npx auth@1.7.17 migrate        # built-in Kysely adapter (pg, mysql2, SQLite)
+npx auth@1.7.17 generate       # Prisma or Drizzle; then run your ORM's migration
+npx auth@1.7.17 check schema   # should print "Schema check passed against the live database."
 ```
 
 Upgrading from v2? Run it anyway: v3 adds an index on `user.telegramId`. In OIDC-only mode the plugin adds no columns, so a mismatch there comes from Better Auth's own tables. More: [Installation: database](./installation.md#3-update-your-database).
@@ -358,7 +358,7 @@ Check these:
 
 1. **The user existed before.** Mapped values are stored when the user is created. Set `oidc.updateUserInfoOnSignIn: true` to also write them at every sign-in.
 2. **The field is declared on the server**, in `betterAuth({ user: { additionalFields } })`. Declaring it only on the client (`inferAdditionalFields`) isn't enough: Better Auth drops unknown fields.
-3. **The field accepts input.** Fields with `input: false` are dropped, like on any OAuth sign-up. Keep roles, membership and other authorization fields server-owned; do not enable input just to populate them from a mapper. See [Custom user data](./configuration.md#custom-user-data).
+3. **The field accepts input.** Fields with `input: false` are dropped, like on any OAuth sign-up. Keep roles, membership and other authorization fields server-owned; do not enable input just to populate them from a mapper. Use the [server-owned fields recipe](./server-owned-fields.md) for a trusted application lookup without `customSession`. `returned: true` includes a stored value; it does not fill it.
 4. **`oidc.overrideUserInfoOnSignIn` is ignored** (the plugin warns at startup). Use `updateUserInfoOnSignIn`.
 5. **The mapper is async and the plugin is older than 3.1.1.** Before 3.1.1 an async mapper (OIDC, Login Widget or Mini App) lost every field it returned, and an error it threw didn't stop the sign-in. Upgrade.
 

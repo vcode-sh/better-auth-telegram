@@ -93,7 +93,7 @@ All OIDC options are in [Configuration: OIDC](./configuration.md#oidc-options).
 
 ### 3. Update the database
 
-Run `npx auth@1.7.14 migrate` (or `generate` for Prisma and Drizzle), then `npx auth@1.7.14 check schema`, as in [Installation](./installation.md#3-update-your-database). An OIDC-only setup adds no columns of its own, but Better Auth's own tables must exist.
+Run `npx auth@1.7.17 migrate` (or `generate` for Prisma and Drizzle), then `npx auth@1.7.17 check schema`, as in [Installation](./installation.md#3-update-your-database). An OIDC-only setup adds no columns of its own, but Better Auth's own tables must exist.
 
 ## Add the sign-in button
 

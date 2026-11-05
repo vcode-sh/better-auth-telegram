@@ -52,7 +52,7 @@ New words? The [glossary](docs/README.md#glossary) explains bots, BotFather, OID
 ## Requirements
 
 - **Node.js 24 or newer** (Bun works too).
-- **Better Auth 1.7.12 or newer, below 1.8**: `better-auth` and `@better-auth/core` `>=1.7.12 <1.8.0`. Better Auth 1.6 is not supported, because it has a critical security issue with no 1.6 fix ([details](docs/migration-v2-to-v3.md#why-upgrade)).
+- **Better Auth 1.7.17 or newer, below 1.8**: `better-auth` and `@better-auth/core` `>=1.7.17 <1.8.0`. Better Auth 1.6 is not supported, because it has a critical security issue with no 1.6 fix ([details](docs/migration-v2-to-v3.md#why-upgrade)).
 - **A Telegram account**, to create a bot.
 - **A public HTTPS address** for your app. Telegram does not work with `localhost`. During development, a tunnel such as [ngrok](https://ngrok.com) gives your local server a public HTTPS address.
 
@@ -136,11 +136,11 @@ Using something else? Better Auth has a page for [each framework](https://www.be
 ### 6. Create the database tables
 
 ```bash
-npx auth@1.7.14 migrate
-npx auth@1.7.14 check schema
+npx auth@1.7.17 migrate
+npx auth@1.7.17 check schema
 ```
 
-The first command creates Better Auth's tables plus the plugin's Telegram columns. The second should print `Schema check passed against the live database.` Using Prisma or Drizzle? Run `npx auth@1.7.14 generate` instead of `migrate`, then your ORM's own migration ([details](docs/installation.md#3-update-your-database)).
+The first command creates Better Auth's tables plus the plugin's Telegram columns. The second should print `Schema check passed against the live database.` Using Prisma or Drizzle? Run `npx auth@1.7.17 generate` instead of `migrate`, then your ORM's own migration ([details](docs/installation.md#3-update-your-database)).
 
 > **Don't skip this step.** Better Auth refuses to answer any auth request (HTTP 500, "schema mismatch") until the database has every column it expects.
 
@@ -274,7 +274,7 @@ Example code: [`examples/nextjs-app/`](examples/nextjs-app) has components for a
 
 v3 supports Better Auth 1.7 and drops Better Auth 1.6. Upgrade because Better Auth below 1.7.7 has a critical account-takeover issue ([GHSA-965c-763c-88jm](https://github.com/better-auth/better-auth/security/advisories/GHSA-965c-763c-88jm)) that is not fixed in 1.6.
 
-In short: upgrade Better Auth to 1.7.12 or newer, update your database schema, set `oidc.clientSecret` if you use OIDC, and check your unlink UI and database hooks. The [migration guide](docs/migration-v2-to-v3.md) walks through every step and every breaking change. Older upgrade notes (v0.x to v2) are in the [changelog](CHANGELOG.md).
+In short: upgrade Better Auth to 1.7.17 or newer, update your database schema, set `oidc.clientSecret` if you use OIDC, and check your unlink UI and database hooks. The [migration guide](docs/migration-v2-to-v3.md) walks through every step and every breaking change. Older upgrade notes (v0.x to v2) are in the [changelog](CHANGELOG.md).
 
 ## Links
 

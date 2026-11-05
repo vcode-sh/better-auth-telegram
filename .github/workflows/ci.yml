@@ -59,7 +59,7 @@ jobs:
           - node: 26.x
             better-auth: locked
           - node: 24.x
-            better-auth: 1.7.12
+            better-auth: 1.7.17
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

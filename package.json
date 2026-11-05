@@ -1,6 +1,6 @@
 {
   "name": "better-auth-telegram",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "Telegram authentication plugin for Better Auth",
   "keywords": [
     "better-auth",
@@ -79,11 +79,11 @@
   },
   "devDependencies": {
     "@arethetypeswrong/core": "0.18.5",
-    "@better-auth/core": "1.7.14",
-    "@better-auth/drizzle-adapter": "1.7.14",
-    "@better-auth/kysely-adapter": "1.7.14",
-    "@better-auth/mongo-adapter": "1.7.14",
-    "@better-auth/prisma-adapter": "1.7.14",
+    "@better-auth/core": "1.7.17",
+    "@better-auth/drizzle-adapter": "1.7.17",
+    "@better-auth/kysely-adapter": "1.7.17",
+    "@better-auth/mongo-adapter": "1.7.17",
+    "@better-auth/prisma-adapter": "1.7.17",
     "@biomejs/biome": "2.6.4",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
@@ -91,8 +91,8 @@
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.0.5",
     "@vitest/ui": "5.0.5",
-    "auth": "1.7.14",
-    "better-auth": "1.7.14",
+    "auth": "1.7.17",
+    "better-auth": "1.7.17",
     "drizzle-kit": "0.31.11",
     "drizzle-orm": "0.45.4",
     "happy-dom": "21.0.4",
@@ -108,8 +108,8 @@
     "vitest": "5.0.5"
   },
   "peerDependencies": {
-    "@better-auth/core": ">=1.7.12 <1.8.0",
-    "better-auth": ">=1.7.12 <1.8.0"
+    "@better-auth/core": ">=1.7.17 <1.8.0",
+    "better-auth": ">=1.7.17 <1.8.0"
   },
   "engines": {
     "node": ">=24.0.0"

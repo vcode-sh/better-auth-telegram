@@ -107,6 +107,22 @@ describe("client actions against the real server", () => {
     expect(error?.code).toBe("CANNOT_UNLINK_LAST_ACCOUNT");
   });
 
+  it("the generated unlink route sends POST even without a request body", async () => {
+    const { client, db, requests, signUp } = setup();
+    await signUp();
+    await client.linkTelegram((await signWidgetData({ id: 42 })) as any);
+
+    const response = await (client as any).telegram.unlink();
+
+    expect(response.error).toBeNull();
+    expect(response.data.success).toBe(true);
+    expect(requests.at(-1)!.method).toBe("POST");
+    expect(db.account.map((account) => account.providerId)).toEqual([
+      "credential",
+    ]);
+    expect(db.user[0]!.telegramId).toBeNull();
+  });
+
   it("getTelegramConfig returns the server's bot username", async () => {
     const { client } = setup();
 

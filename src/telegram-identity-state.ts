@@ -5,6 +5,8 @@ interface VerifiedSignIn {
   /** Users this request changed after Better Auth read them. */
   changedUserIds: Set<string>;
   claims: TelegramOIDCClaims;
+  /** Account owner before Better Auth awaits application sign-in validation. */
+  expectedUserId?: string | undefined;
   /** The user info `getUserInfo` gave Better Auth (mapper output included). */
   userInfo: Record<string, unknown>;
 }
