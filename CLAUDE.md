@@ -15,7 +15,8 @@ Supporting modules:
 - **`src/verify.ts`** -- HMAC-SHA256 verification via Web Crypto API. Login Widget uses `SHA256(botToken)`; Mini App uses `HMAC-SHA256("WebAppData", botToken)`.
 - **`src/oidc.ts` and `src/oidc-token.ts`** -- Better Auth 1.7 provider factory (`accountSubject` = `sub`, PKCE, nonce, Basic client authentication) and cached JWKS/token verification, including profile-ID normalization before claims are used.
 - **`src/oidc-linking.ts` and `src/oidc-linking-policy.ts`** -- Match a verified OIDC sign-in to an existing Telegram user before Better Auth's account lookup. Require linked identity proof, preserve existing `sub` ownership, and enforce implicit-linking policy and validation hooks.
-- **`src/telegram-account.ts`** -- Find-or-create orchestration for Login Widget and Mini App users. `telegram-account-state.ts` owns shared types, lookups, validation and per-instance operation locks; `telegram-account-user.ts` owns provisioning and profile refresh; `telegram-account-link.ts` owns explicit link/unlink. Writes use Better Auth's internal adapter.
+- **`src/telegram-account.ts`** -- Find-or-create orchestration for Login Widget, Mini App and bot provisioning users. `telegram-account-state.ts` owns shared types, lookups, validation and per-instance operation locks; `telegram-account-user.ts` owns provisioning and profile refresh; `telegram-account-link.ts` owns explicit link/unlink. Writes use Better Auth's internal adapter.
+- **`src/bot-provisioning-endpoints.ts`** -- Optional pathless `SERVER_ONLY` `provisionTelegramUser` operation for server code with an already verified Telegram ID; no session and no caller authentication. `oidc-linking-policy.ts` exports the opt-in `validateTelegramBotOwnership` validator for OIDC links.
 - **`src/telegram-session.ts`** -- Creates sessions and renews cookies for Login Widget and Mini App flows.
 - **`src/telegram-identity.ts`** -- Installs database hooks. `telegram-identity-state.ts` holds verified request claims; `telegram-identity-sync.ts` copies and reconciles linked identities; `telegram-identity-session.ts` refreshes OIDC session cookies; `telegram-profile.ts` applies mapped profile updates; `telegram-placeholder.ts` reserves placeholder emails and chooses collision-safe OIDC placeholders.
 - **`src/testing/harness.ts`** -- Stable test-fixture imports. Implementations live in `testing/auth.ts` (memory/SQLite Better Auth), `http-client.ts` (cookie-aware requests), `signed-data.ts` (Widget/Mini App fixtures), `oidc-server.ts` (fake Telegram), `oidc-flow.ts` (sign-in helpers) and `constants.ts` (independent fixture constants).
@@ -33,9 +34,11 @@ Supporting modules:
 | POST | `/telegram/miniapp/signin` | None | Sign in from Mini App (optional) |
 | POST | `/telegram/miniapp/validate` | None | Validate Mini App initData (optional) |
 
+When `botProvisioning: true`, `auth.api.provisionTelegramUser` is also available. It is pathless and `SERVER_ONLY`, has no HTTP route, creates no session, and trusts the caller's asserted Telegram ID; the host must authenticate the caller and verify the update.
+
 OIDC (when `oidc.enabled`) uses Better Auth's built-in social login routes (`POST /sign-in/social` with `provider: "telegram-oidc"`, `GET /callback/telegram-oidc`). The plugin injects a `telegram-oidc` social provider via the `init` hook.
 
-Schema conditionally extends `user` table with `telegramId`, `telegramUsername`, and `telegramPhoneNumber` fields, and `account` table with `telegramId` and `telegramUsername` fields — only when Login Widget or Mini App flows are enabled (default). OIDC-only setups (`loginWidget: false`) skip these fields.
+Schema conditionally extends `user` table with `telegramId`, `telegramUsername`, and `telegramPhoneNumber` fields, and `account` table with `telegramId` and `telegramUsername` fields — only when Login Widget, Mini App or bot provisioning is enabled (Login Widget is on by default). OIDC-only setups (`loginWidget: false`, no Mini App, no `botProvisioning`) skip these fields.
 
 ## Code Style
 

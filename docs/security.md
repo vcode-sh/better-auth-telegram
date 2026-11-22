@@ -54,6 +54,12 @@ If any check fails, Better Auth redirects with `error=unable_to_get_user_info` a
 
 What this prevents: forged tokens (only Telegram has the private key), tokens issued to another app (audience check), stolen authorization codes (useless without the PKCE verifier), and cross-site requests to the callback (the `state` check).
 
+### Bot provisioning
+
+With `botProvisioning: true`, `auth.api.provisionTelegramUser` provisions a user from a Telegram ID asserted by your own server code. It has no HTTP path and refuses calls carrying a `Request` (403), so it cannot be reached from a browser. **The plugin does not verify the update or authenticate your caller.** If your bot wrapper accepts unauthenticated requests, anyone can provision users for arbitrary Telegram IDs. Verify the update with Telegram and protect the calling service with your own secret before using this feature. See [Bot provisioning](./bot-provisioning.md).
+
+Explicit OIDC linking can attach an identity owned by a provisioned user to a different signed-in user unless you install the exported `validateTelegramBotOwnership` under `user.validateUserInfo`. It is opt-in and is not installed by `botProvisioning: true`.
+
 ## Account safety rules
 
 **The Login Widget link route accepts one Telegram identity per user.** `/telegram/link` refuses an identity belonging to someone else (409 `TELEGRAM_ALREADY_LINKED_OTHER`), including a Telegram ID already on another user's profile. A second, different identity gives 409 `DIFFERENT_TELEGRAM_ACCOUNT_LINKED`. Better Auth's separate OIDC linking route can attach another OIDC identity; it does not overwrite the user's existing `telegramId`. These checks do not create a database-wide uniqueness constraint.
@@ -84,7 +90,7 @@ The plugin creates users, accounts and sessions through Better Auth's internal a
   - `"sign-in"` for a returning user,
   - `"link-account"` when a sign-in links to an existing user by `telegramId`, and on `/telegram/link`.
 
-  Return `{ error: "your_code" }` to refuse: the client gets 403 with `your_code`. If the function throws, the request fails with 403 `validation_failed` (fail closed). OIDC sign-ins go through Better Auth's own OAuth handling, with `source.method: "oauth"`.
+  Return `{ error: "your_code" }` to refuse: the client gets 403 with `your_code`. If the function throws, the request fails with 403 `validation_failed` (fail closed). OIDC sign-ins go through Better Auth's own OAuth handling, with `source.method: "oauth"`. Bot provisioning also calls it, with `source.method: "telegram-bot-provisioning"`.
 
 ### Two-factor authentication
 
@@ -128,6 +134,7 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 
 ### Other known gaps
 
+- Bot provisioning trusts the caller's asserted Telegram ID and has no caller authentication or rate limit of its own ([above](#bot-provisioning)). Its per-instance locks are not distributed.
 - Two-factor authentication is skipped for Telegram sign-ins ([above](#two-factor-authentication)).
 - Third-party Ed25519 validation of Mini App `initData` is not implemented ([above](#mini-app)).
 - Users already split across separate OIDC and Widget/Mini App accounts are not automatically merged. [Matching across methods](./oidc.md#use-one-user-across-sign-in-methods) keeps an existing OIDC account attached to its current owner.
@@ -139,6 +146,7 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 - Use separate bots for development and production, so a leaked development token can't touch production users.
 - Generate `BETTER_AUTH_SECRET` with `openssl rand -base64 32`.
 - Don't log request bodies of the Telegram endpoints in production; they contain sign-in data that can be replayed (see above).
+- If you use bot provisioning, keep the secret that authenticates calls to `provisionTelegramUser` in your secret manager, and never expose the operation through an unauthenticated route.
 
 ## Production checklist
 
@@ -153,6 +161,7 @@ When Telegram starts signing ID tokens with a new key, OIDC sign-ins can fail fo
 - [ ] `maxAuthAge` is as short as your users can accept.
 - [ ] The OIDC bot signs with RS256 or ES256.
 - [ ] `oidc.disableIdTokenSignIn: true` if you don't use ID-token sign-in.
+- [ ] If `botProvisioning: true`: the bot verifies each update, the provisioning caller is authenticated, and `validateTelegramBotOwnership` is installed when OIDC linking is used.
 - [ ] Rate limiting uses shared storage if you run more than one server.
 - [ ] Development and production use different bots.
 

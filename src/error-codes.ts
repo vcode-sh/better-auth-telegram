@@ -14,6 +14,12 @@ export const TELEGRAM_ERROR_CODES = defineErrorCodes({
     "Telegram OIDC: oidc.clientSecret is required before starting an OIDC login. It is the Client Secret shown in @BotFather (your bot > Login Widget), not the bot token",
   INVALID_AUTH_DATA: "Invalid Telegram auth data",
   INVALID_AUTHENTICATION: "Invalid Telegram authentication",
+  BOT_PROVISIONING_ID_REQUIRED:
+    "Bot provisioning: telegramId must be a positive Telegram user ID",
+  BOT_PROVISIONING_NAME_REQUIRED:
+    "Bot provisioning: a Telegram first name is required; last name is optional",
+  BOT_PROVISIONING_SERVER_ONLY:
+    "Bot provisioning: this operation is server-only and cannot be called over HTTP",
   USER_CREATION_DISABLED: "User not found and auto-create is disabled",
   NOT_AUTHENTICATED: "Not authenticated",
   LINKING_DISABLED: "Linking Telegram accounts is disabled",

@@ -8,8 +8,10 @@ import type { TelegramOIDCOptions, TelegramPluginOptions } from "./types";
 export interface TelegramPluginConfig {
   allowUserToLink: boolean;
   autoCreateUser: boolean;
+  botProvisioningEnabled: boolean;
   botToken: string;
   botUsername: string;
+  identityFields: boolean;
   mapMiniAppDataToUser?: NonNullable<
     TelegramPluginOptions["miniApp"]
   >["mapMiniAppDataToUser"];
@@ -54,7 +56,9 @@ export function createPluginConfig(
   const widgetEnabled = loginWidget !== false;
   const miniAppEnabled = miniApp?.enabled ?? false;
   const oidcEnabled = oidc?.enabled ?? false;
-  const identityColumns = widgetEnabled || miniAppEnabled;
+  const botProvisioningEnabled = options.botProvisioning === true;
+  const identityFields =
+    widgetEnabled || miniAppEnabled || botProvisioningEnabled;
   const warnings: string[] = [];
   const warn = (message: string) =>
     warnings.push(`[better-auth-telegram] ${message}`);
@@ -121,9 +125,9 @@ export function createPluginConfig(
     );
   }
 
-  if (oidcEnabled && oidc?.requestPhone && !identityColumns) {
+  if (oidcEnabled && oidc?.requestPhone && !identityFields) {
     warn(
-      "OIDC: requestPhone is set, but with the Login Widget and Mini App off there is no telegramPhoneNumber column, so the phone number is not stored. Enable the Mini App (or the Login Widget) to get the Telegram columns, or read phone_number from mapOIDCProfileToUser into your own field."
+      "OIDC: requestPhone is set, but no flow enabling the Telegram identity fields is configured, so the phone number is not stored. Enable bot provisioning, Mini App or Login Widget, or read phone_number from mapOIDCProfileToUser into your own field."
     );
   }
 
@@ -144,6 +148,8 @@ export function createPluginConfig(
   }
 
   return {
+    botProvisioningEnabled,
+    identityFields,
     botToken: resolvedBotToken,
     botUsername: resolvedBotUsername,
     widgetEnabled,

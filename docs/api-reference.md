@@ -7,6 +7,7 @@ Everything the package exports, every endpoint, every error code. This page is f
 - [Exports](#exports)
 - [Server: `telegram(options)`](#server-telegramoptions)
 - [Server: `createTelegramOIDCProvider`](#server-createtelegramoidcprovider)
+- [Server: bot provisioning](#server-bot-provisioning)
 - [Client: `telegramClient()`](#client-telegramclient)
 - [Client actions](#client-actions)
 - [Types](#types)
@@ -24,6 +25,7 @@ Everything the package exports, every endpoint, every error code. This page is f
 |---|---|
 | `telegram` | function: the Better Auth plugin |
 | `createTelegramOIDCProvider` | function: the OIDC provider (used internally) |
+| `validateTelegramBotOwnership` | `user.validateUserInfo` validator: refuses OIDC links to a Telegram ID owned by a provisioned user |
 | `TELEGRAM_ERROR_CODES` | object: error codes |
 | `TelegramPluginOptions`, `TelegramOIDCOptions`, `TelegramPluginConfig` | types: options |
 | `TelegramAuthData`, `TelegramMiniAppData`, `TelegramMiniAppUser`, `TelegramMiniAppChat`, `TelegramOIDCClaims`, `TelegramAccountRecord` | types: data |
@@ -58,8 +60,8 @@ The returned plugin has:
 |---|---|
 | `id` | `"telegram"` |
 | `init` | Adds the `telegram-oidc` social provider (when `oidc.enabled`). Installs database hooks: always the placeholder-email guard; with the Telegram columns, also copying verified OIDC details onto their user and re-checking `user.telegramId` whenever a `telegram` or `telegram-oidc` account is deleted. Logs startup warnings. |
-| `schema` | The [Telegram columns](#database-schema), only when the Login Widget or Mini App is enabled. |
-| `endpoints` | `/telegram/config` always; the three Login Widget endpoints unless `loginWidget: false`; the two Mini App endpoints when `miniApp.enabled`. |
+| `schema` | The [Telegram columns](#database-schema), only when the Login Widget, Mini App or `botProvisioning` is enabled. |
+| `endpoints` | `/telegram/config` always; the three Login Widget endpoints unless `loginWidget: false`; the two Mini App endpoints when `miniApp.enabled`; the pathless `provisionTelegramUser` when `botProvisioning: true`. |
 | `rateLimit` | [Rules](#rate-limits) for the enabled endpoints. |
 | `$ERROR_CODES` | [`TELEGRAM_ERROR_CODES`](#error-codes). |
 
@@ -67,7 +69,7 @@ The returned plugin has:
 
 **Plugin registry.** The package augments Better Auth's `BetterAuthPluginRegistry`, so `ctx.getPlugin("telegram")` is typed.
 
-**Calling endpoints from the server.** They are on `auth.api` (`signInWithTelegram`, `linkTelegram`, `unlinkTelegram`, `getTelegramConfig`, `signInWithMiniApp`, `validateMiniApp`). Because they depend on options, TypeScript types them as possibly `undefined`, and their request bodies are not typed.
+**Calling endpoints from the server.** They are on `auth.api` (`signInWithTelegram`, `linkTelegram`, `unlinkTelegram`, `getTelegramConfig`, `signInWithMiniApp`, `validateMiniApp`, and `provisionTelegramUser` when `botProvisioning: true`). Because they depend on options, TypeScript types them as possibly `undefined`. Their request bodies are not typed, except `provisionTelegramUser`, whose body is inferred through `$Infer`.
 
 ## Server: `createTelegramOIDCProvider`
 
@@ -82,6 +84,16 @@ createTelegramOIDCProvider(
 The `telegram-oidc` provider the plugin adds when `oidc.enabled` is `true`. You don't need to call it yourself. Used on its own, it doesn't install the plugin's database hooks (placeholder guard, identity copying).
 
 Provider details: id `telegram-oidc`, issuer `https://oauth.telegram.org`, `requiresIdTokenNonce: true`, `accountSubject` = the `sub` claim (account IDs are the same as in v2), an `idToken.verify` that requires the nonce, HTTP Basic client authentication at the token endpoint, and ID-token verification against Telegram's JWKS (RS256, ES256, EdDSA) before any claim is used.
+
+## Server: bot provisioning
+
+With `botProvisioning: true`, `auth.api.provisionTelegramUser` provisions a user from an asserted Telegram ID and returns `{ userId }`. It has no HTTP path, is marked `SERVER_ONLY`, and refuses calls carrying a `Request` with 403. It starts no session and does not verify Telegram data or authenticate the caller.
+
+**Body:** `{ telegramId: number; firstName: string; lastName?: string; username?: string }`. `telegramId` must be a positive safe integer and `firstName` a nonempty string; a malformed body answers 400. Invalid input creates nothing.
+
+Your `databaseHooks` and `user.validateUserInfo` run normally; the latter sees `source.method: "telegram-bot-provisioning"`. `autoCreateUser: false` makes an unknown Telegram ID answer 404 instead of creating a user. Repeating the call for a known ID returns the same user without changing their profile.
+
+Install `validateTelegramBotOwnership` as `user.validateUserInfo` to refuse OIDC links to a Telegram ID already owned by a provisioned user. It is opt-in and does not compose with your own validator for you. Full guide: [Bot provisioning](./bot-provisioning.md).
 
 ## Client: `telegramClient()`
 
@@ -194,6 +206,7 @@ Starts OIDC sign-in. Calls `POST /sign-in/social` with `provider: "telegram-oidc
 interface TelegramPluginOptions {
   botToken?: string;
   botUsername?: string;
+  botProvisioning?: boolean; // default false
   loginWidget?: boolean; // default true
   allowUserToLink?: boolean; // default true
   autoCreateUser?: boolean; // default true
@@ -398,6 +411,8 @@ Paths are relative to Better Auth's base path (`/api/auth` by default), so `/tel
 | POST | `/telegram/miniapp/signin` | no | `miniApp.enabled` |
 | POST | `/telegram/miniapp/validate` | no | `miniApp.enabled` |
 
+`provisionTelegramUser` (when `botProvisioning: true`) is not in this table: it has no HTTP path and can only be called through `auth.api` from server code. See [Server: bot provisioning](#server-bot-provisioning).
+
 ### `POST /telegram/signin`
 
 Signs in, or creates, a user with Login Widget data. Sets the session cookie.
@@ -541,7 +556,10 @@ TELEGRAM_ERROR_CODES.CANNOT_UNLINK_LAST_ACCOUNT.code; // "CANNOT_UNLINK_LAST_ACC
 | `OIDC_CLIENT_SECRET_REQUIRED` | 500 | Telegram OIDC: oidc.clientSecret is required before starting an OIDC login. It is the Client Secret shown in @BotFather (your bot > Login Widget), not the bot token | OIDC sign-in |
 | `INVALID_AUTH_DATA` | 400 | Invalid Telegram auth data | signin, link |
 | `INVALID_AUTHENTICATION` | 401 | Invalid Telegram authentication | signin, link |
-| `USER_CREATION_DISABLED` | 404 | User not found and auto-create is disabled | signin |
+| `BOT_PROVISIONING_ID_REQUIRED` | 400 | Bot provisioning: telegramId must be a positive Telegram user ID | `provisionTelegramUser` |
+| `BOT_PROVISIONING_NAME_REQUIRED` | 400 | Bot provisioning: a Telegram first name is required; last name is optional | `provisionTelegramUser` |
+| `BOT_PROVISIONING_SERVER_ONLY` | 403 | Bot provisioning: this operation is server-only and cannot be called over HTTP | `provisionTelegramUser` |
+| `USER_CREATION_DISABLED` | 404 | User not found and auto-create is disabled | signin, `provisionTelegramUser` |
 | `NOT_AUTHENTICATED` | none | Not authenticated | Defined, never returned (a missing session is Better Auth's 401 `UNAUTHORIZED`) |
 | `LINKING_DISABLED` | 403 | Linking Telegram accounts is disabled | link |
 | `TELEGRAM_ALREADY_LINKED_OTHER` | 409 | This Telegram account is already linked to another user | link |
@@ -589,13 +607,13 @@ Registered only for enabled endpoints. Enforced by Better Auth's rate limiter, w
 
 ## Database schema
 
-Added only when the Login Widget or Mini App is enabled. All fields are optional (nullable) strings, and all must exist in the database.
+Added only when the Login Widget, Mini App or bot provisioning is enabled. All fields are optional (nullable) strings, and all must exist in the database.
 
 **`user`**
 
 | Field | Index | `input` | Filled from |
 |---|---|---|---|
-| `telegramId` | yes | `false` | Login Widget / Mini App user ID; the OIDC `id` claim |
+| `telegramId` | yes | `false` | Login Widget / Mini App / bot provisioning user ID; the OIDC `id` claim |
 | `telegramUsername` | no | `false` | Telegram username; OIDC `preferred_username`. Refreshed on every sign-in. |
 | `telegramPhoneNumber` | no | `false` | OIDC `phone_number` (with `oidc.requestPhone`) |
 

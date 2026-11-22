@@ -57,14 +57,15 @@ export type TelegramSchema = ReturnType<typeof telegramSchema>;
  *
  * Adds `telegramId`, `telegramUsername`, `telegramPhoneNumber` to the `user` table
  * and `telegramId`, `telegramUsername` to the `account` table — but only when
- * Login Widget or Mini App flows are enabled. OIDC-only setups skip these fields.
+ * Login Widget, Mini App or bot provisioning is enabled. OIDC-only setups
+ * skip these fields.
  * The type always carries them: they are optional, and simply never set in
  * OIDC-only mode.
  */
 export function createTelegramSchema(
   config: TelegramPluginConfig
 ): TelegramSchema | undefined {
-  if (!(config.widgetEnabled || config.miniAppEnabled)) {
+  if (!config.identityFields) {
     return;
   }
   return telegramSchema();

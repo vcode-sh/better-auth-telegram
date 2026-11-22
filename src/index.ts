@@ -1,4 +1,5 @@
 import type { BetterAuthPlugin } from "better-auth";
+import { createBotProvisioningEndpoints } from "./bot-provisioning-endpoints";
 import { createConfigEndpoint } from "./config-endpoint";
 import { ERROR_CODES, PLUGIN_ID } from "./constants";
 import {
@@ -19,6 +20,7 @@ import { createWidgetEndpoints, getWidgetRateLimits } from "./widget-endpoints";
 // biome-ignore lint/performance/noBarrelFile: Public API re-export
 export { TELEGRAM_ERROR_CODES } from "./error-codes";
 export { createTelegramOIDCProvider } from "./oidc";
+export { validateTelegramBotOwnership } from "./oidc-linking-policy";
 export type { TelegramPluginConfig } from "./plugin-config";
 export type {
   TelegramAccountRecord,
@@ -71,10 +73,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           ? {
               context: {
                 socialProviders: [
-                  withTelegramIdentityLinking(
-                    provider,
-                    config.widgetEnabled || config.miniAppEnabled
-                  ),
+                  withTelegramIdentityLinking(provider, config.identityFields),
                   ...ctx.socialProviders,
                 ],
               },
@@ -82,7 +81,7 @@ export const telegram = (options: TelegramPluginOptions) => {
           : {}),
         options: {
           databaseHooks: telegramIdentityHooks(ctx, {
-            identityFields: config.widgetEnabled || config.miniAppEnabled,
+            identityFields: config.identityFields,
             updateUserInfo:
               config.oidcEnabled && !!config.oidc?.updateUserInfoOnSignIn,
           }),
@@ -95,6 +94,9 @@ export const telegram = (options: TelegramPluginOptions) => {
     schema: createTelegramSchema(config) as TelegramSchema,
 
     endpoints: {
+      ...(config.botProvisioningEnabled
+        ? createBotProvisioningEndpoints(config)
+        : {}),
       ...(config.widgetEnabled ? createWidgetEndpoints(config) : {}),
       ...(config.miniAppEnabled ? createMiniAppEndpoints(config) : {}),
       ...createConfigEndpoint(config),
