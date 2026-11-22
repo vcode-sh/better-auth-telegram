@@ -1,9 +1,41 @@
-import type { GenericEndpointContext } from "@better-auth/core";
+import type {
+  BetterAuthOptions,
+  GenericEndpointContext,
+} from "@better-auth/core";
 import { getCurrentAdapter } from "@better-auth/core/context";
 import type { Account, User } from "better-auth";
 import { APIError } from "better-auth/api";
 import { ERROR_CODES, PLUGIN_ID, TELEGRAM_OIDC_PROVIDER_ID } from "./constants";
+import { currentClaims } from "./telegram-identity-state";
 import type { TelegramOIDCClaims } from "./types";
+
+/**
+ * Opt-in `user.validateUserInfo` gate: refuses an OIDC link when the verified
+ * Telegram ID is owned by a different user. It reads the ID from this plugin's
+ * request state, not from Better Auth's `source.oauth.profile`. Better Auth
+ * accepts one validator, so compose it with your own if both are needed.
+ */
+export const validateTelegramBotOwnership: NonNullable<
+  NonNullable<BetterAuthOptions["user"]>["validateUserInfo"]
+> = async ({ source, user }, ctx) => {
+  if (
+    source.action !== "link-account" ||
+    source.oauth?.providerId !== TELEGRAM_OIDC_PROVIDER_ID
+  ) {
+    return;
+  }
+  const telegramId = (await currentClaims())?.id;
+  if (!(telegramId && user.id)) {
+    return { error: "TELEGRAM_ID_REQUIRED" };
+  }
+  const owner = await findProvenTelegramUser(ctx, telegramId);
+  if (owner && owner.id !== user.id) {
+    return {
+      error: "TELEGRAM_ALREADY_LINKED_OTHER",
+      errorDescription: ERROR_CODES.TELEGRAM_ALREADY_LINKED_OTHER.message,
+    };
+  }
+};
 
 /** Only a surviving linked account can authorize another Telegram login. */
 export async function findProvenTelegramUser(

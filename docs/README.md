@@ -12,6 +12,7 @@ Welcome. This page tells you where to find each answer, and explains the words t
 | How do I show the Login Widget, link or unlink Telegram, handle errors? | [Usage](./usage.md) |
 | How do I sign in with OIDC, get phone numbers, link OIDC to an existing user? | [OIDC](./oidc.md) |
 | How do I sign users in inside a Mini App? Why are there no cookies in Telegram Web? | [Mini Apps](./miniapps.md) |
+| How do I provision a user from a verified bot update without a browser? | [Bot provisioning](./bot-provisioning.md) |
 | How do I put server-owned user IDs or roles in a stateless JWT? | [Server-owned fields](./server-owned-fields.md) |
 | What does option X do, and what is its default? | [Configuration](./configuration.md) |
 | What does the plugin check, and what can it *not* protect against? | [Security](./security.md) |

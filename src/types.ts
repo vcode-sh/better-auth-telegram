@@ -211,6 +211,13 @@ export interface TelegramPluginOptions {
    */
   autoCreateUser?: boolean;
   /**
+   * Enable server-only provisioning for users proven by a trusted bot provisioning
+   * service. The host must authenticate the caller; this does not expose an
+   * HTTP endpoint or create a browser session.
+   * @default false
+   */
+  botProvisioning?: boolean;
+  /**
    * Bot token obtained from @BotFather
    * Used for verifying authentication data
    */

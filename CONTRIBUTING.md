@@ -45,6 +45,7 @@ src/
   schema.ts                  Conditional user/account schema fields
   widget-endpoints.ts        /telegram/signin, /telegram/link, /telegram/unlink
   miniapp-endpoints.ts       /telegram/miniapp/signin, /telegram/miniapp/validate
+   bot-provisioning-endpoints.ts      optional pathless SERVER_ONLY provisioning operation (botProvisioning)
   config-endpoint.ts         /telegram/config
   telegram-account.ts        Find-or-create orchestration
   telegram-account-state.ts  Shared account types, lookups, validation and locks

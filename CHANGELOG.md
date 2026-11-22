@@ -5,6 +5,18 @@ All notable changes to the better-auth-telegram plugin will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Opt-in, server-only bot provisioning.** With `botProvisioning: true`, trusted server code can call `auth.api.provisionTelegramUser({ body: { telegramId, firstName, lastName?, username? } })` to create or resolve a user from a Telegram ID it has already verified. The operation is pathless and `SERVER_ONLY`, starts no session, is idempotent by Telegram ID, returns `{ userId }`, and respects `autoCreateUser`. Disabled by default: setups that don't set `botProvisioning` keep their previous schema, endpoints and behavior. Hosts must authenticate their own callers and verify the Telegram update; see [Bot provisioning](docs/bot-provisioning.md).
+- **Exported `validateTelegramBotOwnership`** for `user.validateUserInfo`. It refuses an explicit OIDC link when the verified Telegram ID is owned by a provisioned user. Opt-in and separate from `botProvisioning`.
+
+### Changed
+
+- The Telegram identity columns are enabled when the Login Widget, Mini App **or** bot provisioning is on. `user.validateUserInfo` now also receives `source.method: "telegram-bot-provisioning"`. OIDC-only setups that enable `botProvisioning` should run `npx auth@1.7.17 migrate` before upgrading; no new columns are introduced and no data is rewritten.
+- Invalid provisioning input now reports the stable codes `BOT_PROVISIONING_ID_REQUIRED` and `BOT_PROVISIONING_NAME_REQUIRED`; server-only calls report `BOT_PROVISIONING_SERVER_ONLY`. With `autoCreateUser: false`, provisioning uses the existing `USER_CREATION_DISABLED` code, like the Login Widget.
+
 ## [3.2.2] - 2026-11-05
 
 Safer account changes when cookie caching is enabled, and clearer examples for putting application user IDs and roles into a Telegram session. Upgrade Better Auth and `@better-auth/core` together to **1.7.17 or newer, below 1.8**. No plugin database migration is needed.

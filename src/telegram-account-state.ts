@@ -4,7 +4,7 @@ import type { Account, User } from "better-auth";
 import { APIError } from "better-auth/api";
 import { ERROR_CODES, PLUGIN_ID, TELEGRAM_OIDC_PROVIDER_ID } from "./constants";
 
-/** A Telegram user proven by a verified Login Widget or Mini App payload. */
+/** A Telegram user proven by a verified payload or a trusted bot provisioning caller. */
 export interface TelegramIdentity {
   /** Telegram user id as a string. */
   telegramId: string;
@@ -13,6 +13,7 @@ export interface TelegramIdentity {
 
 /** Provisioning method reported to `user.validateUserInfo`. */
 export type TelegramProvisioningMethod =
+  | "telegram-bot-provisioning"
   | "telegram-login-widget"
   | "telegram-mini-app";
 

@@ -242,14 +242,26 @@ await authClient.signInWithTelegramOIDC({ callbackURL: "/dashboard" });
 
 Full guide, including phone numbers and limits: [OIDC](docs/oidc.md).
 
+### Bot provisioning (server only)
+
+This is not a way for a browser to sign in. With `botProvisioning: true`, your trusted server code can turn a Telegram ID that your bot already verified into a local user ID:
+
+```ts
+const { userId } = await auth.api.provisionTelegramUser({
+  body: { telegramId: 8_306_595_751, firstName: "Ada" },
+});
+```
+
+No session is created, and no HTTP route is added. The name refers to the verified bot update, not to a Telegram API call made by the plugin. The operation is server-only, off by default, and does not authenticate its caller: your bot must verify the update and your host must protect the caller. Existing setups that don't set `botProvisioning` are unchanged. Full guide: [Bot provisioning](docs/bot-provisioning.md).
+
 ## What the plugin stores
 
-When the Login Widget or Mini App is on (the Login Widget is on by default), the plugin adds five optional columns:
+When the Login Widget or Mini App is on (the Login Widget is on by default), or when bot provisioning is enabled, the plugin adds five optional columns:
 
 - `user.telegramId`, `user.telegramUsername`, `user.telegramPhoneNumber`
 - `account.telegramId`, `account.telegramUsername`
 
-An OIDC-only setup (`loginWidget: false`, no Mini App) adds no columns.
+An OIDC-only setup (`loginWidget: false`, no Mini App, no `botProvisioning`) adds no columns.
 
 New users get a **placeholder email** unless you give them a real one: `<telegram id>@telegram.placeholder.invalid` (Login Widget and Mini App) or `<sub>@telegram-oidc.placeholder.invalid` (OIDC). These addresses are reserved for Telegram sign-in, and `emailVerified` stays `false`. More in [Installation](docs/installation.md#placeholder-emails).
 
@@ -262,6 +274,7 @@ New users get a **placeholder email** unless you give them a real one: `<telegra
 | Add the Login Widget, link and unlink accounts | [Usage](docs/usage.md) |
 | Sign in with OIDC | [OIDC](docs/oidc.md) |
 | Sign in inside a Mini App | [Mini Apps](docs/miniapps.md) |
+| Provision users from verified bot updates | [Bot provisioning](docs/bot-provisioning.md) |
 | See every option | [Configuration](docs/configuration.md) |
 | Understand what is checked, and the known limits | [Security](docs/security.md) |
 | Fix an error | [Troubleshooting](docs/troubleshooting.md) |
